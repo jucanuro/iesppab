@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acceso | IESPP Alfonso Barrantes Lingán</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-full bg-slate-100 text-slate-900">
+    <main class="grid min-h-screen lg:grid-cols-[480px_minmax(0,1fr)]">
+
+        <!-- Panel izquierdo -->
+        <section class="flex min-h-screen flex-col justify-between bg-white px-8 py-8 shadow-2xl shadow-slate-300/60 lg:px-12">
+            <div>
+                <div class="flex items-center gap-3">
+                    <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-700 text-lg font-black text-white">
+                        ABL
+                    </div>
+                    <div>
+                        <p class="text-sm font-bold uppercase tracking-wide text-slate-900">
+                            IESPP
+                        </p>
+                        <p class="text-xs font-medium text-slate-500">
+                            Alfonso Barrantes Lingán · San Miguel
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-14">
+                    <p class="text-sm font-semibold text-red-700">
+                        Plataforma privada de integridad académica
+                    </p>
+
+                    <h1 class="mt-4 text-3xl font-black tracking-tight text-slate-950">
+                        Inicia sesión
+                    </h1>
+
+                    <p class="mt-4 text-sm leading-6 text-slate-600">
+                        Accede al sistema institucional para cargar documentos,
+                        revisar reportes de similitud, analizar posible uso de IA
+                        y generar certificados oficiales.
+                    </p>
+                </div>
+
+                {% if messages %}
+                    <div class="mt-8 space-y-3">
+                        {% for message in messages %}
+                            <div class="rounded-xl border px-4 py-3 text-sm font-semibold
+                                {% if message.tags == 'success' %}
+                                    border-emerald-200 bg-emerald-50 text-emerald-700
+                                {% elif message.tags == 'error' %}
+                                    border-red-200 bg-red-50 text-red-700
+                                {% else %}
+                                    border-sky-200 bg-sky-50 text-sky-700
+                                {% endif %}
+                            ">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                <form method="post" class="mt-8 space-y-5">
+                    {% csrf_token %}
+
+                    <input type="hidden" name="next" value="{{ next }}">
+
+                    <div>
+                        <label for="username_or_email" class="mb-2 block text-sm font-bold text-slate-800">
+                            Usuario o correo institucional
+                        </label>
+                        <input id="username_or_email"
+                               name="username_or_email"
+                               type="text"
+                               autocomplete="username"
+                               required
+                               placeholder="usuario@institucion.edu.pe"
+                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
+                    </div>
+
+                    <div>
+                        <label for="password" class="mb-2 block text-sm font-bold text-slate-800">
+                            Contraseña
+                        </label>
+                        <input id="password"
+                               name="password"
+                               type="password"
+                               autocomplete="current-password"
+                               required
+                               placeholder="Ingresa tu contraseña"
+                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
+                    </div>
+
+                    <button type="submit"
+                            class="w-full rounded-lg bg-red-700 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-700/20 transition hover:bg-red-800">
+                        Iniciar sesión
+                    </button>
+                </form>
+            </div>
+
+            <div class="mt-10 border-t border-slate-200 pt-6">
+                <p class="text-xs leading-5 text-slate-500">
+                    Sistema privado de uso institucional. El acceso está limitado
+                    a administradores, docentes revisores y estudiantes autorizados.
+                </p>
+            </div>
+        </section>
+
+        <!-- Panel derecho -->
+        <section class="hidden min-h-screen bg-slate-950 lg:block">
+            <div class="relative flex h-full flex-col justify-between overflow-hidden px-14 py-12">
+                <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(185,28,28,0.35),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(59,130,246,0.20),_transparent_32%)]"></div>
+
+                <div class="relative">
+                    <div class="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.25em] text-white/80">
+                        Originalidad · Similitud · IA
+                    </div>
+
+                    <h2 class="mt-10 max-w-2xl text-5xl font-black tracking-tight text-white">
+                        Control académico con reportes claros, rápidos y verificables.
+                    </h2>
+
+                    <p class="mt-6 max-w-xl text-base leading-7 text-slate-300">
+                        Evalúa documentos académicos en español, identifica
+                        coincidencias con fuentes internas o web y estima patrones
+                        asociados a generación por inteligencia artificial.
+                    </p>
+                </div>
+
+                <div class="relative grid gap-4 xl:grid-cols-3">
+                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+                        <p class="text-3xl font-black text-red-400">Rojo</p>
+                        <p class="mt-2 text-sm font-medium text-slate-300">
+                            Coincidencias y similitud textual.
+                        </p>
+                    </div>
+
+                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+                        <p class="text-3xl font-black text-blue-400">Azul</p>
+                        <p class="mt-2 text-sm font-medium text-slate-300">
+                            Probabilidad de texto generado por IA.
+                        </p>
+                    </div>
+
+                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
+                        <p class="text-3xl font-black text-emerald-400">PDF</p>
+                        <p class="mt-2 text-sm font-medium text-slate-300">
+                            Certificados oficiales descargables.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+</body>
+</html>

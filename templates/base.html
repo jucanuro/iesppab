@@ -1,0 +1,219 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}IESPP Alfonso Barrantes Lingán{% endblock %}</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body class="min-h-full bg-slate-100 text-slate-900">
+    <div class="min-h-screen">
+
+        <!-- Top bar mobile -->
+        <header class="sticky top-0 z-40 border-b border-slate-200 bg-white lg:hidden">
+            <div class="flex items-center justify-between px-4 py-3">
+                <div class="flex items-center gap-3">
+                    <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-red-700 text-sm font-black text-white">
+                        ABL
+                    </div>
+                    <div>
+                        <p class="text-sm font-black leading-tight text-slate-950">
+                            IESPP ABL
+                        </p>
+                        <p class="text-xs font-medium text-slate-500">
+                            Originalidad académica
+                        </p>
+                    </div>
+                </div>
+
+                {% if request.user.is_authenticated %}
+                    <form method="post" action="{% url 'accounts:logout' %}">
+                        {% csrf_token %}
+                        <button type="submit"
+                                class="rounded-md border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                            Salir
+                        </button>
+                    </form>
+                {% endif %}
+            </div>
+        </header>
+
+        <div class="flex min-h-screen">
+
+            <!-- Sidebar desktop -->
+            <aside class="hidden w-72 shrink-0 border-r border-slate-200 bg-white lg:flex lg:flex-col">
+                <div class="border-b border-slate-200 px-6 py-5">
+                    <div class="flex items-center gap-3">
+                        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-700 text-base font-black text-white shadow-sm">
+                            ABL
+                        </div>
+
+                        <div>
+                            <p class="text-sm font-black uppercase tracking-wide text-slate-950">
+                                IESPP
+                            </p>
+                            <p class="text-xs font-semibold leading-5 text-slate-500">
+                                Alfonso Barrantes Lingán
+                            </p>
+                            <p class="text-[11px] font-medium text-slate-400">
+                                San Miguel
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <nav class="flex-1 space-y-1 px-4 py-5">
+                    <a href="{% url 'documents:upload' %}"
+                       class="group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold transition
+                       {% if request.resolver_match.app_name == 'documents' %}
+                           bg-red-50 text-red-700
+                       {% else %}
+                           text-slate-700 hover:bg-slate-100 hover:text-slate-950
+                       {% endif %}">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-md
+                        {% if request.resolver_match.app_name == 'documents' %}
+                            bg-red-700 text-white
+                        {% else %}
+                            bg-slate-100 text-slate-500 group-hover:bg-white
+                        {% endif %}">
+                            ↑
+                        </span>
+                        Documentos
+                    </a>
+
+                    <a href="#"
+                       class="group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-500 group-hover:bg-white">
+                            %
+                        </span>
+                        Reportes
+                    </a>
+
+                    <a href="#"
+                       class="group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950">
+                        <span class="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-500 group-hover:bg-white">
+                            PDF
+                        </span>
+                        Certificados
+                    </a>
+
+                    {% if request.user.is_staff %}
+                        <a href="/admin/"
+                           class="group flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-100 hover:text-slate-950">
+                            <span class="flex h-8 w-8 items-center justify-center rounded-md bg-slate-100 text-slate-500 group-hover:bg-white">
+                                ⚙
+                            </span>
+                            Administración
+                        </a>
+                    {% endif %}
+                </nav>
+
+                {% if request.user.is_authenticated %}
+                    <div class="border-t border-slate-200 p-4">
+                        <div class="rounded-xl bg-slate-50 p-4">
+                            <p class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                Usuario activo
+                            </p>
+
+                            <p class="mt-2 truncate text-sm font-black text-slate-900">
+                                {{ request.user.get_full_name|default:request.user.username }}
+                            </p>
+
+                            <p class="mt-1 truncate text-xs font-medium text-slate-500">
+                                {{ request.user.email }}
+                            </p>
+
+                            <p class="mt-2 inline-flex rounded-full bg-red-50 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-red-700">
+                                {{ request.user.get_role_display }}
+                            </p>
+
+                            <form method="post" action="{% url 'accounts:logout' %}" class="mt-4">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        class="w-full rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-100">
+                                    Cerrar sesión
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                {% endif %}
+            </aside>
+
+            <!-- Main area -->
+            <section class="flex min-w-0 flex-1 flex-col">
+
+                <!-- Header desktop -->
+                <header class="hidden border-b border-slate-200 bg-white lg:block">
+                    <div class="flex items-center justify-between px-8 py-5">
+                        <div>
+                            <p class="text-xs font-black uppercase tracking-[0.24em] text-red-700">
+                                Sistema privado institucional
+                            </p>
+
+                            <h1 class="mt-1 text-2xl font-black tracking-tight text-slate-950">
+                                Control de Originalidad Académica
+                            </h1>
+
+                            <p class="mt-1 text-sm font-medium text-slate-500">
+                                IESPP “Alfonso Barrantes Lingán” · San Miguel
+                            </p>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                                <p class="text-xs font-bold uppercase tracking-wide text-slate-400">
+                                    Estado
+                                </p>
+                                <p class="text-sm font-black text-emerald-700">
+                                    Plataforma activa
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </header>
+
+                <!-- Content -->
+                <main class="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+
+                    {% if messages %}
+                        <div class="mb-6 space-y-3">
+                            {% for message in messages %}
+                                <div class="rounded-lg border px-4 py-3 text-sm font-bold shadow-sm
+                                    {% if message.tags == 'success' %}
+                                        border-emerald-200 bg-emerald-50 text-emerald-700
+                                    {% elif message.tags == 'error' %}
+                                        border-red-200 bg-red-50 text-red-700
+                                    {% elif message.tags == 'warning' %}
+                                        border-amber-200 bg-amber-50 text-amber-700
+                                    {% else %}
+                                        border-sky-200 bg-sky-50 text-sky-700
+                                    {% endif %}
+                                ">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    {% block content %}{% endblock %}
+                </main>
+
+                <!-- Footer -->
+                <footer class="border-t border-slate-200 bg-white px-4 py-4 sm:px-6 lg:px-8">
+                    <p class="text-xs font-medium text-slate-500">
+                        © {% now "Y" %} IESPP “Alfonso Barrantes Lingán” · Plataforma privada de integridad académica.
+                    </p>
+                </footer>
+            </section>
+        </div>
+    </div>
+
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

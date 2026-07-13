@@ -4,325 +4,142 @@
 
 {% block content %}
 
-<section class="space-y-6">
+<section class="space-y-4">
 
-    <!-- Encabezado de pantalla -->
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-            <p class="text-sm font-black uppercase tracking-[0.22em] text-red-700">
-                Bandeja de trabajos
-            </p>
-            <h2 class="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                Documentos enviados
-            </h2>
-            <p class="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500">
-                Gestiona la carga de documentos académicos para revisión de originalidad,
-                similitud textual y análisis de posible uso de inteligencia artificial.
-            </p>
-        </div>
+    <!-- PANEL SUPERIOR COMPACTO: REGISTRO Y SUBIDA -->
+    <section id="nuevo-documento"
+             class="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
 
-        <a href="#nuevo-documento"
-           class="inline-flex items-center justify-center rounded-lg bg-red-700 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-red-800">
-            Subir trabajo
-        </a>
-    </div>
+        <div class="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-red-600/10 blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 left-1/3 h-60 w-60 rounded-full bg-cyan-500/10 blur-3xl"></div>
 
-    <!-- Tarjetas resumen -->
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p class="text-xs font-black uppercase tracking-wide text-slate-400">
-                Total reciente
-            </p>
-            <p class="mt-3 text-3xl font-black text-slate-950">
-                {{ recent_documents|length }}
-            </p>
-            <p class="mt-1 text-sm font-medium text-slate-500">
-                Documentos visibles
-            </p>
-        </article>
+        <!-- Cabecera ultra compacta -->
+        <div class="relative border-b border-white/10 px-4 py-3 sm:px-5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 
-        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p class="text-xs font-black uppercase tracking-wide text-slate-400">
-                Similitud
-            </p>
-            <p class="mt-3 text-3xl font-black text-red-700">
-                Pendiente
-            </p>
-            <p class="mt-1 text-sm font-medium text-slate-500">
-                Motor de comparación
-            </p>
-        </article>
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                            <span class="text-[9px] font-black uppercase tracking-[0.22em] text-red-300">
+                                Registro académico
+                            </span>
+                        </span>
 
-        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p class="text-xs font-black uppercase tracking-wide text-slate-400">
-                Detección IA
-            </p>
-            <p class="mt-3 text-3xl font-black text-blue-700">
-                Pendiente
-            </p>
-            <p class="mt-1 text-sm font-medium text-slate-500">
-                Análisis lingüístico
-            </p>
-        </article>
+                        <span class="hidden text-[10px] font-semibold text-slate-500 sm:inline">
+                            PDF o Word .docx · máximo 25 MB
+                        </span>
+                    </div>
 
-        <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p class="text-xs font-black uppercase tracking-wide text-slate-400">
-                Certificados
-            </p>
-            <p class="mt-3 text-3xl font-black text-emerald-700">
-                PDF
-            </p>
-            <p class="mt-1 text-sm font-medium text-slate-500">
-                Emisión institucional
-            </p>
-        </article>
-    </div>
+                    <div class="mt-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-3">
+                        <h2 class="text-lg font-black tracking-tight text-white sm:text-xl">
+                            Subir nuevo trabajo
+                        </h2>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+                        <p class="text-xs font-medium text-slate-400">
+                            Análisis de originalidad, similitud e IA.
+                        </p>
+                    </div>
+                </div>
 
-        <!-- Tabla principal -->
-        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="border-b border-slate-200 px-5 py-4">
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                        <h3 class="text-base font-black text-slate-950">
-                            Trabajos recientes
-                        </h3>
-                        <p class="mt-1 text-sm font-medium text-slate-500">
-                            Últimos documentos cargados en la plataforma.
+                <div class="grid grid-cols-3 gap-1.5 sm:min-w-[300px]">
+                    <div class="rounded-xl border border-white/10 bg-slate-950/45 px-2.5 py-1.5 text-center">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                            Límite
+                        </p>
+                        <p class="text-[11px] font-black text-white">
+                            25 MB
                         </p>
                     </div>
 
-                    <div class="flex items-center gap-2">
-                        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                    <div class="rounded-xl border border-cyan-400/15 bg-cyan-400/10 px-2.5 py-1.5 text-center">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-cyan-300/70">
+                            Formato
+                        </p>
+                        <p class="text-[11px] font-black text-cyan-300">
+                            PDF/DOCX
+                        </p>
+                    </div>
+
+                    <div class="rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-2.5 py-1.5 text-center">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-emerald-300/70">
+                            Estado
+                        </p>
+                        <p class="text-[11px] font-black text-emerald-300">
                             Privado
-                        </span>
-                        <span class="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">
-                            IESPP ABL
-                        </span>
+                        </p>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Desktop table -->
-            <div class="hidden overflow-x-auto lg:block">
-                <table class="min-w-full divide-y divide-slate-200">
-                    <thead class="bg-slate-50">
-                        <tr>
-                            <th class="px-5 py-3 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                                Trabajo
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                                Alumno
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                                Tipo
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                                Estado
-                            </th>
-                            <th class="px-5 py-3 text-left text-xs font-black uppercase tracking-wide text-slate-500">
-                                Fecha
-                            </th>
-                            <th class="px-5 py-3 text-right text-xs font-black uppercase tracking-wide text-slate-500">
-                                Acción
-                            </th>
-                        </tr>
-                    </thead>
+        <!-- Formulario en una sola fila desktop -->
+        <form method="post"
+              enctype="multipart/form-data"
+              id="documentUploadForm"
+              class="relative px-4 py-4 sm:px-5">
+            {% csrf_token %}
 
-                    <tbody class="divide-y divide-slate-100 bg-white">
-                        {% for document in recent_documents %}
-                            <tr class="transition hover:bg-slate-50">
-                                <td class="px-5 py-4">
-                                    <div class="max-w-md">
-                                        <p class="truncate text-sm font-black text-slate-950">
-                                            {{ document.title }}
-                                        </p>
-                                        <p class="mt-1 truncate text-xs font-medium text-slate-500">
-                                            {{ document.original_filename }}
-                                        </p>
-                                    </div>
-                                </td>
+            <div class="grid gap-2 xl:items-end
+                {% if not request.user.is_student_role %}
+                    xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.55fr_1.35fr_140px]
+                {% else %}
+                    xl:grid-cols-[1.25fr_0.75fr_1fr_0.55fr_1.45fr_140px]
+                {% endif %}">
 
-                                <td class="px-5 py-4">
-                                    <p class="text-sm font-bold text-slate-800">
-                                        {{ document.owner.get_full_name|default:document.owner.username }}
-                                    </p>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">
-                                        {{ document.owner.email }}
-                                    </p>
-                                </td>
-
-                                <td class="px-5 py-4">
-                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
-                                        {{ document.get_kind_display }}
-                                    </span>
-                                </td>
-
-                                <td class="px-5 py-4">
-                                    {% if document.status == "COMPLETED" %}
-                                        <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                                            {{ document.get_status_display }}
-                                        </span>
-                                    {% elif document.status == "FAILED" %}
-                                        <span class="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">
-                                            {{ document.get_status_display }}
-                                        </span>
-                                    {% elif document.status == "PROCESSING" %}
-                                        <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
-                                            {{ document.get_status_display }}
-                                        </span>
-                                    {% elif document.status == "QUEUED" %}
-                                        <span class="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
-                                            {{ document.get_status_display }}
-                                        </span>
-                                    {% else %}
-                                        <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
-                                            {{ document.get_status_display }}
-                                        </span>
-                                    {% endif %}
-                                </td>
-
-                                <td class="px-5 py-4">
-                                    <p class="text-sm font-bold text-slate-700">
-                                        {{ document.created_at|date:"d/m/Y" }}
-                                    </p>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">
-                                        {{ document.created_at|date:"H:i" }}
-                                    </p>
-                                </td>
-
-                                <td class="px-5 py-4 text-right">
-                                    <button type="button"
-                                            class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black text-slate-700 transition hover:bg-slate-100">
-                                        Ver detalle
-                                    </button>
-                                </td>
-                            </tr>
-                        {% empty %}
-                            <tr>
-                                <td colspan="6" class="px-5 py-12 text-center">
-                                    <div class="mx-auto max-w-sm">
-                                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl font-black text-slate-400">
-                                            ↑
-                                        </div>
-                                        <h4 class="mt-4 text-sm font-black text-slate-900">
-                                            Aún no hay documentos enviados
-                                        </h4>
-                                        <p class="mt-2 text-sm font-medium leading-6 text-slate-500">
-                                            Usa el panel de carga para registrar el primer trabajo académico.
-                                        </p>
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Mobile cards -->
-            <div class="space-y-3 p-4 lg:hidden">
-                {% for document in recent_documents %}
-                    <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                                <p class="truncate text-sm font-black text-slate-950">
-                                    {{ document.title }}
-                                </p>
-                                <p class="mt-1 text-xs font-medium text-slate-500">
-                                    {{ document.owner.get_full_name|default:document.owner.username }}
-                                </p>
-                            </div>
-
-                            <span class="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-700">
-                                {{ document.get_status_display }}
-                            </span>
-                        </div>
-
-                        <div class="mt-4 grid grid-cols-2 gap-3 text-xs">
-                            <div class="rounded-lg bg-slate-50 p-3">
-                                <p class="font-black uppercase text-slate-400">Tipo</p>
-                                <p class="mt-1 font-bold text-slate-700">
-                                    {{ document.get_kind_display }}
-                                </p>
-                            </div>
-
-                            <div class="rounded-lg bg-slate-50 p-3">
-                                <p class="font-black uppercase text-slate-400">Fecha</p>
-                                <p class="mt-1 font-bold text-slate-700">
-                                    {{ document.created_at|date:"d/m/Y H:i" }}
-                                </p>
-                            </div>
-                        </div>
-                    </article>
-                {% empty %}
-                    <div class="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-                        <p class="text-sm font-black text-slate-900">
-                            Aún no hay documentos enviados.
-                        </p>
-                        <p class="mt-1 text-sm font-medium text-slate-500">
-                            Registra el primer trabajo académico.
-                        </p>
-                    </div>
-                {% endfor %}
-            </div>
-        </section>
-
-        <!-- Panel de carga -->
-        <aside id="nuevo-documento" class="rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div class="border-b border-slate-200 px-5 py-4">
-                <h3 class="text-base font-black text-slate-950">
-                    Subir nuevo trabajo
-                </h3>
-                <p class="mt-1 text-sm font-medium text-slate-500">
-                    PDF o Word .docx, máximo 25 MB.
-                </p>
-            </div>
-
-            <form method="post"
-                  enctype="multipart/form-data"
-                  class="space-y-5 p-5">
-                {% csrf_token %}
-
-                <div>
-                    <label for="title" class="mb-2 block text-sm font-black text-slate-800">
-                        Título del documento
+                <!-- Título -->
+                <div class="min-w-0">
+                    <label for="title" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                        Título
                     </label>
+
                     <input id="title"
                            name="title"
                            type="text"
                            required
-                           placeholder="Ej. Proyecto de investigación"
-                           class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
+                           placeholder="Ej. Proyecto"
+                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
                 </div>
 
-                <div>
-                    <label for="kind" class="mb-2 block text-sm font-black text-slate-800">
-                        Tipo de trabajo
+                <!-- Tipo -->
+                <div class="min-w-0">
+                    <label for="kind" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                        Tipo
                     </label>
+
                     <select id="kind"
                             name="kind"
                             required
-                            class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
-                        <option value="">Seleccionar tipo</option>
+                            class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
+                        <option value="" class="bg-slate-950 text-slate-300">
+                            Seleccionar
+                        </option>
+
                         {% for value, label in document_kinds %}
-                            <option value="{{ value }}">{{ label }}</option>
+                            <option value="{{ value }}" class="bg-slate-950 text-slate-300">
+                                {{ label }}
+                            </option>
                         {% endfor %}
                     </select>
                 </div>
 
+                <!-- Alumno propietario -->
                 {% if not request.user.is_student_role %}
-                    <div>
-                        <label for="owner_id" class="mb-2 block text-sm font-black text-slate-800">
-                            Alumno propietario
+                    <div class="min-w-0">
+                        <label for="owner_id" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                            Alumno
                         </label>
+
                         <select id="owner_id"
                                 name="owner_id"
                                 required
-                                class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
-                            <option value="">Seleccionar alumno</option>
+                                class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
+                            <option value="" class="bg-slate-950 text-slate-300">
+                                Seleccionar alumno
+                            </option>
+
                             {% for student in students %}
-                                <option value="{{ student.id }}">
+                                <option value="{{ student.id }}" class="bg-slate-950 text-slate-300">
                                     {{ student.get_full_name|default:student.username }} - {{ student.email }}
                                 </option>
                             {% endfor %}
@@ -330,45 +147,65 @@
                     </div>
                 {% endif %}
 
-                <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                    <div>
-                        <label for="course_name" class="mb-2 block text-sm font-black text-slate-800">
-                            Curso
-                        </label>
-                        <input id="course_name"
-                               name="course_name"
-                               type="text"
-                               placeholder="Ej. Investigación aplicada"
-                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
-                    </div>
+                <!-- Curso -->
+                <div class="min-w-0">
+                    <label for="course_name" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                        Curso
+                    </label>
 
-                    <div>
-                        <label for="academic_period" class="mb-2 block text-sm font-black text-slate-800">
-                            Periodo
-                        </label>
-                        <input id="academic_period"
-                               name="academic_period"
-                               type="text"
-                               placeholder="Ej. 2026-I"
-                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
-                    </div>
+                    <input id="course_name"
+                           name="course_name"
+                           type="text"
+                           placeholder="Ej. Investigación"
+                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
                 </div>
 
-                <div>
+                <!-- Periodo -->
+                <div class="min-w-0">
+                    <label for="academic_period" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                        Periodo
+                    </label>
+
+                    <input id="academic_period"
+                           name="academic_period"
+                           type="text"
+                           placeholder="2026-I"
+                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
+                </div>
+
+                <!-- Archivo -->
+                <div class="min-w-0">
+                    <label for="document_file" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
+                        Archivo
+                    </label>
+
                     <label for="document_file"
                            id="dropZone"
-                           class="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center transition hover:border-red-300 hover:bg-red-50/40">
-                        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl font-black text-red-700 shadow-sm">
-                            ↑
+                           class="group flex h-10 cursor-pointer items-center justify-between gap-2 rounded-xl border border-dashed border-white/15 bg-slate-950/55 px-2.5 transition hover:border-red-500/40 hover:bg-red-500/10">
+
+                        <div class="flex min-w-0 items-center gap-2">
+                            <div id="dropIcon"
+                                 class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 transition group-hover:scale-105">
+                                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+                                </svg>
+                            </div>
+
+                            <div class="min-w-0">
+                                <p id="dropTitle" class="truncate text-[11px] font-black text-white">
+                                    Seleccionar archivo
+                                </p>
+
+                                <p id="fileName" class="truncate text-[10px] font-semibold text-slate-500">
+                                    PDF/DOCX · 25 MB
+                                </p>
+                            </div>
                         </div>
 
-                        <p class="mt-4 text-sm font-black text-slate-900">
-                            Selecciona o arrastra el archivo
-                        </p>
-
-                        <p id="fileName" class="mt-1 text-xs font-semibold text-slate-500">
-                            Formatos aceptados: PDF, DOCX.
-                        </p>
+                        <span class="hidden rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[8px] font-black uppercase tracking-widest text-slate-300 sm:inline-flex">
+                            Buscar
+                        </span>
 
                         <input id="document_file"
                                name="document_file"
@@ -379,57 +216,699 @@
                     </label>
                 </div>
 
-                <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                    <p class="text-xs font-bold leading-5 text-amber-800">
-                        El documento será almacenado de forma privada y quedará listo
-                        para el proceso de análisis académico.
+                <!-- Botón subir -->
+                <div>
+                    <label class="mb-1 hidden text-[9px] font-black uppercase tracking-[0.20em] text-transparent xl:block">
+                        Acción
+                    </label>
+
+                    <button type="submit"
+                            id="submitButton"
+                            class="group relative flex h-10 w-full items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-gradient-to-r from-red-700 via-red-600 to-red-800 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-red-950/25 transition duration-300 hover:scale-[1.01] hover:shadow-red-700/20 active:scale-[0.99]">
+                        <span class="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-1000 group-hover:translate-x-[100%]"></span>
+
+                        <span id="submitText" class="relative flex items-center justify-center gap-1.5">
+                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+                            </svg>
+                            Enviar
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+                <div id="uploadAlert"
+                     class="hidden rounded-xl border px-3 py-2 text-[11px] font-bold leading-4"></div>
+
+                <div class="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2">
+                    <p class="truncate text-[11px] font-bold text-amber-200">
+                        El documento será almacenado de forma privada para análisis académico.
                     </p>
                 </div>
+            </div>
+        </form>
+    </section>
 
-                <button type="submit"
-                        class="w-full rounded-lg bg-red-700 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-sm transition hover:bg-red-800">
-                    Enviar trabajo
-                </button>
-            </form>
-        </aside>
-    </div>
+    <!-- PANEL INFERIOR COMPACTO: LISTA DE DOCUMENTOS -->
+    <section class="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
+
+        <!-- Cabecera lista compacta -->
+        <div class="border-b border-white/10 px-4 py-3 sm:px-5">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+
+                <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1">
+                            <span class="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
+                            <span class="text-[9px] font-black uppercase tracking-[0.22em] text-cyan-300">
+                                Bandeja documental
+                            </span>
+                        </span>
+
+                        <span class="text-[10px] font-semibold text-slate-500">
+                            Últimos trabajos registrados
+                        </span>
+                    </div>
+
+                    <h3 class="mt-2 text-lg font-black text-white">
+                        Documentos enviados
+                    </h3>
+                </div>
+
+                <div class="grid grid-cols-4 gap-1.5 xl:min-w-[420px]">
+                    <article class="rounded-xl border border-white/10 bg-slate-950/45 px-2.5 py-2">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                            Total
+                        </p>
+                        <p class="text-sm font-black text-white">
+                            {{ recent_documents|length }}
+                        </p>
+                    </article>
+
+                    <article class="rounded-xl border border-red-500/15 bg-red-500/10 px-2.5 py-2">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-red-300/70">
+                            Sim.
+                        </p>
+                        <p class="truncate text-[11px] font-black text-red-300">
+                            Pend.
+                        </p>
+                    </article>
+
+                    <article class="rounded-xl border border-cyan-400/15 bg-cyan-400/10 px-2.5 py-2">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-cyan-300/70">
+                            IA
+                        </p>
+                        <p class="truncate text-[11px] font-black text-cyan-300">
+                            Pend.
+                        </p>
+                    </article>
+
+                    <article class="rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-2.5 py-2">
+                        <p class="text-[8px] font-black uppercase tracking-widest text-emerald-300/70">
+                            Rep.
+                        </p>
+                        <p class="truncate text-[11px] font-black text-emerald-300">
+                            PDF
+                        </p>
+                    </article>
+                </div>
+            </div>
+        </div>
+
+        <!-- Desktop table sin scroll horizontal -->
+        <div class="hidden lg:block">
+            <table class="w-full table-fixed divide-y divide-white/10">
+                <thead class="bg-slate-950/45">
+                    <tr>
+                        <th class="w-[32%] px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Trabajo
+                        </th>
+
+                        <th class="w-[22%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Alumno
+                        </th>
+
+                        <th class="w-[12%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Tipo
+                        </th>
+
+                        <th class="w-[12%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Estado
+                        </th>
+
+                        <th class="w-[10%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Fecha
+                        </th>
+
+                        <th class="w-[12%] px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
+                            Acciones
+                        </th>
+                    </tr>
+                </thead>
+
+                <tbody class="divide-y divide-white/10">
+                    {% for document in recent_documents %}
+                        <tr class="transition hover:bg-white/[0.035]">
+                            <td class="px-4 py-2.5">
+                                <div class="flex min-w-0 items-center gap-2.5">
+                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
+                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                            <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                            <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        </svg>
+                                    </div>
+
+                                    <div class="min-w-0">
+                                        <p class="truncate text-xs font-black text-white">
+                                            {{ document.title }}
+                                        </p>
+
+                                        <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                                            {{ document.original_filename }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </td>
+
+                            <td class="px-3 py-2.5">
+                                <p class="truncate text-xs font-bold text-slate-200">
+                                    {{ document.owner.get_full_name|default:document.owner.username }}
+                                </p>
+
+                                <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                                    {{ document.owner.email }}
+                                </p>
+                            </td>
+
+                            <td class="px-3 py-2.5">
+                                <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black text-slate-300">
+                                    <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M4 7H20M4 12H20M4 17H13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+                                    </svg>
+                                    <span class="truncate">
+                                        {{ document.get_kind_display }}
+                                    </span>
+                                </span>
+                            </td>
+
+                            <td class="px-3 py-2.5">
+                                {% if document.status == "COMPLETED" %}
+                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-black text-emerald-300">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"></span>
+                                        <span class="truncate">{{ document.get_status_display }}</span>
+                                    </span>
+                                {% elif document.status == "FAILED" %}
+                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] font-black text-red-300">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"></span>
+                                        <span class="truncate">{{ document.get_status_display }}</span>
+                                    </span>
+                                {% elif document.status == "PROCESSING" %}
+                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-300">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400"></span>
+                                        <span class="truncate">{{ document.get_status_display }}</span>
+                                    </span>
+                                {% elif document.status == "QUEUED" %}
+                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[10px] font-black text-amber-300">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"></span>
+                                        <span class="truncate">{{ document.get_status_display }}</span>
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black text-slate-300">
+                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"></span>
+                                        <span class="truncate">{{ document.get_status_display }}</span>
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                            <td class="px-3 py-2.5">
+                                <p class="truncate text-xs font-bold text-slate-300">
+                                    {{ document.created_at|date:"d/m/Y" }}
+                                </p>
+
+                                <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                                    {{ document.created_at|date:"H:i" }}
+                                </p>
+                            </td>
+
+                            <td class="px-4 py-2.5">
+                                <div class="flex justify-end gap-1.5">
+                                    <a href="{% url 'reports:detail' document.id %}"
+                                        title="Ver reporte"
+                                        class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] text-slate-300 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 hover:text-cyan-300">
+                                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
+                                            </svg>
+                                        </a>
+
+                                    <form method="post"
+                                          action="{% url 'analysis:analyze' document.id %}"
+                                          class="inline-flex">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                title="Analizar similitud"
+                                                class="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300">
+                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+                                                <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
+                                                <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
+                                            </svg>
+                                        </button>
+                                    </form>
+
+                                    {% if certificate %}
+                                        <a href="{% url 'certificates:download' certificate.id %}"
+                                        title="Descargar certificado"
+                                        class="inline-flex h-6 w-6 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
+                                            <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 3V15M12 15L7 10M12 15L17 10"
+                                                    stroke="currentColor"
+                                                    stroke-width="2.3"
+                                                    stroke-linecap="round"
+                                                    stroke-linejoin="round"/>
+                                                <path d="M5 19H19"
+                                                    stroke="currentColor"
+                                                    stroke-width="2.3"
+                                                    stroke-linecap="round"/>
+                                            </svg>
+                                        </a>
+                                    {% else %}
+                                        <form method="post"
+                                            action="{% url 'certificates:generate' document.id %}"
+                                            class="inline-flex">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    title="Generar certificado"
+                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
+                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linejoin="round"/>
+                                                    <path d="M14 3V8H19"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linejoin="round"/>
+                                                    <path d="M9 14H15M9 17H13"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"/>
+                                                    <path d="M17.5 13.5L18.5 15.5L20.5 16.5L18.5 17.5L17.5 19.5L16.5 17.5L14.5 16.5L16.5 15.5L17.5 13.5Z"
+                                                        fill="currentColor"/>
+                                                </svg>
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="6" class="px-4 py-10 text-center">
+                                <div class="mx-auto max-w-sm">
+                                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-red-300">
+                                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+                                        </svg>
+                                    </div>
+
+                                    <h4 class="mt-3 text-xs font-black text-white">
+                                        Aún no hay documentos enviados
+                                    </h4>
+
+                                    <p class="mt-1 text-xs font-medium leading-5 text-slate-500">
+                                        Usa el panel superior para registrar el primer trabajo académico.
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Mobile cards compactas -->
+        <div class="space-y-2 p-3 lg:hidden">
+            {% for document in recent_documents %}
+                <article class="rounded-[18px] border border-white/10 bg-slate-950/35 p-3 shadow-2xl backdrop-blur-xl">
+                    <div class="flex items-start gap-2.5">
+                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="min-w-0">
+                                    <p class="truncate text-xs font-black text-white">
+                                        {{ document.title }}
+                                    </p>
+
+                                    <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                                        {{ document.owner.get_full_name|default:document.owner.username }}
+                                    </p>
+                                </div>
+
+                                {% if document.status == "COMPLETED" %}
+                                    <span class="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-black text-emerald-300">
+                                        {{ document.get_status_display }}
+                                    </span>
+                                {% elif document.status == "FAILED" %}
+                                    <span class="shrink-0 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[9px] font-black text-red-300">
+                                        {{ document.get_status_display }}
+                                    </span>
+                                {% elif document.status == "PROCESSING" %}
+                                    <span class="shrink-0 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black text-cyan-300">
+                                        {{ document.get_status_display }}
+                                    </span>
+                                {% elif document.status == "QUEUED" %}
+                                    <span class="shrink-0 rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[9px] font-black text-amber-300">
+                                        {{ document.get_status_display }}
+                                    </span>
+                                {% else %}
+                                    <span class="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[9px] font-black text-slate-300">
+                                        {{ document.get_status_display }}
+                                    </span>
+                                {% endif %}
+                            </div>
+
+                            <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                                <div class="rounded-xl border border-white/10 bg-white/[0.035] p-2">
+                                    <p class="font-black uppercase tracking-widest text-slate-500">
+                                        Tipo
+                                    </p>
+
+                                    <p class="mt-0.5 truncate font-bold text-slate-300">
+                                        {{ document.get_kind_display }}
+                                    </p>
+                                </div>
+
+                                <div class="rounded-xl border border-white/10 bg-white/[0.035] p-2">
+                                    <p class="font-black uppercase tracking-widest text-slate-500">
+                                        Fecha
+                                    </p>
+
+                                    <p class="mt-0.5 truncate font-bold text-slate-300">
+                                        {{ document.created_at|date:"d/m/Y H:i" }}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="mt-2 flex gap-1.5">
+                                <button type="button"
+                                        class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-2 py-2 text-[10px] font-black text-cyan-300">
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                        <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                    Ver
+                                </button>
+
+                                <form method="post"
+                                      action="{% url 'analysis:analyze' document.id %}"
+                                      class="inline-flex">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            title="Analizar similitud"
+                                            class="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
+                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+                                            <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
+                                            <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
+                                        </svg>
+                                    </button>
+                                </form>
+
+                                <button type="button"
+                                        class="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
+                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                        <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                        <path d="M8 16H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            {% empty %}
+                <div class="rounded-[18px] border border-dashed border-white/15 bg-white/[0.035] p-6 text-center backdrop-blur-xl">
+                    <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-red-300">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                            <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+
+                    <p class="mt-3 text-xs font-black text-white">
+                        Aún no hay documentos enviados.
+                    </p>
+
+                    <p class="mt-1 text-xs font-medium text-slate-500">
+                        Registra el primer trabajo académico.
+                    </p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
 </section>
 
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    const fileInput = document.getElementById("document_file");
-    const fileName = document.getElementById("fileName");
-    const dropZone = document.getElementById("dropZone");
+    document.addEventListener("DOMContentLoaded", function () {
+        const fileInput = document.getElementById("document_file");
+        const fileName = document.getElementById("fileName");
+        const dropZone = document.getElementById("dropZone");
+        const dropTitle = document.getElementById("dropTitle");
+        const dropIcon = document.getElementById("dropIcon");
+        const uploadAlert = document.getElementById("uploadAlert");
+        const form = document.getElementById("documentUploadForm");
+        const submitButton = document.getElementById("submitButton");
+        const submitText = document.getElementById("submitText");
 
-    if (fileInput && fileName && dropZone) {
-        fileInput.addEventListener("change", function () {
-            if (fileInput.files.length > 0) {
-                fileName.textContent = fileInput.files[0].name;
+        const MAX_FILE_SIZE = 25 * 1024 * 1024;
+
+        function showAlert(type, message) {
+            if (!uploadAlert) return;
+
+            uploadAlert.classList.remove(
+                "hidden",
+                "border-red-500/20",
+                "bg-red-500/10",
+                "text-red-300",
+                "border-emerald-400/20",
+                "bg-emerald-400/10",
+                "text-emerald-300",
+                "border-cyan-400/20",
+                "bg-cyan-400/10",
+                "text-cyan-300"
+            );
+
+            if (type === "error") {
+                uploadAlert.classList.add("border-red-500/20", "bg-red-500/10", "text-red-300");
+            } else if (type === "success") {
+                uploadAlert.classList.add("border-emerald-400/20", "bg-emerald-400/10", "text-emerald-300");
+            } else {
+                uploadAlert.classList.add("border-cyan-400/20", "bg-cyan-400/10", "text-cyan-300");
             }
-        });
 
-        ["dragenter", "dragover"].forEach(function (eventName) {
-            dropZone.addEventListener(eventName, function (event) {
-                event.preventDefault();
-                dropZone.classList.add("border-red-500", "bg-red-50");
+            uploadAlert.textContent = message;
+        }
+
+        function hideAlert() {
+            if (!uploadAlert) return;
+            uploadAlert.classList.add("hidden");
+            uploadAlert.textContent = "";
+        }
+
+        function resetDropZone() {
+            if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
+
+            dropZone.classList.remove(
+                "border-red-500/60",
+                "bg-red-500/10",
+                "border-emerald-400/40",
+                "bg-emerald-400/10"
+            );
+
+            dropZone.classList.add("border-white/15", "bg-slate-950/55");
+
+            dropIcon.classList.remove(
+                "border-emerald-400/20",
+                "bg-emerald-400/10",
+                "text-emerald-300"
+            );
+
+            dropIcon.classList.add(
+                "border-red-500/20",
+                "bg-red-500/10",
+                "text-red-300"
+            );
+
+            dropTitle.textContent = "Seleccionar archivo";
+            fileName.textContent = "PDF/DOCX · 25 MB";
+        }
+
+        function setDraggingState() {
+            if (!dropZone) return;
+
+            dropZone.classList.remove("border-white/15", "bg-slate-950/55");
+            dropZone.classList.add("border-red-500/60", "bg-red-500/10");
+        }
+
+        function setFileSelectedState(file) {
+            if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
+
+            dropZone.classList.remove(
+                "border-red-500/60",
+                "bg-red-500/10",
+                "border-white/15",
+                "bg-slate-950/55"
+            );
+
+            dropZone.classList.add("border-emerald-400/40", "bg-emerald-400/10");
+
+            dropIcon.classList.remove(
+                "border-red-500/20",
+                "bg-red-500/10",
+                "text-red-300"
+            );
+
+            dropIcon.classList.add(
+                "border-emerald-400/20",
+                "bg-emerald-400/10",
+                "text-emerald-300"
+            );
+
+            dropTitle.textContent = "Archivo listo";
+            fileName.textContent = file.name;
+        }
+
+        function isAllowedFile(file) {
+            const allowedExtensions = [".pdf", ".docx"];
+            const allowedTypes = [
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ];
+
+            const fileNameLower = file.name.toLowerCase();
+
+            const hasValidExtension = allowedExtensions.some(function (extension) {
+                return fileNameLower.endsWith(extension);
             });
-        });
 
-        ["dragleave", "drop"].forEach(function (eventName) {
-            dropZone.addEventListener(eventName, function (event) {
-                event.preventDefault();
-                dropZone.classList.remove("border-red-500", "bg-red-50");
-            });
-        });
+            const hasValidType = allowedTypes.includes(file.type);
 
-        dropZone.addEventListener("drop", function (event) {
-            if (event.dataTransfer.files.length > 0) {
-                fileInput.files = event.dataTransfer.files;
-                fileName.textContent = event.dataTransfer.files[0].name;
+            return hasValidExtension || hasValidType;
+        }
+
+        function validateAndPreviewFile(file) {
+            hideAlert();
+
+            if (!file) {
+                resetDropZone();
+                return false;
             }
-        });
-    }
+
+            if (!isAllowedFile(file)) {
+                if (fileInput) {
+                    fileInput.value = "";
+                }
+
+                resetDropZone();
+                showAlert("error", "Formato no permitido. Solo se aceptan archivos PDF o DOCX.");
+                return false;
+            }
+
+            if (file.size > MAX_FILE_SIZE) {
+                if (fileInput) {
+                    fileInput.value = "";
+                }
+
+                resetDropZone();
+                showAlert("error", "El archivo supera los 25 MB permitidos. Selecciona un archivo más ligero.");
+                return false;
+            }
+
+            setFileSelectedState(file);
+            showAlert("success", "Archivo seleccionado correctamente. Ya puedes enviarlo.");
+            return true;
+        }
+
+        if (fileInput) {
+            fileInput.addEventListener("change", function () {
+                if (fileInput.files && fileInput.files.length > 0) {
+                    validateAndPreviewFile(fileInput.files[0]);
+                } else {
+                    resetDropZone();
+                }
+            });
+        }
+
+        if (dropZone) {
+            ["dragenter", "dragover"].forEach(function (eventName) {
+                dropZone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDraggingState();
+                });
+            });
+
+            ["dragleave", "dragend"].forEach(function (eventName) {
+                dropZone.addEventListener(eventName, function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+
+                    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+                        setFileSelectedState(fileInput.files[0]);
+                    } else {
+                        resetDropZone();
+                    }
+                });
+            });
+
+            dropZone.addEventListener("drop", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+
+                if (!event.dataTransfer || !event.dataTransfer.files || event.dataTransfer.files.length === 0) {
+                    resetDropZone();
+                    return;
+                }
+
+                const droppedFile = event.dataTransfer.files[0];
+
+                if (!validateAndPreviewFile(droppedFile)) {
+                    return;
+                }
+
+                if (fileInput) {
+                    const dataTransfer = new DataTransfer();
+                    dataTransfer.items.add(droppedFile);
+                    fileInput.files = dataTransfer.files;
+                }
+            });
+        }
+
+        if (form) {
+            form.addEventListener("submit", function (event) {
+                hideAlert();
+
+                if (fileInput && (!fileInput.files || fileInput.files.length === 0)) {
+                    event.preventDefault();
+                    showAlert("error", "Selecciona un archivo PDF o DOCX antes de enviar.");
+                    return;
+                }
+
+                if (fileInput && fileInput.files.length > 0) {
+                    const fileIsValid = validateAndPreviewFile(fileInput.files[0]);
+
+                    if (!fileIsValid) {
+                        event.preventDefault();
+                        return;
+                    }
+                }
+
+                if (submitButton && submitText) {
+                    submitButton.disabled = true;
+                    submitButton.classList.add("cursor-not-allowed", "opacity-80");
+
+                    submitText.innerHTML = `
+                        <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+                        Enviando...
+                    `;
+                }
+            });
+        }
+    });
 </script>
 {% endblock %}

@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}Reporte | {{ document.title }}{% endblock %}
+
+{% block content %}
+
+<section class="space-y-4">
+
+    <!-- Cabecera -->
+    <section class="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] p-5 shadow-2xl backdrop-blur-2xl">
+        <div class="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-24 left-1/4 h-64 w-64 rounded-full bg-red-600/10 blur-3xl"></div>
+
+        <div class="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+            <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1">
+                        <span class="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
+                        <span class="text-[9px] font-black uppercase tracking-[0.22em] text-cyan-300">
+                            Reporte de originalidad
+                        </span>
+                    </span>
+
+                    <span class="text-[10px] font-semibold text-slate-500">
+                        Documento académico procesado
+                    </span>
+                </div>
+
+                <h2 class="mt-3 truncate text-2xl font-black tracking-tight text-white">
+                    {{ document.title }}
+                </h2>
+
+                <p class="mt-1 text-xs font-medium text-slate-400">
+                    {{ document.owner.get_full_name|default:document.owner.username }}
+                    · {{ document.get_kind_display }}
+                    · {{ document.created_at|date:"d/m/Y H:i" }}
+                </p>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+                <a href="{% url 'documents:upload' %}"
+                   class="inline-flex h-10 items-center justify-center rounded-xl border border-white/10 bg-white/[0.035] px-4 text-[10px] font-black uppercase tracking-[0.16em] text-slate-300 transition hover:bg-white/[0.07]">
+                    Volver
+                </a>
+
+                {% if report %}
+                    <button type="button"
+                            class="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-400/15">
+                        Exportar certificado
+                    </button>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    {% if not report %}
+        <!-- Sin reporte -->
+        <section class="rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-6 shadow-2xl backdrop-blur-2xl">
+            <h3 class="text-lg font-black text-amber-200">
+                Este documento aún no tiene reporte.
+            </h3>
+            <p class="mt-2 text-sm text-amber-100/80">
+                Primero ejecuta el análisis desde la bandeja documental.
+            </p>
+        </section>
+    {% else %}
+
+        <!-- Métricas -->
+        <section class="grid gap-3 md:grid-cols-4">
+            <article class="rounded-[20px] border border-red-500/20 bg-red-500/10 p-4 shadow-2xl backdrop-blur-2xl">
+                <p class="text-[9px] font-black uppercase tracking-[0.22em] text-red-300/80">
+                    Similitud
+                </p>
+                <p class="mt-2 text-3xl font-black text-red-300">
+                    {{ report.similarity_percent }}%
+                </p>
+            </article>
+
+            <article class="rounded-[20px] border border-cyan-400/20 bg-cyan-400/10 p-4 shadow-2xl backdrop-blur-2xl">
+                <p class="text-[9px] font-black uppercase tracking-[0.22em] text-cyan-300/80">
+                    IA estimada
+                </p>
+                <p class="mt-2 text-3xl font-black text-cyan-300">
+                    {{ report.ai_probability_percent }}%
+                </p>
+            </article>
+
+            <article class="rounded-[20px] border border-emerald-400/20 bg-emerald-400/10 p-4 shadow-2xl backdrop-blur-2xl">
+                <p class="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-300/80">
+                    Estado
+                </p>
+                <p class="mt-2 text-xl font-black text-emerald-300">
+                    {{ document.get_status_display }}
+                </p>
+            </article>
+
+            <article class="rounded-[20px] border border-white/10 bg-white/[0.035] p-4 shadow-2xl backdrop-blur-2xl">
+                <p class="text-[9px] font-black uppercase tracking-[0.22em] text-slate-500">
+                    Riesgo
+                </p>
+                <p class="mt-2 text-xl font-black text-white">
+                    {{ report.get_risk_level_display }}
+                </p>
+            </article>
+        </section>
+
+        <!-- Layout principal -->
+        <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+
+            <!-- Documento resaltado -->
+            <article class="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
+                <div class="border-b border-white/10 px-5 py-4">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <span class="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1">
+                                <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                <span class="text-[9px] font-black uppercase tracking-[0.22em] text-red-300">
+                                    Visor interactivo
+                                </span>
+                            </span>
+
+                            <h3 class="mt-2 text-lg font-black text-white">
+                                Texto del documento
+                            </h3>
+                        </div>
+
+                        <div class="hidden gap-2 sm:flex">
+                            <span class="rounded-full border border-red-500/20 bg-red-500/10 px-3 py-1 text-[10px] font-black text-red-300">
+                                Rojo: similitud
+                            </span>
+                            <span class="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[10px] font-black text-cyan-300">
+                                Azul: IA
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="max-h-[68vh] overflow-y-auto p-5">
+                    <div class="rounded-2xl border border-white/10 bg-slate-950/45 p-5 text-sm leading-8 text-slate-300">
+                        {% for segment in highlighted_segments %}
+                            {% if segment.finding_type == "SIMILARITY" %}
+                                <span class="rounded bg-red-500/25 px-1 py-0.5 text-red-100 ring-1 ring-red-400/20"
+                                      title="Similitud {{ segment.confidence_percent }}%">
+                                    {{ segment.text|linebreaksbr }}
+                                </span>
+                            {% elif segment.finding_type == "AI_GENERATED" %}
+                                <span class="rounded bg-cyan-400/20 px-1 py-0.5 text-cyan-100 ring-1 ring-cyan-400/20"
+                                      title="IA {{ segment.confidence_percent }}%">
+                                    {{ segment.text|linebreaksbr }}
+                                </span>
+                            {% else %}
+                                {{ segment.text|linebreaksbr }}
+                            {% endif %}
+                        {% empty %}
+                            <p class="text-slate-500">
+                                No hay texto extraído para mostrar.
+                            </p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </article>
+
+            <!-- Panel derecho -->
+            <aside class="space-y-4">
+
+                <!-- Fuentes -->
+                <section class="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
+                    <div class="border-b border-white/10 px-5 py-4">
+                        <h3 class="text-sm font-black uppercase tracking-[0.18em] text-white">
+                            Fuentes detectadas
+                        </h3>
+                    </div>
+
+                    <div class="max-h-[280px] space-y-2 overflow-y-auto p-4">
+                        {% for source in sources %}
+                            <article class="rounded-2xl border border-red-500/20 bg-red-500/10 p-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-xs font-black text-red-100">
+                                            {{ source.title }}
+                                        </p>
+                                        <p class="mt-1 truncate text-[10px] font-semibold text-red-200/60">
+                                            {{ source.domain }}
+                                        </p>
+                                    </div>
+
+                                    <span class="shrink-0 rounded-lg bg-red-500/20 px-2 py-1 text-[10px] font-black text-red-200">
+                                        {{ source.matched_percent }}%
+                                    </span>
+                                </div>
+                            </article>
+                        {% empty %}
+                            <p class="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-xs font-semibold text-slate-500">
+                                No se detectaron fuentes internas relevantes.
+                            </p>
+                        {% endfor %}
+                    </div>
+                </section>
+
+                <!-- Hallazgos IA -->
+                <section class="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
+                    <div class="border-b border-white/10 px-5 py-4">
+                        <h3 class="text-sm font-black uppercase tracking-[0.18em] text-white">
+                            Posibles patrones IA
+                        </h3>
+                    </div>
+
+                    <div class="max-h-[280px] space-y-2 overflow-y-auto p-4">
+                        {% for finding in ai_findings %}
+                            <article class="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3">
+                                <div class="flex items-center justify-between">
+                                    <p class="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-300">
+                                        Confianza
+                                    </p>
+                                    <span class="rounded-lg bg-cyan-400/20 px-2 py-1 text-[10px] font-black text-cyan-100">
+                                        {{ finding.confidence_percent }}%
+                                    </span>
+                                </div>
+
+                                <p class="mt-2 line-clamp-4 text-xs leading-5 text-cyan-100/80">
+                                    {{ finding.text_excerpt }}
+                                </p>
+                            </article>
+                        {% empty %}
+                            <p class="rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-xs font-semibold text-slate-500">
+                                No se detectaron patrones IA relevantes.
+                            </p>
+                        {% endfor %}
+                    </div>
+                </section>
+            </aside>
+        </section>
+    {% endif %}
+</section>
+
+{% endblock %}

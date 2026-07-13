@@ -10,6 +10,9 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.accounts.urls")),
     path("", include("apps.documents.urls", namespace="documents")),
+    path("", include("apps.analysis.urls")),
+    path("", include("apps.reports.urls")),
+    path("", include("apps.certificates.urls")),
 ]
 
 if settings.DEBUG:

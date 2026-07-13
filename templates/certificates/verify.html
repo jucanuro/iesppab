@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950">
+<head>
+    <meta charset="UTF-8">
+    <title>Verificación de Certificado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-full bg-slate-950 text-white">
+    <main class="flex min-h-screen items-center justify-center px-4">
+        <section class="w-full max-w-xl rounded-[28px] border border-white/10 bg-white/[0.04] p-8 shadow-2xl backdrop-blur-2xl">
+            {% if certificate %}
+                <div class="mb-5 inline-flex rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-300">
+                    Certificado válido
+                </div>
+
+                <h1 class="text-2xl font-black">
+                    {{ certificate.code }}
+                </h1>
+
+                <p class="mt-2 text-sm text-slate-400">
+                    El certificado pertenece a un reporte emitido por la plataforma institucional.
+                </p>
+
+                <div class="mt-6 space-y-3 rounded-2xl border border-white/10 bg-slate-950/50 p-5 text-sm">
+                    <p>
+                        <span class="font-bold text-slate-400">Documento:</span>
+                        {{ certificate.report.document.title }}
+                    </p>
+
+                    <p>
+                        <span class="font-bold text-slate-400">Alumno:</span>
+                        {{ certificate.report.document.owner.get_full_name|default:certificate.report.document.owner.username }}
+                    </p>
+
+                    <p>
+                        <span class="font-bold text-slate-400">Institución:</span>
+                        {{ certificate.report.document.institution.name }}
+                    </p>
+
+                    <p>
+                        <span class="font-bold text-slate-400">Similitud:</span>
+                        {{ certificate.report.similarity_percent }}%
+                    </p>
+
+                    <p>
+                        <span class="font-bold text-slate-400">IA estimada:</span>
+                        {{ certificate.report.ai_probability_percent }}%
+                    </p>
+                </div>
+            {% else %}
+                <div class="mb-5 inline-flex rounded-full border border-red-500/20 bg-red-500/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-red-300">
+                    No válido
+                </div>
+
+                <h1 class="text-2xl font-black">
+                    Certificado no encontrado
+                </h1>
+
+                <p class="mt-2 text-sm text-slate-400">
+                    No existe un certificado activo asociado al hash consultado.
+                </p>
+
+                <p class="mt-5 break-all rounded-2xl border border-white/10 bg-slate-950/50 p-4 text-xs text-slate-500">
+                    {{ verification_hash }}
+                </p>
+            {% endif %}
+        </section>
+    </main>
+</body>
+</html>

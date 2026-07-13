@@ -133,12 +133,13 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             "institution",
             "owner",
             "uploaded_by",
+            "report",
         )
 
         if user.is_student_role:
             documents = documents.filter(owner=user)
         elif not user.is_superuser:
-            documents = documents.filter(institution_id=user.institution_id)
+            documents = documents.filter(institution=user.institution)
 
         return documents.order_by("-created_at")[:10]
 

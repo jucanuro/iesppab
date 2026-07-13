@@ -1,156 +1,254 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-slate-100">
+<html lang="es" class="h-full bg-slate-950 selection:bg-red-500/30 selection:text-red-200">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Acceso | IESPP Alfonso Barrantes Lingán</title>
+    <title>Portal de Integridad Académica | IESPP Alfonso Barrantes Lingán</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    </style>
 </head>
 
-<body class="min-h-full bg-slate-100 text-slate-900">
-    <main class="grid min-h-screen lg:grid-cols-[480px_minmax(0,1fr)]">
+<body class="min-h-full bg-slate-950 text-slate-100 antialiased overflow-x-hidden">
+    <main class="relative min-h-screen flex flex-col justify-center">
 
-        <!-- Panel izquierdo -->
-        <section class="flex min-h-screen flex-col justify-between bg-white px-8 py-8 shadow-2xl shadow-slate-300/60 lg:px-12">
-            <div>
-                <div class="flex items-center gap-3">
-                    <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-red-700 text-lg font-black text-white">
-                        ABL
-                    </div>
-                    <div>
-                        <p class="text-sm font-bold uppercase tracking-wide text-slate-900">
-                            IESPP
-                        </p>
-                        <p class="text-xs font-medium text-slate-500">
-                            Alfonso Barrantes Lingán · San Miguel
-                        </p>
-                    </div>
-                </div>
+        <div class="pointer-events-none absolute inset-0 z-0">
+            <div class="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,_rgba(185,28,28,0.18),_transparent_45%),radial-gradient(circle_at_80%_20%,_rgba(6,182,212,0.15),_transparent_40%),radial-gradient(circle_at_50%_80%,_rgba(15,23,42,0.95),_transparent_50%)]"></div>
+            <div class="absolute inset-0 bg-[linear-gradient(to_right,_rgba(255,255,255,0.015)_1px,_transparent_1px),linear-gradient(to_bottom,_rgba(255,255,255,0.015)_1px,_transparent_1px)] bg-[size:40px_40px]"></div>
+            <div class="absolute left-1/4 top-1/4 h-96 w-96 rounded-full bg-red-600/10 blur-[130px] animate-pulse" style="animation-duration: 8s;"></div>
+            <div class="absolute right-1/4 bottom-1/4 h-[450px] w-[450px] rounded-full bg-cyan-500/5 blur-[150px] animate-pulse" style="animation-duration: 12s;"></div>
+        </div>
 
-                <div class="mt-14">
-                    <p class="text-sm font-semibold text-red-700">
-                        Plataforma privada de integridad académica
-                    </p>
+        <section class="relative z-10 grid min-h-screen lg:grid-cols-[540px_minmax(0,1fr)]">
 
-                    <h1 class="mt-4 text-3xl font-black tracking-tight text-slate-950">
-                        Inicia sesión
-                    </h1>
+            <aside class="relative flex flex-col justify-between border-r border-white/5 bg-slate-950/40 px-8 py-8 backdrop-blur-3xl sm:px-12 lg:px-16">
+                
+                <div class="absolute -right-20 top-1/3 -z-10 h-72 w-72 rounded-full bg-red-700/5 blur-3xl pointer-events-none"></div>
 
-                    <p class="mt-4 text-sm leading-6 text-slate-600">
-                        Accede al sistema institucional para cargar documentos,
-                        revisar reportes de similitud, analizar posible uso de IA
-                        y generar certificados oficiales.
-                    </p>
-                </div>
-
-                {% if messages %}
-                    <div class="mt-8 space-y-3">
-                        {% for message in messages %}
-                            <div class="rounded-xl border px-4 py-3 text-sm font-semibold
-                                {% if message.tags == 'success' %}
-                                    border-emerald-200 bg-emerald-50 text-emerald-700
-                                {% elif message.tags == 'error' %}
-                                    border-red-200 bg-red-50 text-red-700
-                                {% else %}
-                                    border-sky-200 bg-sky-50 text-sky-700
-                                {% endif %}
-                            ">
-                                {{ message }}
+                <div>
+                    <div class="flex items-center gap-4">
+                        <div class="relative group">
+                            <div class="absolute -inset-1.5 rounded-2xl bg-gradient-to-r from-red-600 to-cyan-500 opacity-40 blur-md transition duration-500 group-hover:opacity-70"></div>
+                            <div class="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900 via-red-950 to-slate-950 text-sm font-black tracking-[0.2em] text-white border border-white/10 shadow-2xl">
+                                ABL
                             </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                        </div>
 
-                <form method="post" class="mt-8 space-y-5">
-                    {% csrf_token %}
-
-                    <input type="hidden" name="next" value="{{ next }}">
-
-                    <div>
-                        <label for="username_or_email" class="mb-2 block text-sm font-bold text-slate-800">
-                            Usuario o correo institucional
-                        </label>
-                        <input id="username_or_email"
-                               name="username_or_email"
-                               type="text"
-                               autocomplete="username"
-                               required
-                               placeholder="usuario@institucion.edu.pe"
-                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
+                        <div>
+                            <p class="text-xs font-extrabold uppercase tracking-[0.3em] bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+                                IESPP
+                            </p>
+                            <p class="mt-0.5 text-[11px] font-medium tracking-wide text-slate-400">
+                                Alfonso Barrantes Lingán
+                            </p>
+                        </div>
                     </div>
 
-                    <div>
-                        <label for="password" class="mb-2 block text-sm font-bold text-slate-800">
-                            Contraseña
-                        </label>
-                        <input id="password"
-                               name="password"
-                               type="password"
-                               autocomplete="current-password"
-                               required
-                               placeholder="Ingresa tu contraseña"
-                               class="w-full rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-red-700 focus:ring-4 focus:ring-red-700/10">
+                    <div class="mt-14">
+                        <div class="inline-flex items-center gap-2 rounded-full border border-red-500/10 bg-red-500/5 px-3.5 py-1.5 backdrop-blur-md">
+                            <span class="h-1.5 w-1.5 rounded-full bg-red-500 animate-ping"></span>
+                            <span class="text-[10px] font-bold uppercase tracking-[0.25em] text-red-400">
+                                Autenticación Multicapa
+                            </span>
+                        </div>
+
+                        <h1 class="mt-5 text-3xl font-black tracking-tight text-white sm:text-4xl">
+                            Iniciar Sesión
+                        </h1>
+
+                        <p class="mt-2 text-sm leading-relaxed text-slate-400 font-light">
+                            Accede al ecosistema de IA y control de similitud documental.
+                        </p>
                     </div>
 
-                    <button type="submit"
-                            class="w-full rounded-lg bg-red-700 px-5 py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-red-700/20 transition hover:bg-red-800">
-                        Iniciar sesión
-                    </button>
-                </form>
-            </div>
+                    {% if messages %}
+                        <div class="mt-6 space-y-3">
+                            {% for message in messages %}
+                                <div class="rounded-2xl border px-4 py-3.5 text-xs font-semibold backdrop-blur-xl
+                                    {% if message.tags == 'success' %}
+                                        border-emerald-500/20 bg-emerald-500/5 text-emerald-400
+                                    {% elif message.tags == 'error' %}
+                                        border-red-500/20 bg-red-500/5 text-red-400
+                                    {% else %}
+                                        border-cyan-500/20 bg-cyan-500/5 text-cyan-400
+                                    {% endif %}
+                                ">
+                                    {{ message }}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
 
-            <div class="mt-10 border-t border-slate-200 pt-6">
-                <p class="text-xs leading-5 text-slate-500">
-                    Sistema privado de uso institucional. El acceso está limitado
-                    a administradores, docentes revisores y estudiantes autorizados.
-                </p>
-            </div>
-        </section>
+                    <form method="post" class="mt-8 space-y-5">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ next }}">
 
-        <!-- Panel derecho -->
-        <section class="hidden min-h-screen bg-slate-950 lg:block">
-            <div class="relative flex h-full flex-col justify-between overflow-hidden px-14 py-12">
-                <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(185,28,28,0.35),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(59,130,246,0.20),_transparent_32%)]"></div>
+                        <div>
+                            <label for="username_or_email" class="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-400">
+                                Identificador de Usuario
+                            </label>
+                            <div class="relative">
+                                <input id="username_or_email"
+                                       name="username_or_email"
+                                       type="text"
+                                       autocomplete="username"
+                                       required
+                                       placeholder="usuario@institucion.edu.pe"
+                                       class="w-full rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-4 text-sm font-medium text-white outline-none transition placeholder:text-slate-600 focus:border-red-600/50 focus:bg-slate-900/60 focus:ring-4 focus:ring-red-600/10">
+                            </div>
+                        </div>
 
-                <div class="relative">
-                    <div class="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.25em] text-white/80">
-                        Originalidad · Similitud · IA
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label for="password" class="block text-xs font-bold uppercase tracking-widest text-slate-400">
+                                    Clave de Acceso
+                                </label>
+                            </div>
+                            <input id="password"
+                                   name="password"
+                                   type="password"
+                                   autocomplete="current-password"
+                                   required
+                                   placeholder="••••••••••••"
+                                   class="w-full rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-4 text-sm font-medium text-white outline-none transition placeholder:text-slate-700 focus:border-red-600/50 focus:bg-slate-900/60 focus:ring-4 focus:ring-red-600/10">
+                        </div>
+
+                        <div class="flex items-center justify-between gap-3 pt-1">
+                            <label class="flex items-center gap-2.5 text-xs font-medium text-slate-400 cursor-pointer select-none">
+                                <input type="checkbox"
+                                       class="h-4 w-4 rounded border-white/10 bg-white/5 text-red-600 focus:ring-red-600/30 focus:ring-offset-0 accent-red-600">
+                                Recordar sesión
+                            </label>
+
+                            <a href="#" class="text-xs font-semibold text-red-400 hover:text-red-300 transition-colors">
+                                ¿Olvidaste tus datos?
+                            </a>
+                        </div>
+
+                        <button type="submit"
+                                class="group relative mt-2 w-full overflow-hidden rounded-2xl bg-gradient-to-r from-red-700 via-red-600 to-red-800 px-5 py-4 text-xs font-bold uppercase tracking-[0.25em] text-white shadow-xl shadow-red-900/30 transition-all duration-300 hover:shadow-red-600/20 hover:scale-[1.01] active:scale-[0.99]">
+                            <span class="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-1000 group-hover:translate-x-[100%]"></span>
+                            <span class="relative flex items-center justify-center gap-2">
+                                Ingresar al Sistema
+                            </span>
+                        </button>
+                    </form>
+
+                    <div class="mt-8 grid grid-cols-3 gap-2.5">
+                        <div class="rounded-2xl border border-white/[0.03] bg-white/[0.01] p-3 text-center backdrop-blur-md">
+                            <p class="text-sm font-black text-red-500 tracking-wider">NLP</p>
+                            <p class="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">Semántica</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/[0.03] bg-white/[0.01] p-3 text-center backdrop-blur-md">
+                            <p class="text-sm font-black text-cyan-400 tracking-wider">LLM</p>
+                            <p class="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">Filtro IA</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/[0.03] bg-white/[0.01] p-3 text-center backdrop-blur-md">
+                            <p class="text-sm font-black text-amber-500 tracking-wider">VISION</p>
+                            <p class="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">Imágenes</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-10 border-t border-white/5 pt-5">
+                    <p class="text-[11px] font-medium leading-5 text-slate-500">
+                        &copy; 2026 Ecosistema Integrado IESPP. Todos los derechos reservados.
+                    </p>
+                </div>
+            </aside>
+
+            <section class="hidden min-h-screen lg:flex flex-col justify-between overflow-hidden px-16 py-12 relative">
+                
+                <div class="relative z-10 flex items-center justify-between">
+                    <div class="inline-flex items-center gap-2 rounded-full border border-white/5 bg-slate-900/40 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.2em] text-white/90 backdrop-blur-xl">
+                        <span class="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]"></span>
+                        Neural Engine Operativo
                     </div>
 
-                    <h2 class="mt-10 max-w-2xl text-5xl font-black tracking-tight text-white">
-                        Control académico con reportes claros, rápidos y verificables.
+                    <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        Nodo Central: Región Norte
+                    </div>
+                </div>
+
+                <div class="relative z-10 my-auto max-w-4xl w-full">
+                    <p class="text-xs font-black uppercase tracking-[0.4em] bg-gradient-to-r from-red-400 to-cyan-400 bg-clip-text text-transparent">
+                        Mapeador Neuronal Avanzado
+                    </p>
+
+                    <h2 class="mt-4 max-w-2xl text-4xl font-extrabold tracking-tight text-white xl:text-5xl xl:leading-[1.15]">
+                        Análisis predictivo de patrones de originalidad.
                     </h2>
 
-                    <p class="mt-6 max-w-xl text-base leading-7 text-slate-300">
-                        Evalúa documentos académicos en español, identifica
-                        coincidencias con fuentes internas o web y estima patrones
-                        asociados a generación por inteligencia artificial.
-                    </p>
+                    <div class="mt-10 w-full rounded-[32px] border border-white/10 bg-slate-900/20 p-4 shadow-2xl backdrop-blur-xl">
+                        <div class="rounded-[24px] border border-white/5 bg-slate-950/80 p-6 relative overflow-hidden">
+                            
+                            <div class="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-500/10 blur-3xl"></div>
+
+                            <div class="mb-6 flex items-center justify-between">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="h-3 w-3 rounded-full bg-slate-800 border border-white/10"></span>
+                                    <span class="h-3 w-3 rounded-full bg-slate-800 border border-white/10"></span>
+                                    <span class="h-3 w-3 rounded-full bg-slate-800 border border-white/10"></span>
+                                    <span class="ml-2 text-[11px] font-mono text-slate-500">core_analyzer.py</span>
+                                </div>
+
+                                <div class="inline-flex items-center gap-2 rounded-xl bg-red-500/10 px-3 py-1.5 border border-red-500/20">
+                                    <span class="text-xs font-mono font-bold text-red-400">AI Cluster #04</span>
+                                </div>
+                            </div>
+
+                            <div class="grid gap-6 xl:grid-cols-[1fr_260px]">
+                                <div class="rounded-2xl border border-white/[0.04] bg-white/[0.01] p-5 flex flex-col justify-between min-h-[180px]">
+                                    <svg class="w-full h-24 text-slate-800" viewBox="0 0 300 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M10 40 L60 15 L140 65 L210 25 L290 55" stroke="rgba(185,28,28,0.4)" stroke-width="2" stroke-dasharray="4 4"/>
+                                        <path d="M10 40 L70 60 L130 20 L210 25 L290 30" stroke="rgba(6,182,212,0.4)" stroke-width="2"/>
+                                        <circle cx="10" cy="40" r="4" fill="#ef4444"/>
+                                        <circle cx="60" cy="15" r="3" fill="#64748b"/>
+                                        <circle cx="70" cy="60" r="4" fill="#22d3ee"/>
+                                        <circle cx="130" cy="20" r="3" fill="#64748b"/>
+                                        <circle cx="140" cy="65" r="4" fill="#ef4444"/>
+                                        <circle cx="210" cy="25" r="5" fill="#22d3ee"/>
+                                        <circle cx="290" cy="30" r="4" fill="#22d3ee"/>
+                                    </svg>
+                                    
+                                    <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 border-t border-white/5 pt-3">
+                                        <span>Procesando embeddings...</span>
+                                        <span class="text-cyan-400 animate-pulse">98.4 TFLOPS</span>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-3.5">
+                                    <div class="rounded-xl border border-white/5 bg-slate-900/60 p-3.5">
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Similitud Cruzada</p>
+                                            <span class="h-2 w-2 rounded-full bg-red-500"></span>
+                                        </div>
+                                        <p class="mt-1 text-2xl font-black text-white tracking-tight">12.4%</p>
+                                    </div>
+
+                                    <div class="rounded-xl border border-white/5 bg-slate-900/60 p-3.5">
+                                        <div class="flex items-center justify-between">
+                                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Inferencia de IA</p>
+                                            <span class="h-2 w-2 rounded-full bg-cyan-400"></span>
+                                        </div>
+                                        <p class="mt-1 text-2xl font-black text-white tracking-tight">0.02%</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
                 </div>
 
-                <div class="relative grid gap-4 xl:grid-cols-3">
-                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                        <p class="text-3xl font-black text-red-400">Rojo</p>
-                        <p class="mt-2 text-sm font-medium text-slate-300">
-                            Coincidencias y similitud textual.
-                        </p>
-                    </div>
-
-                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                        <p class="text-3xl font-black text-blue-400">Azul</p>
-                        <p class="mt-2 text-sm font-medium text-slate-300">
-                            Probabilidad de texto generado por IA.
-                        </p>
-                    </div>
-
-                    <div class="rounded-2xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                        <p class="text-3xl font-black text-emerald-400">PDF</p>
-                        <p class="mt-2 text-sm font-medium text-slate-300">
-                            Certificados oficiales descargables.
-                        </p>
-                    </div>
+                <div class="relative z-10 flex items-center justify-between text-xs text-slate-500 font-medium">
+                    <p>Módulo de Seguridad Criptográfica Homomórfica.</p>
+                    <p class="font-mono text-[10px]">v2.8.4-build</p>
                 </div>
-            </div>
+            </section>
         </section>
     </main>
 </body>

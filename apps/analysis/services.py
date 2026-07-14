@@ -11,16 +11,18 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.analysis.engines.ai_detector import SpanishAIDetector
 from apps.analysis.engines.similarity import (
-    CandidateDocumentText,
+    CandidateKnowledgeChunk,
     InternalSimilarityEngine,
 )
+from apps.analysis.indexers import DocumentKnowledgeIndexer
 from apps.analysis.models import (
     AnalysisJob,
     AnalysisJobStatus,
     AnalysisType,
+    DocumentKnowledgeChunk,
 )
 from apps.documents.extractors import DocumentTextExtractor
-from apps.documents.models import Document, DocumentStatus, DocumentText
+from apps.documents.models import Document, DocumentStatus
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
@@ -48,8 +50,9 @@ class DocumentAnalysisService:
     Flujo:
     - Valida permisos.
     - Extrae texto.
-    - Calcula similitud interna.
-    - Estima IA.
+    - Aprende el documento creando fragmentos internos.
+    - Compara contra fragmentos aprendidos de otros documentos.
+    - Estima patrones IA.
     - Genera reporte, fuentes y hallazgos.
     """
 
@@ -58,6 +61,7 @@ class DocumentAnalysisService:
         self.extractor = DocumentTextExtractor()
         self.similarity_engine = InternalSimilarityEngine()
         self.ai_detector = SpanishAIDetector()
+        self.knowledge_indexer = DocumentKnowledgeIndexer()
 
     def execute(self, document_id: UUID) -> AnalysisReport:
         document = self._get_allowed_document(document_id=document_id)
@@ -70,7 +74,13 @@ class DocumentAnalysisService:
                 document=document,
             )
 
-            candidates = self._get_internal_candidates(document=document)
+            self.knowledge_indexer.index(
+                document_text=document_text,
+            )
+
+            candidates = self._get_internal_candidates(
+                document=document,
+            )
 
             similarity_result = self.similarity_engine.analyze(
                 content=document_text.content,
@@ -99,7 +109,10 @@ class DocumentAnalysisService:
                     findings=ai_result.findings,
                 )
 
-                self._mark_as_success(document=document, job=job)
+                self._mark_as_success(
+                    document=document,
+                    job=job,
+                )
 
             logger.info(
                 "Análisis completado. document_id=%s report_id=%s",
@@ -115,11 +128,13 @@ class DocumentAnalysisService:
                 document.id,
                 job.id,
             )
+
             self._mark_as_failed(
                 document=document,
                 job=job,
                 message=str(exc),
             )
+
             raise DocumentAnalysisError(
                 "No se pudo completar el análisis del documento."
             ) from exc
@@ -141,7 +156,7 @@ class DocumentAnalysisService:
                 )
 
             queryset = queryset.filter(
-                institution=self.requested_by.institution
+                institution=self.requested_by.institution,
             )
 
         document = queryset.first()
@@ -181,7 +196,13 @@ class DocumentAnalysisService:
     ) -> None:
         document.status = DocumentStatus.PROCESSING
         document.error_message = ""
-        document.save(update_fields=["status", "error_message", "updated_at"])
+        document.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "updated_at",
+            ]
+        )
 
         job.status = AnalysisJobStatus.RUNNING
         job.started_at = timezone.now()
@@ -202,7 +223,13 @@ class DocumentAnalysisService:
     ) -> None:
         document.status = DocumentStatus.COMPLETED
         document.error_message = ""
-        document.save(update_fields=["status", "error_message", "updated_at"])
+        document.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "updated_at",
+            ]
+        )
 
         job.status = AnalysisJobStatus.SUCCESS
         job.finished_at = timezone.now()
@@ -226,7 +253,13 @@ class DocumentAnalysisService:
     ) -> None:
         document.status = DocumentStatus.FAILED
         document.error_message = message[:1000]
-        document.save(update_fields=["status", "error_message", "updated_at"])
+        document.save(
+            update_fields=[
+                "status",
+                "error_message",
+                "updated_at",
+            ]
+        )
 
         job.status = AnalysisJobStatus.FAILED
         job.finished_at = timezone.now()
@@ -245,31 +278,35 @@ class DocumentAnalysisService:
     def _get_internal_candidates(
         self,
         document: Document,
-    ) -> list[CandidateDocumentText]:
-        texts = (
-            DocumentText.objects.select_related(
+    ) -> list[CandidateKnowledgeChunk]:
+        chunks = (
+            DocumentKnowledgeChunk.objects.select_related(
                 "document",
                 "document__owner",
             )
-            .filter(document__institution=document.institution)
+            .filter(
+                document__institution=document.institution,
+                is_active=True,
+            )
             .exclude(document=document)
-            .order_by("-created_at")[:300]
+            .order_by("-created_at")[:5000]
         )
 
-        candidates: list[CandidateDocumentText] = []
+        candidates: list[CandidateKnowledgeChunk] = []
 
-        for text in texts:
+        for chunk in chunks:
             owner_name = (
-                text.document.owner.get_full_name()
-                or text.document.owner.username
+                chunk.document.owner.get_full_name()
+                or chunk.document.owner.username
             )
 
             candidates.append(
-                CandidateDocumentText(
-                    document_id=text.document.id,
-                    title=text.document.title,
+                CandidateKnowledgeChunk(
+                    document_id=chunk.document.id,
+                    title=chunk.document.title,
                     owner_name=owner_name,
-                    content=text.content,
+                    text_excerpt=chunk.text_excerpt,
+                    normalized_text=chunk.normalized_text,
                 )
             )
 
@@ -297,11 +334,11 @@ class DocumentAnalysisService:
                 "ai_probability_percent": ai_probability_percent,
                 "risk_level": risk_level,
                 "summary": {
-                    "engine": "internal-mvp",
-                    "similarity_algorithm": "word-shingling-jaccard",
+                    "engine": "internal-learning-mvp",
+                    "similarity_algorithm": "knowledge-chunks-shingling",
                     "ai_algorithm": "spanish-heuristic-v1",
                 },
-                "engine_version": "vql-mvp-1.0.0",
+                "engine_version": "vql-learning-mvp-1.0.0",
                 "generated_at": timezone.now(),
                 "is_final": True,
             },
@@ -348,7 +385,7 @@ class DocumentAnalysisService:
                 text_excerpt=match.text_excerpt,
                 confidence_percent=match.matched_percent,
                 metadata={
-                    "algorithm": "word-shingling-jaccard",
+                    "algorithm": "knowledge-chunks-shingling",
                     "source_document_id": str(match.source_document_id),
                 },
             )
@@ -383,13 +420,13 @@ class DocumentAnalysisService:
         similarity_percent: Decimal,
         ai_probability_percent: Decimal,
     ) -> str:
-        if similarity_percent >= 50 or ai_probability_percent >= 80:
+        if similarity_percent >= Decimal("50.00") or ai_probability_percent >= Decimal("80.00"):
             return ReportRiskLevel.CRITICAL
 
-        if similarity_percent >= 30 or ai_probability_percent >= 60:
+        if similarity_percent >= Decimal("30.00") or ai_probability_percent >= Decimal("60.00"):
             return ReportRiskLevel.HIGH
 
-        if similarity_percent >= 15 or ai_probability_percent >= 35:
+        if similarity_percent >= Decimal("15.00") or ai_probability_percent >= Decimal("35.00"):
             return ReportRiskLevel.MEDIUM
 
         return ReportRiskLevel.LOW

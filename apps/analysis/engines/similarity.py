@@ -8,11 +8,12 @@ from uuid import UUID
 
 
 @dataclass(frozen=True)
-class CandidateDocumentText:
+class CandidateKnowledgeChunk:
     document_id: UUID
     title: str
     owner_name: str
-    content: str
+    text_excerpt: str
+    normalized_text: str
 
 
 @dataclass(frozen=True)
@@ -35,24 +36,24 @@ class SimilarityAnalysisResult:
 
 class InternalSimilarityEngine:
     """
-    Motor MVP de similitud interna.
+    Motor de similitud interna basado en fragmentos aprendidos.
 
-    Técnica:
-    - Divide el documento en segmentos.
-    - Normaliza texto.
-    - Crea shingles de palabras.
-    - Compara con documentos internos mediante Jaccard.
+    Ya no compara documento completo contra documento completo.
+    Ahora compara fragmentos del documento actual contra el banco interno
+    de fragmentos aprendidos.
     """
 
-    MIN_SEGMENT_LENGTH = 160
-    SHINGLE_SIZE = 8
-    MATCH_THRESHOLD = Decimal("0.34")
-    MAX_MATCHES = 15
+    CHUNK_WORD_SIZE = 85
+    CHUNK_STEP = 45
+    MIN_WORDS = 30
+    SHINGLE_SIZE = 4
+    MATCH_THRESHOLD = Decimal("0.16")
+    MAX_MATCHES = 35
 
     def analyze(
         self,
         content: str,
-        candidates: list[CandidateDocumentText],
+        candidates: list[CandidateKnowledgeChunk],
     ) -> SimilarityAnalysisResult:
         if not content.strip() or not candidates:
             return SimilarityAnalysisResult(
@@ -60,17 +61,16 @@ class InternalSimilarityEngine:
                 matches=[],
             )
 
+        current_chunks = self._build_current_chunks(content=content)
         matches: list[SimilarityMatch] = []
-        matched_ranges: list[tuple[int, int]] = []
 
-        segments = self._split_segments(content=content)
-
-        for segment, start_offset, end_offset in segments:
+        for chunk_text, normalized_chunk, start_offset, end_offset in current_chunks:
             best_match: SimilarityMatch | None = None
 
             for candidate in candidates:
-                candidate_match = self._compare_segment_with_candidate(
-                    segment=segment,
+                candidate_match = self._compare_chunk(
+                    chunk_text=chunk_text,
+                    normalized_chunk=normalized_chunk,
                     start_offset=start_offset,
                     end_offset=end_offset,
                     candidate=candidate,
@@ -88,7 +88,6 @@ class InternalSimilarityEngine:
 
             if best_match is not None:
                 matches.append(best_match)
-                matched_ranges.append((start_offset, end_offset))
 
         matches = sorted(
             matches,
@@ -98,7 +97,10 @@ class InternalSimilarityEngine:
 
         similarity_percent = self._calculate_total_similarity(
             content_length=len(content),
-            matched_ranges=matched_ranges,
+            matched_ranges=[
+                (match.start_offset, match.end_offset)
+                for match in matches
+            ],
         )
 
         return SimilarityAnalysisResult(
@@ -106,29 +108,42 @@ class InternalSimilarityEngine:
             matches=matches,
         )
 
-    def _compare_segment_with_candidate(
+    def _compare_chunk(
         self,
-        segment: str,
+        chunk_text: str,
+        normalized_chunk: str,
         start_offset: int,
         end_offset: int,
-        candidate: CandidateDocumentText,
+        candidate: CandidateKnowledgeChunk,
     ) -> SimilarityMatch | None:
-        normalized_segment = self._normalize(segment)
-        normalized_candidate = self._normalize(candidate.content)
-
-        segment_shingles = self._build_shingles(normalized_segment)
-        candidate_shingles = self._build_shingles(normalized_candidate)
-
-        if not segment_shingles or not candidate_shingles:
+        if not normalized_chunk or not candidate.normalized_text:
             return None
 
-        intersection = segment_shingles.intersection(candidate_shingles)
-        union = segment_shingles.union(candidate_shingles)
+        current_shingles = self._build_shingles(normalized_chunk)
+        candidate_shingles = self._build_shingles(candidate.normalized_text)
 
-        if not union:
+        if not current_shingles or not candidate_shingles:
             return None
 
-        score = Decimal(len(intersection)) / Decimal(len(union))
+        intersection = current_shingles.intersection(candidate_shingles)
+
+        if not intersection:
+            return None
+
+        coverage = Decimal(len(intersection)) / Decimal(len(current_shingles))
+
+        dice = Decimal(2 * len(intersection)) / Decimal(
+            len(current_shingles) + len(candidate_shingles)
+        )
+
+        score = (coverage * Decimal("0.70")) + (dice * Decimal("0.30"))
+
+        exact_bonus = self._exact_phrase_bonus(
+            normalized_chunk=normalized_chunk,
+            normalized_candidate=candidate.normalized_text,
+        )
+
+        score = min(score + exact_bonus, Decimal("1.00"))
 
         if score < self.MATCH_THRESHOLD:
             return None
@@ -140,41 +155,59 @@ class InternalSimilarityEngine:
             source_title=candidate.title,
             source_owner_name=candidate.owner_name,
             matched_percent=matched_percent,
-            text_excerpt=segment.strip()[:700],
-            source_excerpt=self._find_source_excerpt(
-                segment=segment,
-                candidate_content=candidate.content,
-            ),
+            text_excerpt=chunk_text[:900],
+            source_excerpt=candidate.text_excerpt[:900],
             start_offset=start_offset,
             end_offset=end_offset,
         )
 
-    def _split_segments(self, content: str) -> list[tuple[str, int, int]]:
-        paragraphs = re.split(r"\n\s*\n", content)
-        segments: list[tuple[str, int, int]] = []
-        cursor = 0
+    def _build_current_chunks(
+        self,
+        content: str,
+    ) -> list[tuple[str, str, int, int]]:
+        words_with_offsets = self._words_with_offsets(content=content)
 
-        for paragraph in paragraphs:
-            clean = paragraph.strip()
+        if len(words_with_offsets) < self.MIN_WORDS:
+            return []
 
-            if len(clean) < self.MIN_SEGMENT_LENGTH:
-                cursor += len(paragraph) + 2
+        chunks: list[tuple[str, str, int, int]] = []
+
+        for start_index in range(0, len(words_with_offsets), self.CHUNK_STEP):
+            selected_words = words_with_offsets[
+                start_index : start_index + self.CHUNK_WORD_SIZE
+            ]
+
+            if len(selected_words) < self.MIN_WORDS:
                 continue
 
-            start = content.find(clean, cursor)
+            start_offset = selected_words[0][1]
+            end_offset = selected_words[-1][2]
+            chunk_text = content[start_offset:end_offset].strip()
+            normalized_chunk = self._normalize(chunk_text)
 
-            if start == -1:
-                start = content.find(clean)
+            if normalized_chunk:
+                chunks.append(
+                    (
+                        chunk_text,
+                        normalized_chunk,
+                        start_offset,
+                        end_offset,
+                    )
+                )
 
-            if start == -1:
-                cursor += len(paragraph) + 2
-                continue
+        return chunks
 
-            end = start + len(clean)
-            segments.append((clean, start, end))
-            cursor = end
+    def _words_with_offsets(self, content: str) -> list[tuple[str, int, int]]:
+        matches = re.finditer(
+            r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+\b",
+            content,
+            flags=re.UNICODE,
+        )
 
-        return segments
+        return [
+            (match.group(0), match.start(), match.end())
+            for match in matches
+        ]
 
     def _build_shingles(self, text: str) -> set[str]:
         words = text.split()
@@ -187,34 +220,38 @@ class InternalSimilarityEngine:
             for index in range(len(words) - self.SHINGLE_SIZE + 1)
         }
 
+    def _exact_phrase_bonus(
+        self,
+        normalized_chunk: str,
+        normalized_candidate: str,
+    ) -> Decimal:
+        words = normalized_chunk.split()
+
+        if len(words) < 12:
+            return Decimal("0.00")
+
+        for size in (18, 14, 10):
+            for index in range(0, max(len(words) - size + 1, 1), 5):
+                phrase = " ".join(words[index : index + size])
+
+                if phrase and phrase in normalized_candidate:
+                    if size >= 18:
+                        return Decimal("0.18")
+                    if size >= 14:
+                        return Decimal("0.12")
+                    return Decimal("0.08")
+
+        return Decimal("0.00")
+
     def _normalize(self, text: str) -> str:
         text = text.lower()
         text = unicodedata.normalize("NFKD", text)
         text = "".join(
             char for char in text if not unicodedata.combining(char)
         )
-        text = re.sub(r"[^a-záéíóúñü0-9\s]", " ", text)
+        text = re.sub(r"[^a-z0-9ñü\s]", " ", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
-
-    def _find_source_excerpt(
-        self,
-        segment: str,
-        candidate_content: str,
-    ) -> str:
-        segment_words = self._normalize(segment).split()
-
-        if not segment_words:
-            return candidate_content[:700]
-
-        anchor = " ".join(segment_words[: min(6, len(segment_words))])
-        normalized_candidate = self._normalize(candidate_content)
-        index = normalized_candidate.find(anchor)
-
-        if index == -1:
-            return candidate_content[:700]
-
-        return candidate_content[max(0, index - 120) : index + 580]
 
     def _calculate_total_similarity(
         self,

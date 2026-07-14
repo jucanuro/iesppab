@@ -43,11 +43,55 @@
                     Volver
                 </a>
 
-                {% if report %}
-                    <button type="button"
-                            class="inline-flex h-10 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-400/15">
-                        Exportar certificado
-                    </button>
+                {% if certificate %}
+                    <a href="{% url 'certificates:download' certificate.id %}"
+                    title="Descargar certificado"
+                    class="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
+
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 3V15M12 15L7 10M12 15L17 10"
+                                stroke="currentColor"
+                                stroke-width="2.3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"/>
+                            <path d="M5 19H19"
+                                stroke="currentColor"
+                                stroke-width="2.3"
+                                stroke-linecap="round"/>
+                        </svg>
+
+                        Descargar
+                    </a>
+                {% else %}
+                    <form method="post"
+                        action="{% url 'certificates:generate' document.id %}"
+                        class="inline-flex">
+                        {% csrf_token %}
+
+                        <button type="submit"
+                                title="Exportar certificado"
+                                class="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-4 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
+
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linejoin="round"/>
+                                <path d="M14 3V8H19"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linejoin="round"/>
+                                <path d="M9 14H15M9 17H13"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"/>
+                                <path d="M17.5 13.5L18.5 15.5L20.5 16.5L18.5 17.5L17.5 19.5L16.5 17.5L14.5 16.5L16.5 15.5L17.5 13.5Z"
+                                    fill="currentColor"/>
+                            </svg>
+
+                            Exportar
+                        </button>
+                    </form>
                 {% endif %}
             </div>
         </div>

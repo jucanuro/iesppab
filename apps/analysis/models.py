@@ -107,3 +107,58 @@ class AnalysisJob(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.document_id} - {self.analysis_type} - {self.status}"
+    
+
+class DocumentKnowledgeChunk(TimeStampedModel):
+    """
+    Fragmento interno aprendido desde documentos analizados.
+
+    Este modelo permite que el sistema construya una base interna de
+    conocimiento académico y mejore la detección de similitud con cada
+    documento subido/procesado.
+    """
+
+    document = models.ForeignKey(
+        "documents.Document",
+        on_delete=models.CASCADE,
+        related_name="knowledge_chunks",
+        verbose_name=_("Documento"),
+    )
+    text_excerpt = models.TextField(
+        verbose_name=_("Fragmento original"),
+    )
+    normalized_text = models.TextField(
+        verbose_name=_("Fragmento normalizado"),
+    )
+    start_offset = models.PositiveIntegerField(
+        verbose_name=_("Inicio en texto"),
+    )
+    end_offset = models.PositiveIntegerField(
+        verbose_name=_("Fin en texto"),
+    )
+    word_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("Cantidad de palabras"),
+    )
+    content_hash = models.CharField(
+        max_length=64,
+        db_index=True,
+        verbose_name=_("Hash del fragmento"),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name=_("Activo"),
+    )
+
+    class Meta:
+        verbose_name = _("Fragmento aprendido")
+        verbose_name_plural = _("Fragmentos aprendidos")
+        indexes = [
+            models.Index(fields=["document", "is_active"]),
+            models.Index(fields=["content_hash"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.document_id} - {self.word_count} palabras"

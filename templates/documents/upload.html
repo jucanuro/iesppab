@@ -4,660 +4,681 @@
 
 {% block content %}
 
-<section class="space-y-4">
+<section class="min-h-screen bg-white text-slate-800">
 
-    <!-- PANEL SUPERIOR COMPACTO: REGISTRO Y SUBIDA -->
-    <section id="nuevo-documento"
-             class="relative overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
+    <!-- BARRA SUPERIOR TIPO TURNITIN -->
+   
 
-        <div class="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-red-600/10 blur-3xl"></div>
-        <div class="pointer-events-none absolute -bottom-24 left-1/3 h-60 w-60 rounded-full bg-cyan-500/10 blur-3xl"></div>
+    <main class="px-4 py-3 sm:px-6">
 
-        <!-- Cabecera ultra compacta -->
-        <div class="relative border-b border-white/10 px-4 py-3 sm:px-5">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center gap-1.5 rounded-full border border-red-500/20 bg-red-500/10 px-2.5 py-1">
-                            <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-                            <span class="text-[9px] font-black uppercase tracking-[0.22em] text-red-300">
-                                Registro académico
-                            </span>
-                        </span>
-
-                        <span class="hidden text-[10px] font-semibold text-slate-500 sm:inline">
-                            PDF o Word .docx · máximo 25 MB
-                        </span>
-                    </div>
-
-                    <div class="mt-2 flex flex-col gap-1 sm:flex-row sm:items-end sm:gap-3">
-                        <h2 class="text-lg font-black tracking-tight text-white sm:text-xl">
-                            Subir nuevo trabajo
-                        </h2>
-
-                        <p class="text-xs font-medium text-slate-400">
-                            Análisis de originalidad, similitud e IA.
-                        </p>
-                    </div>
-                </div>
-
-                <div class="grid grid-cols-3 gap-1.5 sm:min-w-[300px]">
-                    <div class="rounded-xl border border-white/10 bg-slate-950/45 px-2.5 py-1.5 text-center">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-slate-500">
-                            Límite
-                        </p>
-                        <p class="text-[11px] font-black text-white">
-                            25 MB
-                        </p>
-                    </div>
-
-                    <div class="rounded-xl border border-cyan-400/15 bg-cyan-400/10 px-2.5 py-1.5 text-center">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-cyan-300/70">
-                            Formato
-                        </p>
-                        <p class="text-[11px] font-black text-cyan-300">
-                            PDF/DOCX
-                        </p>
-                    </div>
-
-                    <div class="rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-2.5 py-1.5 text-center">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-emerald-300/70">
-                            Estado
-                        </p>
-                        <p class="text-[11px] font-black text-emerald-300">
-                            Privado
-                        </p>
-                    </div>
-                </div>
-            </div>
+        <div class="mb-4 text-[11px] font-semibold uppercase text-slate-500">
+            ESTÁS VIENDO: HOME
         </div>
 
-        <!-- Formulario en una sola fila desktop -->
-        <form method="post"
-              enctype="multipart/form-data"
-              id="documentUploadForm"
-              class="relative px-4 py-4 sm:px-5">
-            {% csrf_token %}
+        <section class="mb-5">
+            <h2 class="text-[18px] font-semibold text-slate-800">
+                Acerca de esta página
+            </h2>
 
-            <div class="grid gap-2 xl:items-end
-                {% if not request.user.is_student_role %}
-                    xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.55fr_1.35fr_140px]
-                {% else %}
-                    xl:grid-cols-[1.25fr_0.75fr_1fr_0.55fr_1.45fr_140px]
-                {% endif %}">
+            <p class="mt-1 text-[12px] leading-5 text-slate-600">
+                Esta es su página de inicio institucional. Desde aquí puede revisar clases/documentos,
+                realizar entregas rápidas, analizar originalidad y generar certificados académicos.
+            </p>
+        </section>
 
-                <!-- Título -->
-                <div class="min-w-0">
-                    <label for="title" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                        Título
-                    </label>
+        <!-- TAB 1: TODAS LAS CLASES / LISTA -->
+        <section id="tab-clases" class="turnitin-panel">
 
-                    <input id="title"
-                           name="title"
-                           type="text"
-                           required
-                           placeholder="Ej. Proyecto"
-                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
-                </div>
+            <section class="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
 
-                <!-- Tipo -->
-                <div class="min-w-0">
-                    <label for="kind" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                        Tipo
-                    </label>
-
-                    <select id="kind"
-                            name="kind"
-                            required
-                            class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
-                        <option value="" class="bg-slate-950 text-slate-300">
-                            Seleccionar
-                        </option>
-
-                        {% for value, label in document_kinds %}
-                            <option value="{{ value }}" class="bg-slate-950 text-slate-300">
-                                {{ label }}
-                            </option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <!-- Alumno propietario -->
-                {% if not request.user.is_student_role %}
-                    <div class="min-w-0">
-                        <label for="owner_id" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                            Alumno
-                        </label>
-
-                        <select id="owner_id"
-                                name="owner_id"
-                                required
-                                class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
-                            <option value="" class="bg-slate-950 text-slate-300">
-                                Seleccionar alumno
-                            </option>
-
-                            {% for student in students %}
-                                <option value="{{ student.id }}" class="bg-slate-950 text-slate-300">
-                                    {{ student.get_full_name|default:student.username }} - {{ student.email }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                {% endif %}
-
-                <!-- Curso -->
-                <div class="min-w-0">
-                    <label for="course_name" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                        Curso
-                    </label>
-
-                    <input id="course_name"
-                           name="course_name"
-                           type="text"
-                           placeholder="Ej. Investigación"
-                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
-                </div>
-
-                <!-- Periodo -->
-                <div class="min-w-0">
-                    <label for="academic_period" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                        Periodo
-                    </label>
-
-                    <input id="academic_period"
-                           name="academic_period"
-                           type="text"
-                           placeholder="2026-I"
-                           class="h-10 w-full rounded-xl border border-white/10 bg-slate-950/55 px-3 text-xs font-semibold text-white outline-none transition placeholder:text-slate-600 focus:border-red-500/50 focus:bg-slate-950/80 focus:ring-2 focus:ring-red-600/10">
-                </div>
-
-                <!-- Archivo -->
-                <div class="min-w-0">
-                    <label for="document_file" class="mb-1 block text-[9px] font-black uppercase tracking-[0.20em] text-slate-500">
-                        Archivo
-                    </label>
-
-                    <label for="document_file"
-                           id="dropZone"
-                           class="group flex h-10 cursor-pointer items-center justify-between gap-2 rounded-xl border border-dashed border-white/15 bg-slate-950/55 px-2.5 transition hover:border-red-500/40 hover:bg-red-500/10">
-
-                        <div class="flex min-w-0 items-center gap-2">
-                            <div id="dropIcon"
-                                 class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-300 transition group-hover:scale-105">
-                                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                                </svg>
-                            </div>
-
-                            <div class="min-w-0">
-                                <p id="dropTitle" class="truncate text-[11px] font-black text-white">
-                                    Seleccionar archivo
-                                </p>
-
-                                <p id="fileName" class="truncate text-[10px] font-semibold text-slate-500">
-                                    PDF/DOCX · 25 MB
-                                </p>
-                            </div>
+                <!-- Cabecera -->
+                <div class="border-b border-slate-300 bg-gradient-to-b from-white to-slate-100 px-4 py-3">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h3 class="text-[20px] font-normal uppercase text-[#2f6690]">
+                                Integración Moodle
+                            </h3>
+                            <p class="mt-1 text-[12px] text-slate-500">
+                                Bandeja documental y trabajos académicos registrados.
+                            </p>
                         </div>
 
-                        <span class="hidden rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1 text-[8px] font-black uppercase tracking-widest text-slate-300 sm:inline-flex">
-                            Buscar
-                        </span>
-
-                        <input id="document_file"
-                               name="document_file"
-                               type="file"
-                               accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                               required
-                               class="sr-only">
-                    </label>
+                        <button type="button"
+                                data-open-tab="tab-entrega"
+                                class="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-[#7a9c35] bg-[#8bb13f] px-4 text-[13px] font-bold text-white shadow-sm transition hover:bg-[#789b35]">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+                            </svg>
+                            Nueva entrega
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Botón subir -->
-                <div>
-                    <label class="mb-1 hidden text-[9px] font-black uppercase tracking-[0.20em] text-transparent xl:block">
-                        Acción
-                    </label>
+                <!-- Filtros superiores tipo Turnitin -->
+                <div class="flex items-center justify-end gap-1 border-b border-slate-200 bg-slate-50 px-4 py-2">
+                    <button type="button"
+                            class="rounded-sm border border-slate-300 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">
+                        Todas las clases
+                    </button>
 
-                    <button type="submit"
-                            id="submitButton"
-                            class="group relative flex h-10 w-full items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-gradient-to-r from-red-700 via-red-600 to-red-800 px-3 text-[10px] font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-red-950/25 transition duration-300 hover:scale-[1.01] hover:shadow-red-700/20 active:scale-[0.99]">
-                        <span class="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-1000 group-hover:translate-x-[100%]"></span>
+                    <button type="button"
+                            class="rounded-sm border border-slate-300 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">
+                        Clases finalizadas
+                    </button>
 
-                        <span id="submitText" class="relative flex items-center justify-center gap-1.5">
-                            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                            </svg>
-                            Enviar
-                        </span>
+                    <button type="button"
+                            class="rounded-sm border border-slate-700 bg-slate-800 px-3 py-1 text-[11px] font-semibold text-white">
+                        Clases activas
                     </button>
                 </div>
-            </div>
 
-            <div class="mt-2 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
-                <div id="uploadAlert"
-                     class="hidden rounded-xl border px-3 py-2 text-[11px] font-bold leading-4"></div>
-
-                <div class="rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2">
-                    <p class="truncate text-[11px] font-bold text-amber-200">
-                        El documento será almacenado de forma privada para análisis académico.
-                    </p>
-                </div>
-            </div>
-        </form>
-    </section>
-
-    <!-- PANEL INFERIOR COMPACTO: LISTA DE DOCUMENTOS -->
-    <section class="overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.035] shadow-2xl backdrop-blur-2xl">
-
-        <!-- Cabecera lista compacta -->
-        <div class="border-b border-white/10 px-4 py-3 sm:px-5">
-            <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1">
-                            <span class="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
-                            <span class="text-[9px] font-black uppercase tracking-[0.22em] text-cyan-300">
-                                Bandeja documental
-                            </span>
-                        </span>
-
-                        <span class="text-[10px] font-semibold text-slate-500">
-                            Últimos trabajos registrados
-                        </span>
-                    </div>
-
-                    <h3 class="mt-2 text-lg font-black text-white">
-                        Documentos enviados
-                    </h3>
-                </div>
-
-                <div class="grid grid-cols-4 gap-1.5 xl:min-w-[420px]">
-                    <article class="rounded-xl border border-white/10 bg-slate-950/45 px-2.5 py-2">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-slate-500">
+                <!-- Resumen -->
+                <div class="grid grid-cols-4 gap-2 border-b border-slate-200 bg-white px-4 py-3 md:max-w-[520px]">
+                    <article class="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                        <p class="text-[9px] font-bold uppercase tracking-widest text-slate-500">
                             Total
                         </p>
-                        <p class="text-sm font-black text-white">
+                        <p class="text-sm font-black text-slate-800">
                             {{ recent_documents|length }}
                         </p>
                     </article>
 
-                    <article class="rounded-xl border border-red-500/15 bg-red-500/10 px-2.5 py-2">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-red-300/70">
+                    <article class="rounded-md border border-red-200 bg-red-50 px-3 py-2">
+                        <p class="text-[9px] font-bold uppercase tracking-widest text-red-500">
                             Sim.
                         </p>
-                        <p class="truncate text-[11px] font-black text-red-300">
+                        <p class="text-[11px] font-black text-red-600">
                             Pend.
                         </p>
                     </article>
 
-                    <article class="rounded-xl border border-cyan-400/15 bg-cyan-400/10 px-2.5 py-2">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-cyan-300/70">
+                    <article class="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-2">
+                        <p class="text-[9px] font-bold uppercase tracking-widest text-cyan-600">
                             IA
                         </p>
-                        <p class="truncate text-[11px] font-black text-cyan-300">
+                        <p class="text-[11px] font-black text-cyan-700">
                             Pend.
                         </p>
                     </article>
 
-                    <article class="rounded-xl border border-emerald-400/15 bg-emerald-400/10 px-2.5 py-2">
-                        <p class="text-[8px] font-black uppercase tracking-widest text-emerald-300/70">
+                    <article class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <p class="text-[9px] font-bold uppercase tracking-widest text-emerald-600">
                             Rep.
                         </p>
-                        <p class="truncate text-[11px] font-black text-emerald-300">
+                        <p class="text-[11px] font-black text-emerald-700">
                             PDF
                         </p>
                     </article>
                 </div>
-            </div>
-        </div>
 
-        <!-- Desktop table sin scroll horizontal -->
-        <div class="hidden lg:block">
-            <table class="w-full table-fixed divide-y divide-white/10">
-                <thead class="bg-slate-950/45">
-                    <tr>
-                        <th class="w-[32%] px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Trabajo
-                        </th>
+                <!-- Tabla desktop -->
+                <div class="hidden lg:block">
+                    <table class="w-full table-fixed border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-200 bg-gradient-to-b from-white to-slate-100">
+                                <th class="w-[30%] px-4 py-2 text-left text-[11px] font-semibold text-slate-500">
+                                    Trabajo
+                                </th>
 
-                        <th class="w-[22%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Alumno
-                        </th>
+                                <th class="w-[22%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
+                                    Alumno
+                                </th>
 
-                        <th class="w-[12%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Tipo
-                        </th>
+                                <th class="w-[12%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
+                                    Tipo
+                                </th>
 
-                        <th class="w-[12%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Estado
-                        </th>
+                                <th class="w-[12%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
+                                    Estado
+                                </th>
 
-                        <th class="w-[10%] px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Fecha
-                        </th>
+                                <th class="w-[10%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
+                                    Fecha
+                                </th>
 
-                        <th class="w-[12%] px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-[0.18em] text-slate-500">
-                            Acciones
-                        </th>
-                    </tr>
-                </thead>
+                                <th class="w-[14%] px-4 py-2 text-right text-[11px] font-semibold text-slate-500">
+                                    Acciones
+                                </th>
+                            </tr>
+                        </thead>
 
-                <tbody class="divide-y divide-white/10">
+                        <tbody>
+                            {% for document in recent_documents %}
+                                <tr class="border-b border-slate-100 text-[12px] transition hover:bg-[#f4fbfd]">
+                                    <td class="px-4 py-2.5">
+                                        <div class="flex min-w-0 items-center gap-2.5">
+                                            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-[#c8dce5] bg-[#eef7fb] text-[#2f6690]">
+                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                    <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                    <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                </svg>
+                                            </div>
+
+                                            <div class="min-w-0">
+                                                <p class="truncate font-semibold text-[#2f6690]">
+                                                    {{ document.title }}
+                                                </p>
+
+                                                <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                                                    {{ document.original_filename }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <td class="px-3 py-2.5">
+                                        <p class="truncate font-semibold text-slate-700">
+                                            {{ document.owner.get_full_name|default:document.owner.username }}
+                                        </p>
+
+                                        <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                                            {{ document.owner.email }}
+                                        </p>
+                                    </td>
+
+                                    <td class="px-3 py-2.5">
+                                        <span class="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
+                                            <span class="truncate">
+                                                {{ document.get_kind_display }}
+                                            </span>
+                                        </span>
+                                    </td>
+
+                                    <td class="px-3 py-2.5">
+                                        {% if document.status == "COMPLETED" %}
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+                                                {{ document.get_status_display }}
+                                            </span>
+                                        {% elif document.status == "FAILED" %}
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
+                                                {{ document.get_status_display }}
+                                            </span>
+                                        {% elif document.status == "PROCESSING" %}
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-cyan-200 bg-cyan-50 px-2 py-1 text-[11px] font-bold text-cyan-700">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-cyan-500"></span>
+                                                {{ document.get_status_display }}
+                                            </span>
+                                        {% elif document.status == "QUEUED" %}
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                                                {{ document.get_status_display }}
+                                            </span>
+                                        {% else %}
+                                            <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-600">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                                                {{ document.get_status_display }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="px-3 py-2.5">
+                                        <p class="truncate font-semibold text-slate-700">
+                                            {{ document.created_at|date:"d/m/Y" }}
+                                        </p>
+
+                                        <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                                            {{ document.created_at|date:"H:i" }}
+                                        </p>
+                                    </td>
+
+                                    <td class="px-4 py-2.5">
+                                        <div class="flex justify-end gap-1.5">
+                                            <a href="{% url 'reports:detail' document.id %}"
+                                               title="Ver reporte"
+                                               class="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 transition hover:border-[#0d6f8f] hover:bg-[#eef7fb] hover:text-[#0d6f8f]">
+                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                    <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
+                                                </svg>
+                                            </a>
+
+                                            <form method="post"
+                                                  action="{% url 'analysis:analyze' document.id %}"
+                                                  class="inline-flex">
+                                                {% csrf_token %}
+                                                <button type="submit"
+                                                        title="Analizar similitud"
+                                                        class="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 transition hover:border-red-400 hover:bg-red-50 hover:text-red-600">
+                                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                        <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+                                                        <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
+                                                        <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
+                                                    </svg>
+                                                </button>
+                                            </form>
+
+                                            {% if certificate %}
+                                                <a href="{% url 'certificates:download' certificate.id %}"
+                                                   title="Descargar certificado"
+                                                   class="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
+                                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                        <path d="M12 3V15M12 15L7 10M12 15L17 10" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                                                        <path d="M5 19H19" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+                                                    </svg>
+                                                </a>
+                                            {% else %}
+                                                <form method="post"
+                                                      action="{% url 'certificates:generate' document.id %}"
+                                                      class="inline-flex">
+                                                    {% csrf_token %}
+                                                    <button type="submit"
+                                                            title="Generar certificado"
+                                                            class="inline-flex h-8 w-8 items-center justify-center rounded border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
+                                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                            <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                            <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                            <path d="M9 14H15M9 17H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                        </svg>
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% empty %}
+                                <tr>
+                                    <td colspan="6" class="px-4 py-10 text-center">
+                                        <div class="mx-auto max-w-sm">
+                                            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-[#2f6690]">
+                                                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+                                                    <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+                                                </svg>
+                                            </div>
+
+                                            <h4 class="mt-3 text-sm font-bold text-slate-800">
+                                                Aún no hay documentos enviados
+                                            </h4>
+
+                                            <p class="mt-1 text-xs leading-5 text-slate-500">
+                                                Usa la pestaña Entrega Rápida para registrar el primer trabajo académico.
+                                            </p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Mobile -->
+                <div class="space-y-2 p-3 lg:hidden">
                     {% for document in recent_documents %}
-                        <tr class="transition hover:bg-white/[0.035]">
-                            <td class="px-4 py-2.5">
-                                <div class="flex min-w-0 items-center gap-2.5">
-                                    <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                            <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                            <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        <article class="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+                            <div class="flex items-start gap-2.5">
+                                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[#c8dce5] bg-[#eef7fb] text-[#2f6690]">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                        <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                        <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                    </svg>
+                                </div>
+
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-[#2f6690]">
+                                                {{ document.title }}
+                                            </p>
+
+                                            <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                                                {{ document.owner.get_full_name|default:document.owner.username }}
+                                            </p>
+                                        </div>
+
+                                        <span class="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                                            {{ document.get_status_display }}
+                                        </span>
+                                    </div>
+
+                                    <div class="mt-2 grid grid-cols-2 gap-2 text-[11px]">
+                                        <div class="rounded border border-slate-200 bg-slate-50 p-2">
+                                            <p class="font-bold uppercase tracking-widest text-slate-500">
+                                                Tipo
+                                            </p>
+                                            <p class="mt-0.5 truncate font-semibold text-slate-700">
+                                                {{ document.get_kind_display }}
+                                            </p>
+                                        </div>
+
+                                        <div class="rounded border border-slate-200 bg-slate-50 p-2">
+                                            <p class="font-bold uppercase tracking-widest text-slate-500">
+                                                Fecha
+                                            </p>
+                                            <p class="mt-0.5 truncate font-semibold text-slate-700">
+                                                {{ document.created_at|date:"d/m/Y H:i" }}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-2 flex gap-1.5">
+                                        <a href="{% url 'reports:detail' document.id %}"
+                                           class="inline-flex flex-1 items-center justify-center gap-1.5 rounded border border-[#c8dce5] bg-[#eef7fb] px-2 py-2 text-[11px] font-bold text-[#2f6690]">
+                                            Ver
+                                        </a>
+
+                                        <form method="post"
+                                              action="{% url 'analysis:analyze' document.id %}"
+                                              class="inline-flex">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    title="Analizar similitud"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded border border-red-200 bg-red-50 text-red-600">
+                                                %
+                                            </button>
+                                        </form>
+
+                                        <form method="post"
+                                              action="{% url 'certificates:generate' document.id %}"
+                                              class="inline-flex">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    title="Generar certificado"
+                                                    class="inline-flex h-8 w-8 items-center justify-center rounded border border-emerald-200 bg-emerald-50 text-emerald-600">
+                                                PDF
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <div class="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                            <p class="text-sm font-bold text-slate-700">
+                                Aún no hay documentos enviados.
+                            </p>
+
+                            <p class="mt-1 text-xs text-slate-500">
+                                Registra el primer trabajo académico.
+                            </p>
+                        </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </section>
+
+        <!-- TAB 2: INCORPORARSE -->
+        <section id="tab-incorporarse" class="turnitin-panel hidden">
+            <section class="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+                <div class="border-b border-slate-300 bg-gradient-to-b from-white to-slate-100 px-4 py-3">
+                    <h3 class="text-[20px] font-normal uppercase text-[#2f6690]">
+                        Incorporarse a la cuenta IA
+                    </h3>
+                </div>
+
+                <div class="p-5">
+                    <div class="rounded-md border border-slate-200 bg-slate-50 p-5">
+                        <h4 class="text-[16px] font-semibold text-slate-800">
+                            Módulo institucional de análisis académico
+                        </h4>
+
+                        <p class="mt-2 max-w-4xl text-[13px] leading-6 text-slate-600">
+                            Esta sección permite presentar la integración institucional, políticas de revisión,
+                            criterios de originalidad y acceso al módulo de análisis documental con inteligencia artificial.
+                        </p>
+
+                        <div class="mt-5 grid gap-3 md:grid-cols-3">
+                            <article class="rounded-md border border-slate-200 bg-white p-4">
+                                <p class="text-[12px] font-bold uppercase text-slate-500">
+                                    Originalidad
+                                </p>
+                                <p class="mt-1 text-[13px] leading-5 text-slate-600">
+                                    Revisión del contenido académico frente a fuentes internas.
+                                </p>
+                            </article>
+
+                            <article class="rounded-md border border-slate-200 bg-white p-4">
+                                <p class="text-[12px] font-bold uppercase text-slate-500">
+                                    IA Documental
+                                </p>
+                                <p class="mt-1 text-[13px] leading-5 text-slate-600">
+                                    Estimación técnica de patrones de redacción asistida.
+                                </p>
+                            </article>
+
+                            <article class="rounded-md border border-slate-200 bg-white p-4">
+                                <p class="text-[12px] font-bold uppercase text-slate-500">
+                                    Certificados
+                                </p>
+                                <p class="mt-1 text-[13px] leading-5 text-slate-600">
+                                    Emisión de constancias PDF verificables por código y hash.
+                                </p>
+                            </article>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </section>
+
+        <!-- TAB 3: ENTREGA RÁPIDA / SUBIR DOCUMENTO -->
+        <section id="tab-entrega" class="turnitin-panel hidden">
+            <section id="nuevo-documento"
+                     class="overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+
+                <div class="border-b border-slate-300 bg-gradient-to-b from-white to-slate-100 px-4 py-3">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+
+                        <div>
+                            <h3 class="text-[20px] font-normal uppercase text-[#2f6690]">
+                                Entrega Rápida
+                            </h3>
+
+                            <p class="mt-1 text-[12px] text-slate-500">
+                                Subir nuevo trabajo para análisis de originalidad, similitud e IA.
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-1.5 sm:min-w-[300px]">
+                            <div class="rounded border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-slate-500">
+                                    Límite
+                                </p>
+                                <p class="text-[11px] font-black text-slate-700">
+                                    25 MB
+                                </p>
+                            </div>
+
+                            <div class="rounded border border-cyan-200 bg-cyan-50 px-2.5 py-1.5 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-cyan-600">
+                                    Formato
+                                </p>
+                                <p class="text-[11px] font-black text-cyan-700">
+                                    PDF/DOCX
+                                </p>
+                            </div>
+
+                            <div class="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-widest text-emerald-600">
+                                    Estado
+                                </p>
+                                <p class="text-[11px] font-black text-emerald-700">
+                                    Privado
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <form method="post"
+                      enctype="multipart/form-data"
+                      id="documentUploadForm"
+                      class="px-4 py-4 sm:px-5">
+                    {% csrf_token %}
+
+                    <div class="grid gap-3 xl:items-end
+                        {% if not request.user.is_student_role %}
+                            xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.55fr_1.35fr_140px]
+                        {% else %}
+                            xl:grid-cols-[1.25fr_0.75fr_1fr_0.55fr_1.45fr_140px]
+                        {% endif %}">
+
+                        <!-- Título -->
+                        <div class="min-w-0">
+                            <label for="title" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                Título
+                            </label>
+
+                            <input id="title"
+                                   name="title"
+                                   type="text"
+                                   required
+                                   placeholder="Ej. Proyecto"
+                                   class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0d6f8f] focus:ring-2 focus:ring-sky-100">
+                        </div>
+
+                        <!-- Tipo -->
+                        <div class="min-w-0">
+                            <label for="kind" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                Tipo
+                            </label>
+
+                            <select id="kind"
+                                    name="kind"
+                                    required
+                                    class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#0d6f8f] focus:ring-2 focus:ring-sky-100">
+                                <option value="">
+                                    Seleccionar
+                                </option>
+
+                                {% for value, label in document_kinds %}
+                                    <option value="{{ value }}">
+                                        {{ label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Alumno propietario -->
+                        {% if not request.user.is_student_role %}
+                            <div class="min-w-0">
+                                <label for="owner_id" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                    Alumno
+                                </label>
+
+                                <select id="owner_id"
+                                        name="owner_id"
+                                        required
+                                        class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#0d6f8f] focus:ring-2 focus:ring-sky-100">
+                                    <option value="">
+                                        Seleccionar alumno
+                                    </option>
+
+                                    {% for student in students %}
+                                        <option value="{{ student.id }}">
+                                            {{ student.get_full_name|default:student.username }} - {{ student.email }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        {% endif %}
+
+                        <!-- Curso -->
+                        <div class="min-w-0">
+                            <label for="course_name" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                Curso
+                            </label>
+
+                            <input id="course_name"
+                                   name="course_name"
+                                   type="text"
+                                   placeholder="Ej. Investigación"
+                                   class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0d6f8f] focus:ring-2 focus:ring-sky-100">
+                        </div>
+
+                        <!-- Periodo -->
+                        <div class="min-w-0">
+                            <label for="academic_period" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                Periodo
+                            </label>
+
+                            <input id="academic_period"
+                                   name="academic_period"
+                                   type="text"
+                                   placeholder="2026-I"
+                                   class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#0d6f8f] focus:ring-2 focus:ring-sky-100">
+                        </div>
+
+                        <!-- Archivo -->
+                        <div class="min-w-0">
+                            <label for="document_file" class="mb-1 block text-[11px] font-bold text-slate-600">
+                                Archivo
+                            </label>
+
+                            <label for="document_file"
+                                   id="dropZone"
+                                   class="group flex h-10 cursor-pointer items-center justify-between gap-2 rounded-md border border-dashed border-slate-300 bg-white px-2.5 transition hover:border-[#0d6f8f] hover:bg-[#eef7fb]">
+
+                                <div class="flex min-w-0 items-center gap-2">
+                                    <div id="dropIcon"
+                                         class="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-[#c8dce5] bg-[#eef7fb] text-[#2f6690] transition group-hover:scale-105">
+                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
                                         </svg>
                                     </div>
 
                                     <div class="min-w-0">
-                                        <p class="truncate text-xs font-black text-white">
-                                            {{ document.title }}
+                                        <p id="dropTitle" class="truncate text-[11px] font-bold text-slate-700">
+                                            Seleccionar archivo
                                         </p>
 
-                                        <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                                            {{ document.original_filename }}
+                                        <p id="fileName" class="truncate text-[10px] font-semibold text-slate-500">
+                                            PDF/DOCX · 25 MB
                                         </p>
                                     </div>
                                 </div>
-                            </td>
 
-                            <td class="px-3 py-2.5">
-                                <p class="truncate text-xs font-bold text-slate-200">
-                                    {{ document.owner.get_full_name|default:document.owner.username }}
-                                </p>
-
-                                <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                                    {{ document.owner.email }}
-                                </p>
-                            </td>
-
-                            <td class="px-3 py-2.5">
-                                <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black text-slate-300">
-                                    <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M4 7H20M4 12H20M4 17H13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                                    </svg>
-                                    <span class="truncate">
-                                        {{ document.get_kind_display }}
-                                    </span>
+                                <span class="hidden rounded border border-slate-300 bg-slate-50 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 sm:inline-flex">
+                                    Buscar
                                 </span>
-                            </td>
 
-                            <td class="px-3 py-2.5">
-                                {% if document.status == "COMPLETED" %}
-                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-1 text-[10px] font-black text-emerald-300">
-                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"></span>
-                                        <span class="truncate">{{ document.get_status_display }}</span>
-                                    </span>
-                                {% elif document.status == "FAILED" %}
-                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-1 text-[10px] font-black text-red-300">
-                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"></span>
-                                        <span class="truncate">{{ document.get_status_display }}</span>
-                                    </span>
-                                {% elif document.status == "PROCESSING" %}
-                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[10px] font-black text-cyan-300">
-                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400"></span>
-                                        <span class="truncate">{{ document.get_status_display }}</span>
-                                    </span>
-                                {% elif document.status == "QUEUED" %}
-                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-1 text-[10px] font-black text-amber-300">
-                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400"></span>
-                                        <span class="truncate">{{ document.get_status_display }}</span>
-                                    </span>
-                                {% else %}
-                                    <span class="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black text-slate-300">
-                                        <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"></span>
-                                        <span class="truncate">{{ document.get_status_display }}</span>
-                                    </span>
-                                {% endif %}
-                            </td>
-
-                            <td class="px-3 py-2.5">
-                                <p class="truncate text-xs font-bold text-slate-300">
-                                    {{ document.created_at|date:"d/m/Y" }}
-                                </p>
-
-                                <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                                    {{ document.created_at|date:"H:i" }}
-                                </p>
-                            </td>
-
-                            <td class="px-4 py-2.5">
-                                <div class="flex justify-end gap-1.5">
-                                    <a href="{% url 'reports:detail' document.id %}"
-                                        title="Ver reporte"
-                                        class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] text-slate-300 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 hover:text-cyan-300">
-                                            <svg class="h-4 w-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
-                                            </svg>
-                                        </a>
-
-                                    <form method="post"
-                                          action="{% url 'analysis:analyze' document.id %}"
-                                          class="inline-flex">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                title="Analizar similitud"
-                                                class="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-white/[0.035] text-slate-300 transition hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-300">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                                                <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
-                                                <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
-                                            </svg>
-                                        </button>
-                                    </form>
-
-                                    {% if certificate %}
-                                        <a href="{% url 'certificates:download' certificate.id %}"
-                                        title="Descargar certificado"
-                                        class="inline-flex h-6 w-6 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
-                                            <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M12 3V15M12 15L7 10M12 15L17 10"
-                                                    stroke="currentColor"
-                                                    stroke-width="2.3"
-                                                    stroke-linecap="round"
-                                                    stroke-linejoin="round"/>
-                                                <path d="M5 19H19"
-                                                    stroke="currentColor"
-                                                    stroke-width="2.3"
-                                                    stroke-linecap="round"/>
-                                            </svg>
-                                        </a>
-                                    {% else %}
-                                        <form method="post"
-                                            action="{% url 'certificates:generate' document.id %}"
-                                            class="inline-flex">
-                                            {% csrf_token %}
-                                            <button type="submit"
-                                                    title="Generar certificado"
-                                                    class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300 transition hover:bg-emerald-400/15 hover:text-emerald-200">
-                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z"
-                                                        stroke="currentColor"
-                                                        stroke-width="2"
-                                                        stroke-linejoin="round"/>
-                                                    <path d="M14 3V8H19"
-                                                        stroke="currentColor"
-                                                        stroke-width="2"
-                                                        stroke-linejoin="round"/>
-                                                    <path d="M9 14H15M9 17H13"
-                                                        stroke="currentColor"
-                                                        stroke-width="2"
-                                                        stroke-linecap="round"/>
-                                                    <path d="M17.5 13.5L18.5 15.5L20.5 16.5L18.5 17.5L17.5 19.5L16.5 17.5L14.5 16.5L16.5 15.5L17.5 13.5Z"
-                                                        fill="currentColor"/>
-                                                </svg>
-                                            </button>
-                                        </form>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                    {% empty %}
-                        <tr>
-                            <td colspan="6" class="px-4 py-10 text-center">
-                                <div class="mx-auto max-w-sm">
-                                    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] text-red-300">
-                                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
-                                            <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-                                        </svg>
-                                    </div>
-
-                                    <h4 class="mt-3 text-xs font-black text-white">
-                                        Aún no hay documentos enviados
-                                    </h4>
-
-                                    <p class="mt-1 text-xs font-medium leading-5 text-slate-500">
-                                        Usa el panel superior para registrar el primer trabajo académico.
-                                    </p>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Mobile cards compactas -->
-        <div class="space-y-2 p-3 lg:hidden">
-            {% for document in recent_documents %}
-                <article class="rounded-[18px] border border-white/10 bg-slate-950/35 p-3 shadow-2xl backdrop-blur-xl">
-                    <div class="flex items-start gap-2.5">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                            </svg>
+                                <input id="document_file"
+                                       name="document_file"
+                                       type="file"
+                                       accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                       required
+                                       class="sr-only">
+                            </label>
                         </div>
 
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="min-w-0">
-                                    <p class="truncate text-xs font-black text-white">
-                                        {{ document.title }}
-                                    </p>
+                        <!-- Botón subir -->
+                        <div>
+                            <label class="mb-1 hidden text-[11px] font-bold text-transparent xl:block">
+                                Acción
+                            </label>
 
-                                    <p class="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                                        {{ document.owner.get_full_name|default:document.owner.username }}
-                                    </p>
-                                </div>
-
-                                {% if document.status == "COMPLETED" %}
-                                    <span class="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-[9px] font-black text-emerald-300">
-                                        {{ document.get_status_display }}
-                                    </span>
-                                {% elif document.status == "FAILED" %}
-                                    <span class="shrink-0 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[9px] font-black text-red-300">
-                                        {{ document.get_status_display }}
-                                    </span>
-                                {% elif document.status == "PROCESSING" %}
-                                    <span class="shrink-0 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[9px] font-black text-cyan-300">
-                                        {{ document.get_status_display }}
-                                    </span>
-                                {% elif document.status == "QUEUED" %}
-                                    <span class="shrink-0 rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[9px] font-black text-amber-300">
-                                        {{ document.get_status_display }}
-                                    </span>
-                                {% else %}
-                                    <span class="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[9px] font-black text-slate-300">
-                                        {{ document.get_status_display }}
-                                    </span>
-                                {% endif %}
-                            </div>
-
-                            <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-                                <div class="rounded-xl border border-white/10 bg-white/[0.035] p-2">
-                                    <p class="font-black uppercase tracking-widest text-slate-500">
-                                        Tipo
-                                    </p>
-
-                                    <p class="mt-0.5 truncate font-bold text-slate-300">
-                                        {{ document.get_kind_display }}
-                                    </p>
-                                </div>
-
-                                <div class="rounded-xl border border-white/10 bg-white/[0.035] p-2">
-                                    <p class="font-black uppercase tracking-widest text-slate-500">
-                                        Fecha
-                                    </p>
-
-                                    <p class="mt-0.5 truncate font-bold text-slate-300">
-                                        {{ document.created_at|date:"d/m/Y H:i" }}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div class="mt-2 flex gap-1.5">
-                                <button type="button"
-                                        class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-2 py-2 text-[10px] font-black text-cyan-300">
+                            <button type="submit"
+                                    id="submitButton"
+                                    class="flex h-10 w-full items-center justify-center gap-1.5 rounded-md border border-[#7a9c35] bg-[#8bb13f] px-3 text-[12px] font-bold text-white shadow-sm transition hover:bg-[#789b35] active:scale-[0.99]">
+                                <span id="submitText" class="flex items-center justify-center gap-1.5">
                                     <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                        <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
+                                        <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
                                     </svg>
-                                    Ver
-                                </button>
-
-                                <form method="post"
-                                      action="{% url 'analysis:analyze' document.id %}"
-                                      class="inline-flex">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                            title="Analizar similitud"
-                                            class="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300">
-                                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                                            <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
-                                            <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
-                                        </svg>
-                                    </button>
-                                </form>
-
-                                <button type="button"
-                                        class="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300">
-                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                        <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                        <path d="M8 16H16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                    </svg>
-                                </button>
-                            </div>
+                                    Enviar
+                                </span>
+                            </button>
                         </div>
                     </div>
-                </article>
-            {% empty %}
-                <div class="rounded-[18px] border border-dashed border-white/15 bg-white/[0.035] p-6 text-center backdrop-blur-xl">
-                    <div class="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-red-300">
-                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
-                            <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-                        </svg>
+
+                    <div class="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
+                        <div id="uploadAlert"
+                             class="hidden rounded-md border px-3 py-2 text-[12px] font-semibold leading-4"></div>
+
+                        <div class="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                            <p class="truncate text-[12px] font-semibold text-amber-700">
+                                El documento será almacenado de forma privada para análisis académico.
+                            </p>
+                        </div>
                     </div>
+                </form>
+            </section>
+        </section>
 
-                    <p class="mt-3 text-xs font-black text-white">
-                        Aún no hay documentos enviados.
-                    </p>
-
-                    <p class="mt-1 text-xs font-medium text-slate-500">
-                        Registra el primer trabajo académico.
-                    </p>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
+    </main>
 </section>
 
 {% endblock %}
@@ -665,6 +686,46 @@
 {% block extra_js %}
 <script>
     document.addEventListener("DOMContentLoaded", function () {
+        const turnitinTabs = document.querySelectorAll(".turnitin-tab");
+        const openTabButtons = document.querySelectorAll("[data-open-tab]");
+        const turnitinPanels = document.querySelectorAll(".turnitin-panel");
+
+        function activateTurnitinTab(targetId) {
+            turnitinPanels.forEach(function (panel) {
+                if (panel.id === targetId) {
+                    panel.classList.remove("hidden");
+                } else {
+                    panel.classList.add("hidden");
+                }
+            });
+
+            turnitinTabs.forEach(function (tab) {
+                const isActive = tab.dataset.turnitinTab === targetId;
+
+                tab.classList.toggle("bg-[#0d6f8f]", isActive);
+                tab.classList.toggle("text-white", isActive);
+                tab.classList.toggle("border-[#0d6f8f]", isActive);
+
+                tab.classList.toggle("bg-slate-100", !isActive);
+                tab.classList.toggle("text-slate-600", !isActive);
+                tab.classList.toggle("border-slate-300", !isActive);
+            });
+        }
+
+        turnitinTabs.forEach(function (tab) {
+            tab.addEventListener("click", function () {
+                activateTurnitinTab(tab.dataset.turnitinTab);
+            });
+        });
+
+        openTabButtons.forEach(function (button) {
+            button.addEventListener("click", function () {
+                activateTurnitinTab(button.dataset.openTab);
+            });
+        });
+
+        activateTurnitinTab("tab-clases");
+
         const fileInput = document.getElementById("document_file");
         const fileName = document.getElementById("fileName");
         const dropZone = document.getElementById("dropZone");
@@ -682,23 +743,23 @@
 
             uploadAlert.classList.remove(
                 "hidden",
-                "border-red-500/20",
-                "bg-red-500/10",
-                "text-red-300",
-                "border-emerald-400/20",
-                "bg-emerald-400/10",
-                "text-emerald-300",
-                "border-cyan-400/20",
-                "bg-cyan-400/10",
-                "text-cyan-300"
+                "border-red-200",
+                "bg-red-50",
+                "text-red-700",
+                "border-emerald-200",
+                "bg-emerald-50",
+                "text-emerald-700",
+                "border-cyan-200",
+                "bg-cyan-50",
+                "text-cyan-700"
             );
 
             if (type === "error") {
-                uploadAlert.classList.add("border-red-500/20", "bg-red-500/10", "text-red-300");
+                uploadAlert.classList.add("border-red-200", "bg-red-50", "text-red-700");
             } else if (type === "success") {
-                uploadAlert.classList.add("border-emerald-400/20", "bg-emerald-400/10", "text-emerald-300");
+                uploadAlert.classList.add("border-emerald-200", "bg-emerald-50", "text-emerald-700");
             } else {
-                uploadAlert.classList.add("border-cyan-400/20", "bg-cyan-400/10", "text-cyan-300");
+                uploadAlert.classList.add("border-cyan-200", "bg-cyan-50", "text-cyan-700");
             }
 
             uploadAlert.textContent = message;
@@ -714,24 +775,24 @@
             if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
 
             dropZone.classList.remove(
-                "border-red-500/60",
-                "bg-red-500/10",
-                "border-emerald-400/40",
-                "bg-emerald-400/10"
+                "border-[#0d6f8f]",
+                "bg-[#eef7fb]",
+                "border-emerald-300",
+                "bg-emerald-50"
             );
 
-            dropZone.classList.add("border-white/15", "bg-slate-950/55");
+            dropZone.classList.add("border-slate-300", "bg-white");
 
             dropIcon.classList.remove(
-                "border-emerald-400/20",
-                "bg-emerald-400/10",
-                "text-emerald-300"
+                "border-emerald-200",
+                "bg-emerald-50",
+                "text-emerald-600"
             );
 
             dropIcon.classList.add(
-                "border-red-500/20",
-                "bg-red-500/10",
-                "text-red-300"
+                "border-[#c8dce5]",
+                "bg-[#eef7fb]",
+                "text-[#2f6690]"
             );
 
             dropTitle.textContent = "Seleccionar archivo";
@@ -741,32 +802,32 @@
         function setDraggingState() {
             if (!dropZone) return;
 
-            dropZone.classList.remove("border-white/15", "bg-slate-950/55");
-            dropZone.classList.add("border-red-500/60", "bg-red-500/10");
+            dropZone.classList.remove("border-slate-300", "bg-white");
+            dropZone.classList.add("border-[#0d6f8f]", "bg-[#eef7fb]");
         }
 
         function setFileSelectedState(file) {
             if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
 
             dropZone.classList.remove(
-                "border-red-500/60",
-                "bg-red-500/10",
-                "border-white/15",
-                "bg-slate-950/55"
+                "border-[#0d6f8f]",
+                "bg-[#eef7fb]",
+                "border-slate-300",
+                "bg-white"
             );
 
-            dropZone.classList.add("border-emerald-400/40", "bg-emerald-400/10");
+            dropZone.classList.add("border-emerald-300", "bg-emerald-50");
 
             dropIcon.classList.remove(
-                "border-red-500/20",
-                "bg-red-500/10",
-                "text-red-300"
+                "border-[#c8dce5]",
+                "bg-[#eef7fb]",
+                "text-[#2f6690]"
             );
 
             dropIcon.classList.add(
-                "border-emerald-400/20",
-                "bg-emerald-400/10",
-                "text-emerald-300"
+                "border-emerald-200",
+                "bg-emerald-50",
+                "text-emerald-600"
             );
 
             dropTitle.textContent = "Archivo listo";

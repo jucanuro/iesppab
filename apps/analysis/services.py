@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
+from typing import Iterable
 from uuid import UUID
 
 from django.core.exceptions import PermissionDenied
@@ -13,6 +14,13 @@ from apps.analysis.engines.ai_detector import SpanishAIDetector
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
     InternalSimilarityEngine,
+)
+from apps.analysis.engines.text_filters import AcademicTextFilter
+from apps.analysis.engines.web_search import WebCandidateCollector
+from apps.analysis.engines.web_similarity import (
+    WebSimilarityAnalysisResult,
+    WebSimilarityEngine,
+    WebSimilarityMatch,
 )
 from apps.analysis.indexers import DocumentKnowledgeIndexer
 from apps.analysis.models import (
@@ -36,72 +44,135 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentAnalysisError(Exception):
-    """
-    Error controlado del pipeline de análisis.
-    """
-
     pass
 
 
 class DocumentAnalysisService:
     """
-    Pipeline principal de análisis.
+    Pipeline completo:
 
-    Flujo:
-    - Valida permisos.
-    - Extrae texto.
-    - Aprende el documento creando fragmentos internos.
-    - Compara contra fragmentos aprendidos de otros documentos.
-    - Estima patrones IA.
-    - Genera reporte, fuentes y hallazgos.
+    1. Valida permisos.
+    2. Extrae texto.
+    3. Limpia portada / índice / bibliografía / anexos.
+    4. Aprende el documento para repositorio interno.
+    5. Compara contra documentos internos.
+    6. Busca coincidencias en internet.
+    7. Lee páginas HTML y PDFs públicos.
+    8. Compara contra fuentes web.
+    9. Estima patrones IA.
+    10. Genera reporte final.
     """
 
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
+
         self.extractor = DocumentTextExtractor()
-        self.similarity_engine = InternalSimilarityEngine()
-        self.ai_detector = SpanishAIDetector()
+        self.text_filter = AcademicTextFilter()
         self.knowledge_indexer = DocumentKnowledgeIndexer()
+
+        self.internal_similarity_engine = InternalSimilarityEngine()
+        self.web_candidate_collector = WebCandidateCollector()
+        self.web_similarity_engine = WebSimilarityEngine()
+
+        self.ai_detector = SpanishAIDetector()
 
     def execute(self, document_id: UUID) -> AnalysisReport:
         document = self._get_allowed_document(document_id=document_id)
         job = self._create_job(document=document)
 
         try:
-            self._mark_as_processing(document=document, job=job)
+            self._mark_as_processing(
+                document=document,
+                job=job,
+                step="Extrayendo texto del documento",
+            )
 
             document_text = self.extractor.extract_and_save(
                 document=document,
+            )
+
+            filtered_text = self.text_filter.filter_for_similarity(
+                content=document_text.content,
+            )
+
+            analysis_content = filtered_text.content or document_text.content
+
+            self._mark_job_step(
+                job=job,
+                step="Aprendiendo fragmentos internos del documento",
             )
 
             self.knowledge_indexer.index(
                 document_text=document_text,
             )
 
-            candidates = self._get_internal_candidates(
+            self._mark_job_step(
+                job=job,
+                step="Comparando contra repositorio institucional",
+            )
+
+            internal_candidates = self._get_internal_candidates(
                 document=document,
             )
 
-            similarity_result = self.similarity_engine.analyze(
-                content=document_text.content,
-                candidates=candidates,
+            internal_result = self.internal_similarity_engine.analyze(
+                content=analysis_content,
+                candidates=internal_candidates,
+            )
+
+            self._mark_job_step(
+                job=job,
+                step="Buscando coincidencias públicas en internet",
+            )
+
+            web_pages = self.web_candidate_collector.collect(
+                content=analysis_content,
+            )
+
+            self._mark_job_step(
+                job=job,
+                step="Comparando contra fuentes web encontradas",
+            )
+
+            web_result = self.web_similarity_engine.analyze(
+                content=analysis_content,
+                web_pages=web_pages,
+            )
+
+            self._mark_job_step(
+                job=job,
+                step="Estimando patrones de redacción IA",
             )
 
             ai_result = self.ai_detector.analyze(
-                content=document_text.content,
+                content=analysis_content,
+            )
+
+            total_similarity_percent = self._calculate_total_similarity_percent(
+                content_length=len(analysis_content),
+                internal_matches=internal_result.matches,
+                web_matches=web_result.matches,
             )
 
             with transaction.atomic():
                 report = self._save_report(
                     document=document,
                     job=job,
-                    similarity_percent=similarity_result.similarity_percent,
+                    total_similarity_percent=total_similarity_percent,
+                    internal_similarity_percent=internal_result.similarity_percent,
+                    web_similarity_percent=web_result.web_similarity_percent,
                     ai_probability_percent=ai_result.ai_probability_percent,
+                    excluded_sections=filtered_text.excluded_sections,
                 )
 
-                self._replace_similarity_findings(
+                self._replace_internal_similarity_findings(
                     report=report,
-                    matches=similarity_result.matches,
+                    matches=internal_result.matches,
+                )
+
+                self._replace_web_similarity_findings(
+                    report=report,
+                    web_result=web_result,
                 )
 
                 self._replace_ai_findings(
@@ -115,9 +186,13 @@ class DocumentAnalysisService:
                 )
 
             logger.info(
-                "Análisis completado. document_id=%s report_id=%s",
+                "Análisis completado. document_id=%s report_id=%s total=%s internal=%s web=%s ai=%s",
                 document.id,
                 report.id,
+                report.similarity_percent,
+                report.internal_similarity_percent,
+                report.web_similarity_percent,
+                report.ai_probability_percent,
             )
 
             return report
@@ -193,6 +268,7 @@ class DocumentAnalysisService:
         self,
         document: Document,
         job: AnalysisJob,
+        step: str,
     ) -> None:
         document.status = DocumentStatus.PROCESSING
         document.error_message = ""
@@ -206,11 +282,24 @@ class DocumentAnalysisService:
 
         job.status = AnalysisJobStatus.RUNNING
         job.started_at = timezone.now()
-        job.current_step = "Extrayendo texto y analizando documento"
+        job.current_step = step
         job.save(
             update_fields=[
                 "status",
                 "started_at",
+                "current_step",
+                "updated_at",
+            ]
+        )
+
+    def _mark_job_step(
+        self,
+        job: AnalysisJob,
+        step: str,
+    ) -> None:
+        job.current_step = step
+        job.save(
+            update_fields=[
                 "current_step",
                 "updated_at",
             ]
@@ -316,11 +405,14 @@ class DocumentAnalysisService:
         self,
         document: Document,
         job: AnalysisJob,
-        similarity_percent: Decimal,
+        total_similarity_percent: Decimal,
+        internal_similarity_percent: Decimal,
+        web_similarity_percent: Decimal,
         ai_probability_percent: Decimal,
+        excluded_sections: list[str],
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
-            similarity_percent=similarity_percent,
+            similarity_percent=total_similarity_percent,
             ai_probability_percent=ai_probability_percent,
         )
 
@@ -328,17 +420,20 @@ class DocumentAnalysisService:
             document=document,
             defaults={
                 "analysis_job": job,
-                "similarity_percent": similarity_percent,
-                "web_similarity_percent": Decimal("0.00"),
-                "internal_similarity_percent": similarity_percent,
+                "similarity_percent": total_similarity_percent,
+                "web_similarity_percent": web_similarity_percent,
+                "internal_similarity_percent": internal_similarity_percent,
                 "ai_probability_percent": ai_probability_percent,
                 "risk_level": risk_level,
                 "summary": {
-                    "engine": "internal-learning-mvp",
-                    "similarity_algorithm": "knowledge-chunks-shingling",
+                    "engine": "internal-web-academic-v2",
+                    "internal_similarity_algorithm": "knowledge-chunks-shingling",
+                    "web_similarity_algorithm": "brave-search-html-pdf-shingling",
                     "ai_algorithm": "spanish-heuristic-v1",
+                    "excluded_sections": excluded_sections,
+                    "note": "La similitud web depende de fuentes públicas encontradas y accesibles.",
                 },
-                "engine_version": "vql-learning-mvp-1.0.0",
+                "engine_version": "vql-web-academic-v2.0.0",
                 "generated_at": timezone.now(),
                 "is_final": True,
             },
@@ -346,7 +441,7 @@ class DocumentAnalysisService:
 
         return report
 
-    def _replace_similarity_findings(
+    def _replace_internal_similarity_findings(
         self,
         report: AnalysisReport,
         matches: list,
@@ -354,6 +449,7 @@ class DocumentAnalysisService:
         ReportFinding.objects.filter(
             report=report,
             finding_type=FindingType.SIMILARITY,
+            source__source_type=SourceType.INTERNAL,
         ).delete()
 
         ReportSource.objects.filter(
@@ -386,7 +482,54 @@ class DocumentAnalysisService:
                 confidence_percent=match.matched_percent,
                 metadata={
                     "algorithm": "knowledge-chunks-shingling",
+                    "source": "internal",
                     "source_document_id": str(match.source_document_id),
+                },
+            )
+
+    def _replace_web_similarity_findings(
+        self,
+        report: AnalysisReport,
+        web_result: WebSimilarityAnalysisResult,
+    ) -> None:
+        ReportFinding.objects.filter(
+            report=report,
+            finding_type=FindingType.SIMILARITY,
+            source__source_type=SourceType.WEB,
+        ).delete()
+
+        ReportSource.objects.filter(
+            report=report,
+            source_type=SourceType.WEB,
+        ).delete()
+
+        for match in web_result.matches:
+            source = ReportSource.objects.create(
+                report=report,
+                source_type=SourceType.WEB,
+                title=match.title or match.domain,
+                url=match.url,
+                domain=match.domain,
+                matched_percent=match.matched_percent,
+                snippet=match.source_excerpt,
+                metadata={
+                    "source": "web",
+                    "url": match.url,
+                },
+            )
+
+            ReportFinding.objects.create(
+                report=report,
+                source=source,
+                finding_type=FindingType.SIMILARITY,
+                start_offset=match.start_offset,
+                end_offset=match.end_offset,
+                text_excerpt=match.text_excerpt,
+                confidence_percent=match.matched_percent,
+                metadata={
+                    "algorithm": "brave-search-html-pdf-shingling",
+                    "source": "web",
+                    "url": match.url,
                 },
             )
 
@@ -414,6 +557,61 @@ class DocumentAnalysisService:
                     "note": "Estimación técnica, no prueba concluyente.",
                 },
             )
+
+    def _calculate_total_similarity_percent(
+        self,
+        content_length: int,
+        internal_matches: Iterable,
+        web_matches: Iterable[WebSimilarityMatch],
+    ) -> Decimal:
+        ranges: list[tuple[int, int]] = []
+
+        for match in internal_matches:
+            ranges.append(
+                (
+                    match.start_offset,
+                    match.end_offset,
+                )
+            )
+
+        for match in web_matches:
+            ranges.append(
+                (
+                    match.start_offset,
+                    match.end_offset,
+                )
+            )
+
+        if content_length <= 0 or not ranges:
+            return Decimal("0.00")
+
+        merged_ranges = self._merge_ranges(ranges=ranges)
+        matched_chars = sum(end - start for start, end in merged_ranges)
+
+        percent = (
+            Decimal(matched_chars) / Decimal(content_length)
+        ) * Decimal("100")
+
+        return min(percent, Decimal("100.00")).quantize(Decimal("0.01"))
+
+    def _merge_ranges(
+        self,
+        ranges: list[tuple[int, int]],
+    ) -> list[tuple[int, int]]:
+        sorted_ranges = sorted(ranges)
+        merged: list[tuple[int, int]] = []
+
+        for start, end in sorted_ranges:
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+            else:
+                previous_start, previous_end = merged[-1]
+                merged[-1] = (
+                    previous_start,
+                    max(previous_end, end),
+                )
+
+        return merged
 
     def _resolve_risk_level(
         self,

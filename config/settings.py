@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 
 # Quick-start development settings - unsuitable for production
@@ -140,3 +143,29 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "/"
 LOGIN_REDIRECT_URL = "/documentos/subir/"
 LOGOUT_REDIRECT_URL = "/"
+
+
+
+
+
+BRAVE_SEARCH_API_KEY = os.getenv("BRAVE_SEARCH_API_KEY", "")
+
+WEB_ANALYSIS_ENABLED = os.getenv(
+    "WEB_ANALYSIS_ENABLED",
+    "True",
+).lower() == "true"
+
+BRAVE_SEARCH_COUNTRY = os.getenv("BRAVE_SEARCH_COUNTRY", "PE")
+BRAVE_SEARCH_LANG = os.getenv("BRAVE_SEARCH_LANG", "es")
+
+WEB_ANALYSIS_TIMEOUT_SECONDS = int(
+    os.getenv("WEB_ANALYSIS_TIMEOUT_SECONDS", "10")
+)
+
+WEB_ANALYSIS_MAX_QUERY_PHRASES = int(
+    os.getenv("WEB_ANALYSIS_MAX_QUERY_PHRASES", "8")
+)
+
+WEB_ANALYSIS_MAX_PAGES_TOTAL = int(
+    os.getenv("WEB_ANALYSIS_MAX_PAGES_TOTAL", "16")
+)

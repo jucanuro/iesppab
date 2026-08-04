@@ -428,6 +428,74 @@ WEB_ANALYSIS_MAX_PAGES_TOTAL = env_int(
 )
 
 
+OAI_HARVEST_ENABLED = env_bool(
+    "OAI_HARVEST_ENABLED",
+    True,
+)
+
+# Repositorios con endpoint OAI-PMH confirmado manualmente (verb=Identify
+# respondió con <Identify> o <error> válido, probado en este orden:
+# <dominio>/oai/request, <dominio>/server/oai/request,
+# <dominio>/dspace-oai/request). Dominios de referencia tomados de
+# WebCandidateCollector.ACADEMIC_DOMAINS en apps/analysis/engines/web_search.py
+# (esa lista no se modifica).
+#
+# Repos probados SIN OAI-PMH confirmado (revisar manualmente más adelante):
+#   - ALICIA - CONCYTEC (alicia.concytec.gob.pe): los 3 patrones devuelven 404,
+#     no es DSpace en esa ruta; probablemente requiere descubrir su endpoint
+#     OAI real (agregador propio de CONCYTEC/RENATI).
+#   - Repositorio CONCYTEC (repositorio.concytec.gob.pe): timeout / 500 en
+#     los 3 patrones.
+#   - Repositorio UPN (repositorio.upn.edu.pe): los 3 patrones devuelven 200
+#     pero sirven el HTML de la SPA (sin <Identify>), no hay ruta OAI activa.
+#   - Repositorio UNASAM (repositorio.unasam.edu.pe): bloqueado por
+#     bot-detection (Anubis) en los 3 patrones.
+#   - Repositorio MINEDU (repositorio.minedu.gob.pe): timeout / 404 en los
+#     3 patrones.
+# {
+#     "name": "ALICIA - CONCYTEC",
+#     "domain": "alicia.concytec.gob.pe",
+#     "base_url": "https://alicia.concytec.gob.pe/oai/request",
+# },
+# {
+#     "name": "Repositorio CONCYTEC",
+#     "domain": "repositorio.concytec.gob.pe",
+#     "base_url": "https://repositorio.concytec.gob.pe/oai/request",
+# },
+# {
+#     "name": "Repositorio UPN",
+#     "domain": "repositorio.upn.edu.pe",
+#     "base_url": "https://repositorio.upn.edu.pe/oai/request",
+# },
+# {
+#     "name": "Repositorio UNASAM",
+#     "domain": "repositorio.unasam.edu.pe",
+#     "base_url": "https://repositorio.unasam.edu.pe/oai/request",
+# },
+# {
+#     "name": "Repositorio MINEDU",
+#     "domain": "repositorio.minedu.gob.pe",
+#     "base_url": "https://repositorio.minedu.gob.pe/oai/request",
+# },
+OAI_HARVEST_REPOSITORIES = [
+    {
+        "name": "Repositorio UCV",
+        "domain": "repositorio.ucv.edu.pe",
+        "base_url": "https://repositorio.ucv.edu.pe/oai/request",
+    },
+    {
+        "name": "Repositorio USIL",
+        "domain": "repositorio.usil.edu.pe",
+        "base_url": "https://repositorio.usil.edu.pe/server/oai/request",
+    },
+    {
+        "name": "Repositorio UNE",
+        "domain": "repositorio.une.edu.pe",
+        "base_url": "https://repositorio.une.edu.pe/oai/request",
+    },
+]
+
+
 LOG_LEVEL = os.getenv(
     "LOG_LEVEL",
     "INFO",

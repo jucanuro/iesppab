@@ -162,3 +162,65 @@ class DocumentKnowledgeChunk(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.document_id} - {self.word_count} palabras"
+
+
+class OaiRecord(TimeStampedModel):
+    """
+    Registro cosechado desde repositorios OAI-PMH (ALICIA/CONCYTEC, etc.).
+
+    Sirve como fuente de comparación gratuita adicional, independiente
+    de la búsqueda web con Brave. Se activa mediante OAI_HARVEST_ENABLED.
+    """
+
+    repository_name = models.CharField(
+        max_length=180,
+        verbose_name=_("Nombre del repositorio"),
+    )
+    repository_domain = models.CharField(
+        max_length=180,
+        db_index=True,
+        verbose_name=_("Dominio del repositorio"),
+    )
+    oai_identifier = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        verbose_name=_("Identificador OAI"),
+    )
+    title = models.CharField(
+        max_length=500,
+        verbose_name=_("Título"),
+    )
+    authors = models.TextField(
+        blank=True,
+        verbose_name=_("Autores"),
+    )
+    source_url = models.URLField(
+        blank=True,
+        verbose_name=_("URL de origen"),
+    )
+    text_excerpt = models.TextField(
+        verbose_name=_("Fragmento original"),
+    )
+    normalized_text = models.TextField(
+        verbose_name=_("Fragmento normalizado"),
+    )
+    harvested_at = models.DateTimeField(
+        verbose_name=_("Cosechado el"),
+    )
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,
+        verbose_name=_("Activo"),
+    )
+
+    class Meta:
+        verbose_name = _("Registro OAI")
+        verbose_name_plural = _("Registros OAI")
+        indexes = [
+            models.Index(fields=["repository_domain", "is_active"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.repository_name} - {self.title[:60]}"

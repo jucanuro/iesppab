@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils import timezone
@@ -28,6 +29,7 @@ from apps.analysis.models import (
     AnalysisJobStatus,
     AnalysisType,
     DocumentKnowledgeChunk,
+    OaiRecord,
 )
 from apps.documents.extractors import DocumentTextExtractor
 from apps.documents.models import Document, DocumentStatus
@@ -115,9 +117,11 @@ class DocumentAnalysisService:
                 document=document,
             )
 
+            oai_candidates, oai_records_by_id = self._get_oai_candidates()
+
             internal_result = self.internal_similarity_engine.analyze(
                 content=analysis_content,
-                candidates=internal_candidates,
+                candidates=internal_candidates + oai_candidates,
             )
 
             self._mark_job_step(
@@ -168,6 +172,7 @@ class DocumentAnalysisService:
                 self._replace_internal_similarity_findings(
                     report=report,
                     matches=internal_result.matches,
+                    oai_records_by_id=oai_records_by_id,
                 )
 
                 self._replace_web_similarity_findings(
@@ -401,6 +406,42 @@ class DocumentAnalysisService:
 
         return candidates
 
+    def _get_oai_candidates(
+        self,
+    ) -> tuple[list[CandidateKnowledgeChunk], dict[UUID, OaiRecord]]:
+        """
+        Convierte los registros OAI activos (ALICIA/CONCYTEC, etc.) en
+        candidatos comparables por el motor de similitud interno.
+
+        Corre antes de la búsqueda web con Brave, como fuente gratuita
+        adicional. Se desactiva por completo si OAI_HARVEST_ENABLED=False,
+        para que el flujo se comporte igual que hoy.
+        """
+        if not getattr(settings, "OAI_HARVEST_ENABLED", True):
+            return [], {}
+
+        records = OaiRecord.objects.filter(
+            is_active=True,
+        ).order_by("-created_at")[:5000]
+
+        candidates: list[CandidateKnowledgeChunk] = []
+        records_by_id: dict[UUID, OaiRecord] = {}
+
+        for record in records:
+            records_by_id[record.id] = record
+
+            candidates.append(
+                CandidateKnowledgeChunk(
+                    document_id=record.id,
+                    title=record.title,
+                    owner_name=record.repository_name,
+                    text_excerpt=record.text_excerpt,
+                    normalized_text=record.normalized_text,
+                )
+            )
+
+        return candidates, records_by_id
+
     def _save_report(
         self,
         document: Document,
@@ -445,7 +486,10 @@ class DocumentAnalysisService:
         self,
         report: AnalysisReport,
         matches: list,
+        oai_records_by_id: dict[UUID, OaiRecord] | None = None,
     ) -> None:
+        oai_records_by_id = oai_records_by_id or {}
+
         ReportFinding.objects.filter(
             report=report,
             finding_type=FindingType.SIMILARITY,
@@ -458,18 +502,35 @@ class DocumentAnalysisService:
         ).delete()
 
         for match in matches:
+            oai_record = oai_records_by_id.get(match.source_document_id)
+
+            if oai_record is not None:
+                domain = oai_record.repository_name
+                url = oai_record.source_url
+                source_metadata = {
+                    "source": "oai",
+                    "oai_identifier": oai_record.oai_identifier,
+                    "repository_name": oai_record.repository_name,
+                }
+                finding_source = "oai"
+            else:
+                domain = "Repositorio interno"
+                url = ""
+                source_metadata = {
+                    "source_document_id": str(match.source_document_id),
+                    "source_owner": match.source_owner_name,
+                }
+                finding_source = "internal"
+
             source = ReportSource.objects.create(
                 report=report,
                 source_type=SourceType.INTERNAL,
                 title=match.source_title,
-                url="",
-                domain="Repositorio interno",
+                url=url,
+                domain=domain,
                 matched_percent=match.matched_percent,
                 snippet=match.source_excerpt,
-                metadata={
-                    "source_document_id": str(match.source_document_id),
-                    "source_owner": match.source_owner_name,
-                },
+                metadata=source_metadata,
             )
 
             ReportFinding.objects.create(
@@ -482,7 +543,7 @@ class DocumentAnalysisService:
                 confidence_percent=match.matched_percent,
                 metadata={
                     "algorithm": "knowledge-chunks-shingling",
-                    "source": "internal",
+                    "source": finding_source,
                     "source_document_id": str(match.source_document_id),
                 },
             )

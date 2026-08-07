@@ -62,15 +62,35 @@ class InternalSimilarityEngine:
             )
 
         current_chunks = self._build_current_chunks(content=content)
+
+        # Los shingles de cada candidato no cambian entre fragmentos del
+        # documento actual, así que se construyen una sola vez aquí en vez
+        # de reconstruirlos en cada una de las N comparaciones (uno por
+        # fragmento) que recibe ese mismo candidato.
+        candidate_shingles = [
+            self._build_shingles(candidate.normalized_text)
+            for candidate in candidates
+        ]
+
         matches: list[SimilarityMatch] = []
 
         for chunk_text, normalized_chunk, start_offset, end_offset in current_chunks:
+            current_shingles = self._build_shingles(normalized_chunk)
+
+            if not current_shingles:
+                continue
+
             best_match: SimilarityMatch | None = None
 
-            for candidate in candidates:
+            for candidate, candidate_shingle_set in zip(
+                candidates,
+                candidate_shingles,
+            ):
                 candidate_match = self._compare_chunk(
                     chunk_text=chunk_text,
                     normalized_chunk=normalized_chunk,
+                    current_shingles=current_shingles,
+                    candidate_shingle_set=candidate_shingle_set,
                     start_offset=start_offset,
                     end_offset=end_offset,
                     candidate=candidate,
@@ -112,6 +132,8 @@ class InternalSimilarityEngine:
         self,
         chunk_text: str,
         normalized_chunk: str,
+        current_shingles: set[str],
+        candidate_shingle_set: set[str],
         start_offset: int,
         end_offset: int,
         candidate: CandidateKnowledgeChunk,
@@ -119,13 +141,10 @@ class InternalSimilarityEngine:
         if not normalized_chunk or not candidate.normalized_text:
             return None
 
-        current_shingles = self._build_shingles(normalized_chunk)
-        candidate_shingles = self._build_shingles(candidate.normalized_text)
-
-        if not current_shingles or not candidate_shingles:
+        if not current_shingles or not candidate_shingle_set:
             return None
 
-        intersection = current_shingles.intersection(candidate_shingles)
+        intersection = current_shingles.intersection(candidate_shingle_set)
 
         if not intersection:
             return None
@@ -133,7 +152,7 @@ class InternalSimilarityEngine:
         coverage = Decimal(len(intersection)) / Decimal(len(current_shingles))
 
         dice = Decimal(2 * len(intersection)) / Decimal(
-            len(current_shingles) + len(candidate_shingles)
+            len(current_shingles) + len(candidate_shingle_set)
         )
 
         score = (coverage * Decimal("0.70")) + (dice * Decimal("0.30"))
@@ -210,15 +229,23 @@ class InternalSimilarityEngine:
         ]
 
     def _build_shingles(self, text: str) -> set[str]:
+        return set(self._build_shingle_sequence(text))
+
+    def _build_shingle_sequence(self, text: str) -> list[str]:
+        """
+        Igual que _build_shingles pero conservando orden de aparición y
+        duplicados. Lo usa el motor de fingerprinting (Winnowing), que
+        necesita la secuencia posicional de shingles, no solo el conjunto.
+        """
         words = text.split()
 
         if len(words) < self.SHINGLE_SIZE:
-            return set(words)
+            return words
 
-        return {
+        return [
             " ".join(words[index : index + self.SHINGLE_SIZE])
             for index in range(len(words) - self.SHINGLE_SIZE + 1)
-        }
+        ]
 
     def _exact_phrase_bonus(
         self,

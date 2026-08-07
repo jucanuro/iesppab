@@ -73,6 +73,14 @@ class Institution(TimeStampedModel):
         db_index=True,
         verbose_name=_("Activo"),
     )
+    email_domain = models.CharField(
+        max_length=120,
+        blank=True,
+        verbose_name=_("Dominio de correo institucional"),
+        help_text=_(
+            "Ej: iesp-alfonsobarranteslingan.edu.pe (sin @ ni subdominios)"
+        ),
+    )
 
     class Meta:
         verbose_name = _("Institución")
@@ -81,3 +89,18 @@ class Institution(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def email_belongs_to_domain(self, email: str) -> bool:
+        """
+        Verifica si `email` pertenece al dominio institucional configurado.
+
+        Si `email_domain` está vacío, la institución no tiene restricción
+        configurada aún, por lo que no se bloquea (devuelve True).
+        """
+        if not self.email_domain:
+            return True
+
+        email = (email or "").strip().lower()
+        domain = self.email_domain.strip().lower().lstrip("@")
+
+        return email.endswith(f"@{domain}")

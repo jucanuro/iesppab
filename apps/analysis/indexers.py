@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
-from apps.analysis.models import DocumentKnowledgeChunk
+from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.models import DocumentFingerprint, DocumentKnowledgeChunk
 from apps.documents.models import DocumentText
 
 
@@ -38,6 +39,17 @@ class DocumentKnowledgeIndexer:
         document = document_text.document
         chunks = self._build_chunks(content=document_text.content)
 
+        old_chunk_ids = list(
+            DocumentKnowledgeChunk.objects.filter(
+                document=document,
+            ).values_list("id", flat=True)
+        )
+
+        DocumentFingerprint.objects.filter(
+            source_type="internal",
+            source_id__in=old_chunk_ids,
+        ).delete()
+
         DocumentKnowledgeChunk.objects.filter(document=document).delete()
 
         objects = [
@@ -55,6 +67,24 @@ class DocumentKnowledgeIndexer:
         ]
 
         DocumentKnowledgeChunk.objects.bulk_create(objects, batch_size=500)
+
+        fingerprint_objects = [
+            DocumentFingerprint(
+                hash=fingerprint_hash,
+                source_type="internal",
+                source_id=chunk_object.id,
+            )
+            for chunk_object in objects
+            for fingerprint_hash in compute_fingerprints(
+                chunk_object.normalized_text,
+            )
+        ]
+
+        DocumentFingerprint.objects.bulk_create(
+            fingerprint_objects,
+            batch_size=500,
+            ignore_conflicts=True,
+        )
 
         return len(objects)
 

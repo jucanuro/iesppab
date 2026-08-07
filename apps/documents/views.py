@@ -6,6 +6,7 @@ from typing import Any, cast
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
@@ -114,9 +115,9 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             )
             return redirect("documents:upload")
 
-    def _get_available_students(self, user: User):
+    def _get_available_students(self, user: User) -> list[User]:
         if user.is_student_role:
-            return User.objects.none()
+            return []
 
         students = User.objects.select_related("institution").filter(
             role=UserRole.STUDENT,
@@ -126,7 +127,7 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         if not user.is_superuser:
             students = students.filter(institution_id=user.institution_id)
 
-        return students.order_by("first_name", "last_name", "username")
+        return [user, *students.order_by("first_name", "last_name", "username")]
 
     def _get_recent_documents(self, user: User):
         documents = Document.objects.select_related(
@@ -136,10 +137,11 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             "report",
         )
 
-        if user.is_student_role:
-            documents = documents.filter(owner=user)
-        elif not user.is_superuser:
-            documents = documents.filter(institution=user.institution)
+        if user.is_superuser or user.is_admin_role:
+            if not user.is_superuser:
+                documents = documents.filter(institution=user.institution)
+        else:
+            documents = documents.filter(Q(owner=user) | Q(uploaded_by=user))
 
         return documents.order_by("-created_at")[:10]
 

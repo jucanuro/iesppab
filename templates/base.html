@@ -22,123 +22,71 @@
 
     <div class="min-h-screen bg-white">
 
-        <!-- TOP BAR GENERAL TIPO TURNITIN -->
-        <header class="border-t-[4px] border-red-600 bg-white">
-
-            <!-- Logo + usuario -->
-            <div class="flex min-h-[76px] items-center justify-between bg-gradient-to-b from-white to-slate-50 px-4 sm:px-6">
+        <!-- TOP BAR INSTITUCIONAL -->
+        <header class="border-b border-slate-200 bg-white">
+            <div class="mx-auto flex min-h-[72px] max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
 
                 <!-- Marca -->
-                <div class="flex items-center gap-3">
-                    <div class="flex h-11 w-11 items-center justify-center rounded-sm border-2 border-[#0b8edb] text-xl font-black leading-none text-[#0b8edb]">
-                        A
-                    </div>
+                <a href="{% if request.user.is_authenticated %}{% url 'documents:upload' %}{% else %}{% url 'accounts:login' %}{% endif %}"
+                   class="flex items-center gap-3">
+                    <img src="{% static 'img/logo-iesppabl.png' %}"
+                         alt="Escudo IESPP Alfonso Barrantes Lingán"
+                         class="h-10 w-auto select-none">
 
-                    <div>
-                        <div class="flex items-end gap-1">
-                            <p class="text-[30px] font-bold leading-none tracking-tight text-[#123f46]">
-                                IESPP
-                            </p>
-                            <span class="mb-1 text-[10px] font-bold text-[#123f46]">
-                                ABL
-                            </span>
-                        </div>
-
-                        <p class="mt-1 text-[11px] font-semibold text-slate-500">
-                            Alfonso Barrantes Lingán · Plataforma de Originalidad Académica
+                    <div class="hidden sm:block">
+                        <p class="text-[15px] font-bold leading-none tracking-tight text-[#123f9e]">
+                            IESPP Alfonso Barrantes Lingán
+                        </p>
+                        <p class="mt-1 text-[11px] font-semibold leading-none text-slate-500">
+                            Plataforma de Originalidad Académica
                         </p>
                     </div>
-                </div>
+                </a>
 
-                <!-- Usuario desktop -->
+                <!-- Navegación -->
                 {% if request.user.is_authenticated %}
-                    <div class="hidden items-center gap-2 rounded-b-md bg-[#222222] px-4 py-2 text-[11px] font-semibold text-white lg:flex">
-                        <span>{{ request.user.get_full_name|default:request.user.username }}</span>
-                        <span class="text-slate-400">|</span>
-
-                        <a href="#" class="hover:underline">
-                            Información del usuario
+                    <nav class="flex flex-wrap items-center gap-1">
+                        <a href="{% url 'documents:upload' %}"
+                           class="rounded-lg px-3 py-2 text-[13px] font-semibold transition
+                           {% if request.resolver_match.app_name == 'documents' %}
+                                bg-[#eef3ff] text-[#123f9e]
+                           {% else %}
+                                text-slate-600 hover:bg-slate-50 hover:text-[#123f9e]
+                           {% endif %}">
+                            Documentos
                         </a>
 
-                        <span class="text-slate-400">|</span>
+                        {% if request.user.is_admin_role or request.user.is_superuser %}
+                            <a href="/admin/"
+                               class="rounded-lg px-3 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-[#123f9e]">
+                                Administración
+                            </a>
+                        {% endif %}
+                    </nav>
+                {% endif %}
 
-                        <a href="#" class="hover:underline">
-                            Mensajes
-                        </a>
+                <!-- Usuario -->
+                {% if request.user.is_authenticated %}
+                    <div class="flex items-center gap-3">
+                        <div class="hidden text-right sm:block">
+                            <p class="text-[12.5px] font-bold leading-tight text-slate-800">
+                                {{ request.user.get_full_name|default:request.user.username }}
+                            </p>
+                            <p class="text-[11px] font-semibold leading-tight text-[#236bfd]">
+                                {{ request.user.get_role_display }}
+                            </p>
+                        </div>
 
-                        <span class="text-slate-400">|</span>
-
-                        <span>
-                            Instructor ▼
-                        </span>
-
-                        <span class="text-slate-400">|</span>
-
-                        <span>
-                            Español ▼
-                        </span>
-
-                        <span class="text-slate-400">|</span>
-
-                        <a href="#" class="hover:underline">
-                            Ayuda
-                        </a>
-
-                        <span class="text-slate-400">|</span>
-
-                        <form method="post" action="{% url 'accounts:logout' %}" class="inline-flex">
+                        <form method="post" action="{% url 'accounts:logout' %}">
                             {% csrf_token %}
-                            <button type="submit" class="font-semibold hover:underline">
+                            <button type="submit"
+                                    class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 px-3 text-[12px] font-bold text-slate-600 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600">
                                 Cerrar sesión
                             </button>
                         </form>
                     </div>
                 {% endif %}
-
-                <!-- Usuario mobile -->
-                {% if request.user.is_authenticated %}
-                    <form method="post" action="{% url 'accounts:logout' %}" class="lg:hidden">
-                        {% csrf_token %}
-                        <button type="submit"
-                                class="rounded border border-slate-300 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 shadow-sm">
-                            Salir
-                        </button>
-                    </form>
-                {% endif %}
             </div>
-
-            <!-- MENÚ DE PESTAÑAS -->
-            <nav class="border-b-[3px] border-[#0d6f8f] bg-[#eef6f8] px-4 sm:px-6">
-                <div class="flex flex-wrap items-end gap-1">
-
-                    <a href="{% url 'documents:upload' %}#tab-clases"
-                       class="turnitin-main-tab rounded-t-sm border px-4 py-2 text-[12px] font-semibold transition
-                       {% if request.resolver_match.app_name == 'documents' %}
-                            border-[#0d6f8f] bg-[#0d6f8f] text-white
-                       {% else %}
-                            border-slate-300 bg-slate-100 text-slate-600 hover:bg-white
-                       {% endif %}">
-                        Todas las clases
-                    </a>
-
-                    <a href="{% url 'documents:upload' %}#tab-incorporarse"
-                       class="turnitin-main-tab rounded-t-sm border border-slate-300 bg-slate-100 px-4 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white">
-                        Incorporarse a la cuenta (IA)
-                    </a>
-
-                    <a href="{% url 'documents:upload' %}#tab-entrega"
-                       class="turnitin-main-tab rounded-t-sm border border-slate-300 bg-slate-100 px-4 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white">
-                        Entrega Rápida
-                    </a>
-
-                    {% if request.user.is_staff %}
-                        <a href="/admin/"
-                           class="turnitin-main-tab rounded-t-sm border border-slate-300 bg-slate-100 px-4 py-2 text-[12px] font-semibold text-slate-600 transition hover:bg-white">
-                            Administración
-                        </a>
-                    {% endif %}
-                </div>
-            </nav>
         </header>
 
         <!-- CONTENEDOR PRINCIPAL -->
@@ -173,7 +121,7 @@
             </div>
         </main>
 
-        <!-- FOOTER TIPO TURNITIN -->
+        <!-- FOOTER -->
         <footer class="px-4 pb-5 pt-8 sm:px-6">
             <div class="rounded-md bg-slate-50 px-4 py-4 text-center text-[10px] text-slate-500">
                 <p>
@@ -194,26 +142,5 @@
     </div>
 
     {% block extra_js %}{% endblock %}
-
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            function openHashTab() {
-                const hash = window.location.hash.replace("#", "");
-
-                if (!hash) return;
-
-                const button = document.querySelector("[data-turnitin-tab='" + hash + "']");
-                const panel = document.getElementById(hash);
-
-                if (button && panel) {
-                    button.click();
-                }
-            }
-
-            openHashTab();
-
-            window.addEventListener("hashchange", openHashTab);
-        });
-    </script>
 </body>
 </html>

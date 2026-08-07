@@ -126,6 +126,9 @@ class DocumentUploadService:
                 "Debe seleccionar el alumno propietario del documento."
             )
 
+        if str(owner_id) == str(self.uploaded_by.id):
+            return self.uploaded_by
+
         students = User.objects.select_related("institution").filter(
             id=owner_id,
             role=UserRole.STUDENT,

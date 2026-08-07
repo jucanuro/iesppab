@@ -6,12 +6,13 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db.models import Q
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
+
+from .models import UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -50,18 +51,45 @@ class InstitutionalLoginView(View):
             return redirect("accounts:login")
 
         try:
-            user_record = (
-                User.objects.filter(
-                    Q(username__iexact=username_or_email)
-                    | Q(email__iexact=username_or_email)
+            is_email_input = "@" in username_or_email
+
+            if is_email_input:
+                user_record = (
+                    User.objects.select_related("institution")
+                    .filter(email__iexact=username_or_email)
+                    .first()
                 )
-                .only("username", "is_active")
-                .first()
-            )
+            else:
+                user_record = (
+                    User.objects.select_related("institution")
+                    .filter(username__iexact=username_or_email)
+                    .first()
+                )
 
             if user_record is None:
                 messages.error(request, "Credenciales incorrectas.")
                 return redirect("accounts:login")
+
+            is_privileged_user = (
+                user_record.role == UserRole.ADMIN or user_record.is_superuser
+            )
+
+            if not is_privileged_user:
+                if not is_email_input:
+                    messages.error(
+                        request,
+                        "Los usuarios institucionales deben ingresar con su "
+                        "correo institucional, no con su usuario.",
+                    )
+                    return redirect("accounts:login")
+
+                if user_record.institution_id and not (
+                    user_record.institution.email_belongs_to_domain(
+                        user_record.email
+                    )
+                ):
+                    messages.error(request, "Credenciales incorrectas.")
+                    return redirect("accounts:login")
 
             user = authenticate(
                 request,

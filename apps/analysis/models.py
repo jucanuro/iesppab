@@ -224,3 +224,29 @@ class OaiRecord(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"{self.repository_name} - {self.title[:60]}"
+
+
+class DocumentFingerprint(models.Model):
+    """
+    Índice invertido de huellas digitales (Winnowing) para búsqueda rápida
+    de candidatos por similitud, sin comparar contra todo el corpus.
+    """
+
+    hash = models.BigIntegerField(db_index=True)
+    source_type = models.CharField(
+        max_length=20,
+        choices=[("internal", "internal"), ("oai", "oai")],
+    )
+    source_id = models.UUIDField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["hash"]),
+            models.Index(fields=["source_type", "source_id"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["hash", "source_type", "source_id"],
+                name="uniq_fingerprint_per_source",
+            )
+        ]

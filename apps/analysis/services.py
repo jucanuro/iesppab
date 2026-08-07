@@ -8,10 +8,12 @@ from uuid import UUID
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.analysis.engines.ai_detector import SpanishAIDetector
+from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
     InternalSimilarityEngine,
@@ -28,6 +30,7 @@ from apps.analysis.models import (
     AnalysisJob,
     AnalysisJobStatus,
     AnalysisType,
+    DocumentFingerprint,
     DocumentKnowledgeChunk,
     OaiRecord,
 )
@@ -113,15 +116,16 @@ class DocumentAnalysisService:
                 step="Comparando contra repositorio institucional",
             )
 
-            internal_candidates = self._get_internal_candidates(
-                document=document,
+            fingerprint_candidates, oai_records_by_id = (
+                self._get_fingerprint_candidates(
+                    document=document,
+                    analysis_content=analysis_content,
+                )
             )
-
-            oai_candidates, oai_records_by_id = self._get_oai_candidates()
 
             internal_result = self.internal_similarity_engine.analyze(
                 content=analysis_content,
-                candidates=internal_candidates + oai_candidates,
+                candidates=fingerprint_candidates,
             )
 
             self._mark_job_step(
@@ -369,78 +373,128 @@ class DocumentAnalysisService:
             ]
         )
 
-    def _get_internal_candidates(
+    def _get_fingerprint_candidates(
         self,
         document: Document,
-    ) -> list[CandidateKnowledgeChunk]:
-        chunks = (
-            DocumentKnowledgeChunk.objects.select_related(
-                "document",
-                "document__owner",
-            )
-            .filter(
-                document__institution=document.institution,
-                is_active=True,
-            )
-            .exclude(document=document)
-            .order_by("-created_at")[:5000]
-        )
-
-        candidates: list[CandidateKnowledgeChunk] = []
-
-        for chunk in chunks:
-            owner_name = (
-                chunk.document.owner.get_full_name()
-                or chunk.document.owner.username
-            )
-
-            candidates.append(
-                CandidateKnowledgeChunk(
-                    document_id=chunk.document.id,
-                    title=chunk.document.title,
-                    owner_name=owner_name,
-                    text_excerpt=chunk.text_excerpt,
-                    normalized_text=chunk.normalized_text,
-                )
-            )
-
-        return candidates
-
-    def _get_oai_candidates(
-        self,
+        analysis_content: str,
     ) -> tuple[list[CandidateKnowledgeChunk], dict[UUID, OaiRecord]]:
         """
-        Convierte los registros OAI activos (ALICIA/CONCYTEC, etc.) en
-        candidatos comparables por el motor de similitud interno.
+        Usa el índice invertido de huellas (Winnowing) para acotar los
+        candidatos que se comparan contra el documento, en vez de traer
+        todo el banco interno + OAI (hasta 5000 de cada uno) como se hacía
+        antes.
 
-        Corre antes de la búsqueda web con Brave, como fuente gratuita
-        adicional. Se desactiva por completo si OAI_HARVEST_ENABLED=False,
-        para que el flujo se comporte igual que hoy.
+        Calcula las huellas del documento completo una sola vez, busca qué
+        fuentes (internas u OAI) comparten más huellas con él, y solo
+        resuelve esas top-40 como candidatos reales para el motor de
+        similitud (que sigue comparando fragmento por fragmento, sin
+        cambios en _compare_chunk).
         """
-        if not getattr(settings, "OAI_HARVEST_ENABLED", True):
+        normalized_content = self.internal_similarity_engine._normalize(
+            analysis_content,
+        )
+        fingerprints = compute_fingerprints(normalized_content)
+
+        if not fingerprints:
             return [], {}
 
-        records = OaiRecord.objects.filter(
-            is_active=True,
-        ).order_by("-created_at")[:5000]
+        oai_enabled = getattr(settings, "OAI_HARVEST_ENABLED", True)
 
-        candidates: list[CandidateKnowledgeChunk] = []
-        records_by_id: dict[UUID, OaiRecord] = {}
+        own_chunk_ids = list(
+            DocumentKnowledgeChunk.objects.filter(
+                document=document,
+            ).values_list("id", flat=True)
+        )
 
-        for record in records:
-            records_by_id[record.id] = record
+        fingerprint_queryset = DocumentFingerprint.objects.filter(
+            hash__in=fingerprints,
+        )
 
-            candidates.append(
-                CandidateKnowledgeChunk(
-                    document_id=record.id,
-                    title=record.title,
-                    owner_name=record.repository_name,
-                    text_excerpt=record.text_excerpt,
-                    normalized_text=record.normalized_text,
-                )
+        if own_chunk_ids:
+            # El documento ya fue re-indexado en este mismo pipeline antes
+            # de llegar aquí, así que sus propios fragmentos ya tienen
+            # fingerprints. Si no se excluyen aquí, acaparan el top-40 (son
+            # el candidato más parecido a sí mismo) y no dejan lugar para
+            # coincidencias reales de otros documentos.
+            fingerprint_queryset = fingerprint_queryset.exclude(
+                source_type="internal",
+                source_id__in=own_chunk_ids,
             )
 
-        return candidates, records_by_id
+        if not oai_enabled:
+            fingerprint_queryset = fingerprint_queryset.exclude(
+                source_type="oai",
+            )
+
+        top_sources = (
+            fingerprint_queryset.values("source_type", "source_id")
+            .annotate(shared=Count("id"))
+            .order_by("-shared")[:40]
+        )
+
+        internal_ids: list[UUID] = []
+        oai_ids: list[UUID] = []
+
+        for row in top_sources:
+            if row["source_type"] == "internal":
+                internal_ids.append(row["source_id"])
+            else:
+                oai_ids.append(row["source_id"])
+
+        candidates: list[CandidateKnowledgeChunk] = []
+
+        if internal_ids:
+            internal_chunks = (
+                DocumentKnowledgeChunk.objects.select_related(
+                    "document",
+                    "document__owner",
+                )
+                .filter(
+                    id__in=internal_ids,
+                    document__institution=document.institution,
+                    is_active=True,
+                )
+                .exclude(document=document)
+            )
+
+            for chunk in internal_chunks:
+                owner_name = (
+                    chunk.document.owner.get_full_name()
+                    or chunk.document.owner.username
+                )
+
+                candidates.append(
+                    CandidateKnowledgeChunk(
+                        document_id=chunk.document.id,
+                        title=chunk.document.title,
+                        owner_name=owner_name,
+                        text_excerpt=chunk.text_excerpt,
+                        normalized_text=chunk.normalized_text,
+                    )
+                )
+
+        oai_records_by_id: dict[UUID, OaiRecord] = {}
+
+        if oai_ids:
+            oai_records = OaiRecord.objects.filter(
+                id__in=oai_ids,
+                is_active=True,
+            )
+
+            for record in oai_records:
+                oai_records_by_id[record.id] = record
+
+                candidates.append(
+                    CandidateKnowledgeChunk(
+                        document_id=record.id,
+                        title=record.title,
+                        owner_name=record.repository_name,
+                        text_excerpt=record.text_excerpt,
+                        normalized_text=record.normalized_text,
+                    )
+                )
+
+        return candidates, oai_records_by_id
 
     def _save_report(
         self,

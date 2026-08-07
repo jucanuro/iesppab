@@ -111,6 +111,26 @@ class AnalysisReport(TimeStampedModel):
     def __str__(self) -> str:
         return f"Reporte - {self.document.title}"
 
+    @property
+    def similarity_level(self) -> str:
+        if self.similarity_percent < Decimal("15.00"):
+            return "bajo"
+
+        if self.similarity_percent < Decimal("30.00"):
+            return "moderado"
+
+        return "alto"
+
+    @property
+    def ai_level(self) -> str:
+        if self.ai_probability_percent < Decimal("15.00"):
+            return "bajo"
+
+        if self.ai_probability_percent < Decimal("30.00"):
+            return "moderado"
+
+        return "alto"
+
 
 class SourceType(models.TextChoices):
     WEB = "WEB", _("Fuente web")

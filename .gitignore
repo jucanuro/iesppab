@@ -54,6 +54,10 @@ htmlcov/
 # Sistema operativo
 .DS_Store
 Thumbs.db
+*:Zone.Identifier
+
+# Temporales
+/tmp/
 
 # Distribución
 build/

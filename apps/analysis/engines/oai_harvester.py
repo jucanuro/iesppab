@@ -11,7 +11,8 @@ from xml.etree import ElementTree
 import requests
 from django.utils import timezone
 
-from apps.analysis.models import OaiRecord
+from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.models import DocumentFingerprint, OaiRecord
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class OaiHarvester:
                     skipped_count += 1
                     continue
 
-                _, created = OaiRecord.objects.update_or_create(
+                oai_record, created = OaiRecord.objects.update_or_create(
                     oai_identifier=record["oai_identifier"],
                     defaults={
                         "repository_name": repository.name,
@@ -97,6 +98,24 @@ class OaiHarvester:
                     created_count += 1
                 else:
                     updated_count += 1
+                    DocumentFingerprint.objects.filter(
+                        source_type="oai",
+                        source_id=oai_record.id,
+                    ).delete()
+
+                fingerprints = compute_fingerprints(oai_record.normalized_text)
+
+                DocumentFingerprint.objects.bulk_create(
+                    [
+                        DocumentFingerprint(
+                            hash=fingerprint_hash,
+                            source_type="oai",
+                            source_id=oai_record.id,
+                        )
+                        for fingerprint_hash in fingerprints
+                    ],
+                    ignore_conflicts=True,
+                )
 
         except Exception as exc:
             logger.warning(

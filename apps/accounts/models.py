@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 
 class UserRole(models.TextChoices):
     ADMIN = "ADMIN", _("Administrador")
+    DIRECTOR = "DIRECTOR", _("Director")
     TEACHER = "TEACHER", _("Docente / Revisor")
     STUDENT = "STUDENT", _("Alumno")
 
@@ -92,9 +93,30 @@ class User(AbstractUser):
                 }
             )
 
+        if (
+            self.role != UserRole.ADMIN
+            and not self.is_superuser
+            and self.institution_id is not None
+            and self.institution.email_domain
+            and not self.institution.email_belongs_to_domain(self.email)
+        ):
+            raise ValidationError(
+                {
+                    "email": _(
+                        "El correo debe pertenecer al dominio institucional "
+                        "@%(domain)s."
+                    )
+                    % {"domain": self.institution.email_domain}
+                }
+            )
+
     @property
     def is_admin_role(self) -> bool:
         return self.role == UserRole.ADMIN or self.is_superuser
+
+    @property
+    def is_director_role(self) -> bool:
+        return self.role == UserRole.DIRECTOR
 
     @property
     def is_teacher_role(self) -> bool:

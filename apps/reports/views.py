@@ -7,7 +7,7 @@ from uuid import UUID
 
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views import View
@@ -21,6 +21,7 @@ from apps.reports.models import (
     ReportFinding,
     ReportSource,
 )
+from apps.reports.suggestions import build_improvement_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,9 @@ class ReportDetailView(LoginRequiredMixin, View):
                 "ai_findings": report.findings.filter(
                     finding_type=FindingType.AI_GENERATED,
                 ) if report else [],
+                "improvement_suggestions": (
+                    build_improvement_suggestions(report) if report else []
+                ),
             }
 
             return render(request, self.template_name, context)
@@ -115,16 +119,17 @@ class ReportDetailView(LoginRequiredMixin, View):
             "extracted_text",
         ).filter(id=document_id)
 
-        if user.is_student_role:
-            queryset = queryset.filter(owner=user)
+        if user.is_superuser or user.is_admin_role:
+            if not user.is_superuser:
+                if user.institution_id is None:
+                    raise PermissionDenied(
+                        "Tu usuario no tiene institución asignada."
+                    )
 
-        elif not user.is_superuser:
-            if user.institution_id is None:
-                raise PermissionDenied(
-                    "Tu usuario no tiene institución asignada."
-                )
+                queryset = queryset.filter(institution=user.institution)
 
-            queryset = queryset.filter(institution=user.institution)
+        else:
+            queryset = queryset.filter(Q(owner=user) | Q(uploaded_by=user))
 
         document = queryset.first()
 

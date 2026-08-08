@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
+
+from apps.core.models import Institution
 
 from .models import UserRole
 
@@ -133,3 +139,123 @@ class InstitutionalLogoutView(LoginRequiredMixin, View):
         logout(request)
         messages.success(request, "Sesión cerrada correctamente.")
         return redirect("accounts:login")
+
+
+class PublicRegistrationView(View):
+    """
+    Auto-registro público para alumnos con correo institucional.
+    """
+
+    template_name = "accounts/register.html"
+
+    def get(self, request: HttpRequest) -> HttpResponse:
+        if request.user.is_authenticated:
+            return redirect("documents:upload")
+
+        institution = Institution.objects.filter(is_active=True).first()
+
+        return render(
+            request,
+            self.template_name,
+            {
+                "institution_name": (
+                    institution.name
+                    if institution
+                    else 'IESPP "Alfonso Barrantes Lingán"'
+                ),
+                "institution_location": "San Miguel",
+                "email_domain": institution.email_domain if institution else "",
+            },
+        )
+
+    def post(self, request: HttpRequest) -> HttpResponse:
+        email = request.POST.get("email", "").strip().lower()
+        first_name = request.POST.get("first_name", "").strip()
+        last_name = request.POST.get("last_name", "").strip()
+        password1 = request.POST.get("password1", "")
+        password2 = request.POST.get("password2", "")
+
+        if not email or not first_name or not last_name or not password1 or not password2:
+            messages.error(request, "Completa todos los campos para registrarte.")
+            return redirect("accounts:register")
+
+        try:
+            validate_email(email)
+        except ValidationError:
+            messages.error(request, "Ingresa un correo electrónico válido.")
+            return redirect("accounts:register")
+
+        if password1 != password2:
+            messages.error(request, "Las contraseñas no coinciden.")
+            return redirect("accounts:register")
+
+        try:
+            validate_password(password1)
+        except ValidationError as exc:
+            for error_message in exc.messages:
+                messages.error(request, error_message)
+            return redirect("accounts:register")
+
+        try:
+            institution = Institution.objects.filter(is_active=True).first()
+
+            if institution is None or not institution.email_domain:
+                messages.error(
+                    request,
+                    "El registro público no está disponible en este momento.",
+                )
+                return redirect("accounts:register")
+
+            if not institution.email_belongs_to_domain(email):
+                messages.error(
+                    request,
+                    "El correo debe pertenecer al dominio institucional "
+                    f"@{institution.email_domain}.",
+                )
+                return redirect("accounts:register")
+
+            if User.objects.filter(email__iexact=email).exists():
+                messages.error(
+                    request,
+                    "Ya existe una cuenta registrada con este correo.",
+                )
+                return redirect("accounts:register")
+
+            username = self._generate_unique_username(email=email)
+
+            user = User(
+                username=username,
+                email=email,
+                first_name=first_name,
+                last_name=last_name,
+                role=UserRole.STUDENT,
+                institution=institution,
+                is_active=True,
+            )
+            user.set_password(password1)
+            user.save()
+
+            logger.info("Registro público correcto. user_id=%s", user.id)
+
+            messages.success(
+                request,
+                "Cuenta creada correctamente. Ya puedes iniciar sesión.",
+            )
+            return redirect("accounts:login")
+
+        except Exception:
+            logger.exception("Error inesperado en registro público.")
+            messages.error(request, "Ocurrió un error al crear tu cuenta.")
+            return redirect("accounts:register")
+
+    def _generate_unique_username(self, email: str) -> str:
+        base = re.sub(r"[^a-zA-Z0-9._-]", "", email.split("@")[0]).lower()
+        base = base or "usuario"
+        username = base
+        suffix = 1
+
+        while User.objects.filter(username__iexact=username).exists():
+            suffix += 1
+            username = f"{base}{suffix}"
+
+        return username

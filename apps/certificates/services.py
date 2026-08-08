@@ -384,6 +384,11 @@ class CertificateGenerationService:
         story.append(technical_table)
         story.append(Spacer(1, 0.6 * cm))
 
+        sources_section = self._build_sources_section(report=report, styles=styles)
+        if sources_section:
+            story.extend(sources_section)
+            story.append(Spacer(1, 0.6 * cm))
+
         note = (
             "<b>Nota técnica:</b> Los porcentajes presentados constituyen "
             "indicadores de apoyo para revisión académica. La detección de IA "
@@ -586,6 +591,39 @@ class CertificateGenerationService:
                 alignment=TA_CENTER,
                 textColor=colors.HexColor("#0F172A"),
             ),
+            "sources_title": ParagraphStyle(
+                "sources_title",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=11,
+                leading=14,
+                textColor=colors.HexColor("#123f9e"),
+            ),
+            "sources_header": ParagraphStyle(
+                "sources_header",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=11,
+                textColor=colors.white,
+            ),
+            "sources_cell": ParagraphStyle(
+                "sources_cell",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=11,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "sources_percent": ParagraphStyle(
+                "sources_percent",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=11,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#123f9e"),
+            ),
         }
 
     def _card_table_style(self) -> TableStyle:
@@ -631,6 +669,96 @@ class CertificateGenerationService:
                 ("PADDING", (0, 0), (-1, -1), 6),
             ]
         )
+
+    def _build_sources_section(
+        self,
+        report: AnalysisReport,
+        styles: dict[str, ParagraphStyle],
+    ) -> list[Any]:
+        sources = list(
+            report.sources.order_by("-matched_percent")[:10]
+        )
+
+        if not sources:
+            return []
+
+        section: list[Any] = []
+
+        accent_bar = Table([[""]], colWidths=[16.6 * cm], rowHeights=[0.12 * cm])
+        accent_bar.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f5b400")),
+                ]
+            )
+        )
+        section.append(accent_bar)
+        section.append(Spacer(1, 0.25 * cm))
+
+        section.append(Paragraph("Fuentes detectadas", styles["sources_title"]))
+        section.append(Spacer(1, 0.25 * cm))
+
+        rows: list[list[Any]] = [
+            [
+                Paragraph("Fuente", styles["sources_header"]),
+                Paragraph("Descripción", styles["sources_header"]),
+                Paragraph("%", styles["sources_header"]),
+            ]
+        ]
+
+        for source in sources:
+            rows.append(
+                [
+                    Paragraph(
+                        source.domain or "—",
+                        styles["sources_cell"],
+                    ),
+                    Paragraph(
+                        self._truncate(source.title, 90),
+                        styles["sources_cell"],
+                    ),
+                    Paragraph(
+                        f"{self._format_decimal(source.matched_percent)}%",
+                        styles["sources_percent"],
+                    ),
+                ]
+            )
+
+        sources_table = Table(
+            rows,
+            colWidths=[4.5 * cm, 9.6 * cm, 2.5 * cm],
+            repeatRows=1,
+        )
+        sources_table.setStyle(self._sources_table_style())
+        section.append(sources_table)
+
+        return section
+
+    def _sources_table_style(self) -> TableStyle:
+        return TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123f9e")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F0F5FF")],
+                ),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (2, 0), (2, -1), "CENTER"),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+
+    def _truncate(self, value: str, max_length: int) -> str:
+        value = value or ""
+
+        if len(value) <= max_length:
+            return value
+
+        return f"{value[: max_length - 1].rstrip()}…"
 
     def _generate_qr_buffer(self, verification_url: str) -> BytesIO:
         qr = qrcode.QRCode(

@@ -291,6 +291,9 @@ class PendingStudentsView(LoginRequiredMixin, TemplateView):
     template_name = "accounts/pending_students.html"
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        if not request.user.is_authenticated:
+            return super().dispatch(request, *args, **kwargs)
+
         try:
             _ensure_can_manage_pending_students(request.user)
         except PermissionDenied as exc:

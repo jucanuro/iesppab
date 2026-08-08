@@ -8,13 +8,18 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.password_validation import validate_password
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import validate_email
-from django.http import HttpRequest, HttpResponse
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseForbidden,
+)
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
+from django.views.generic import TemplateView
 
 from apps.core.models import Institution
 
@@ -231,6 +236,7 @@ class PublicRegistrationView(View):
                 role=UserRole.STUDENT,
                 institution=institution,
                 is_active=True,
+                is_enabled=False,
             )
             user.set_password(password1)
             user.save()
@@ -239,7 +245,8 @@ class PublicRegistrationView(View):
 
             messages.success(
                 request,
-                "Cuenta creada correctamente. Ya puedes iniciar sesión.",
+                "Cuenta creada. Un docente debe habilitarte antes de que "
+                "puedas subir documentos.",
             )
             return redirect("accounts:login")
 
@@ -259,3 +266,121 @@ class PublicRegistrationView(View):
             username = f"{base}{suffix}"
 
         return username
+
+
+def _ensure_can_manage_pending_students(user: Any) -> None:
+    can_manage = (
+        user.is_superuser
+        or user.is_teacher_role
+        or user.is_director_role
+        or user.is_admin_role
+    )
+
+    if not can_manage:
+        raise PermissionDenied(
+            "No tienes permisos para habilitar alumnos."
+        )
+
+
+class PendingStudentsView(LoginRequiredMixin, TemplateView):
+    """
+    Pantalla de habilitación en bloque de alumnos auto-registrados
+    (role=STUDENT, is_enabled=False) mediante selección tipo "tags".
+    """
+
+    template_name = "accounts/pending_students.html"
+
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        try:
+            _ensure_can_manage_pending_students(request.user)
+        except PermissionDenied as exc:
+            logger.warning(
+                "Permiso denegado al ver alumnos pendientes. user_id=%s",
+                request.user.id,
+                exc_info=True,
+            )
+            return HttpResponseForbidden(str(exc))
+
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        user = self.request.user
+
+        pending_students = User.objects.filter(
+            role=UserRole.STUDENT,
+            is_enabled=False,
+        )
+
+        if not user.is_superuser:
+            pending_students = pending_students.filter(
+                institution_id=user.institution_id
+            )
+
+        pending_students = pending_students.order_by(
+            "first_name", "last_name", "username"
+        )
+
+        pending_students_data = [
+            {
+                "id": str(student.id),
+                "name": student.get_full_name().strip() or student.username,
+                "email": student.email,
+            }
+            for student in pending_students
+        ]
+
+        context["pending_students"] = pending_students
+        context["pending_students_data"] = pending_students_data
+
+        return context
+
+
+class BulkEnableStudentsView(LoginRequiredMixin, View):
+    """
+    Habilita en bloque a los alumnos seleccionados en la pantalla de
+    pendientes.
+    """
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        user = request.user
+
+        try:
+            _ensure_can_manage_pending_students(user)
+        except PermissionDenied as exc:
+            logger.warning(
+                "Permiso denegado al habilitar alumnos. user_id=%s",
+                user.id,
+                exc_info=True,
+            )
+            return HttpResponseForbidden(str(exc))
+
+        student_ids = request.POST.getlist("student_ids")
+
+        if not student_ids:
+            messages.error(request, "Selecciona al menos un alumno para habilitar.")
+            return redirect("accounts:pending-students")
+
+        students = User.objects.filter(
+            id__in=student_ids,
+            role=UserRole.STUDENT,
+            is_enabled=False,
+        )
+
+        if not user.is_superuser:
+            students = students.filter(institution_id=user.institution_id)
+
+        enabled_count = students.update(is_enabled=True)
+
+        if enabled_count:
+            messages.success(
+                request,
+                f"{enabled_count} alumno(s) habilitado(s) correctamente.",
+            )
+        else:
+            messages.error(
+                request,
+                "No se pudo habilitar a los alumnos seleccionados.",
+            )
+
+        return redirect("accounts:pending-students")

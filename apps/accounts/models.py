@@ -63,6 +63,14 @@ class User(AbstractUser):
         default=False,
         verbose_name=_("Debe cambiar contraseña"),
     )
+    is_enabled = models.BooleanField(
+        default=True,
+        verbose_name=_("Habilitado para subir documentos"),
+        help_text=_(
+            "Alumnos auto-registrados inician deshabilitados hasta que un "
+            "docente los habilite."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Usuario")

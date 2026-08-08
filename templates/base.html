@@ -56,6 +56,18 @@
                             Documentos
                         </a>
 
+                        {% if request.user.is_teacher_role or request.user.is_director_role or request.user.is_admin_role or request.user.is_superuser %}
+                            <a href="{% url 'accounts:pending-students' %}"
+                               class="rounded-lg px-3 py-2 text-[13px] font-semibold transition
+                               {% if request.resolver_match.url_name == 'pending-students' %}
+                                    bg-[#eef3ff] text-[#123f9e]
+                               {% else %}
+                                    text-slate-600 hover:bg-slate-50 hover:text-[#123f9e]
+                               {% endif %}">
+                                Alumnos pendientes
+                            </a>
+                        {% endif %}
+
                         {% if request.user.is_admin_role or request.user.is_superuser %}
                             <a href="/admin/"
                                class="rounded-lg px-3 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-[#123f9e]">

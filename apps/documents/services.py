@@ -53,6 +53,11 @@ class DocumentUploadService:
                     "El alumno seleccionado no tiene institución asignada."
                 )
 
+            if not owner.is_enabled:
+                raise ValidationError(
+                    "Este alumno aún no ha sido habilitado por un docente."
+                )
+
             self._validate_file(dto.uploaded_file)
 
             detected_mime = self._detect_mime_type(dto.uploaded_file)

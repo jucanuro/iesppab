@@ -16,12 +16,14 @@ class UserAdmin(DjangoUserAdmin):
         "role",
         "institution",
         "is_active",
+        "is_enabled",
         "is_staff",
     )
     list_filter = (
         "role",
         "institution",
         "is_active",
+        "is_enabled",
         "is_staff",
         "is_superuser",
     )
@@ -44,6 +46,7 @@ class UserAdmin(DjangoUserAdmin):
                     "document_number",
                     "phone",
                     "must_change_password",
+                    "is_enabled",
                 )
             },
         ),
@@ -59,6 +62,7 @@ class UserAdmin(DjangoUserAdmin):
                     "role",
                     "document_number",
                     "phone",
+                    "is_enabled",
                 )
             },
         ),

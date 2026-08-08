@@ -81,3 +81,6 @@ yarn-error.log*
 *.zip
 *.tar
 *.tar.gz
+
+# Dumps de base de datos
+*.dump

@@ -9,6 +9,7 @@ class DocumentAdmin(admin.ModelAdmin):
         "title",
         "owner",
         "uploaded_by",
+        "advisor",
         "institution",
         "kind",
         "status",
@@ -41,6 +42,7 @@ class DocumentAdmin(admin.ModelAdmin):
         "institution",
         "owner",
         "uploaded_by",
+        "advisor",
     )
 
 

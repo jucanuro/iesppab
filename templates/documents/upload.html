@@ -154,9 +154,9 @@
 
                 <div class="grid gap-x-4 gap-y-5 xl:items-end
                     {% if not request.user.is_student_role %}
-                        xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.55fr_1.35fr_140px]
+                        xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.95fr_0.55fr_1.35fr_140px]
                     {% else %}
-                        xl:grid-cols-[1.25fr_0.75fr_1fr_0.55fr_1.45fr_140px]
+                        xl:grid-cols-[1.25fr_0.75fr_0.95fr_1fr_0.55fr_1.45fr_140px]
                     {% endif %}">
 
                     <!-- Título -->
@@ -232,6 +232,27 @@
                             </select>
                         </div>
                     {% endif %}
+
+                    <!-- Asesor -->
+                    <div class="min-w-0">
+                        <label for="advisor_id" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                            Asesor
+                        </label>
+
+                        <select id="advisor_id"
+                                name="advisor_id"
+                                class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+                            <option value="">
+                                Sin asesor asignado
+                            </option>
+
+                            {% for advisor in advisors %}
+                                <option value="{{ advisor.id }}">
+                                    {{ advisor.get_full_name|default:advisor.username }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
 
                     <!-- Curso -->
                     <div class="min-w-0">

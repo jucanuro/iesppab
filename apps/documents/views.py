@@ -40,6 +40,7 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
 
         context["document_kinds"] = DocumentKind.choices
         context["students"] = self._get_available_students(user)
+        context["advisors"] = self._get_available_advisors(user)
         context["recent_documents"] = self._get_recent_documents(user)
 
         return context
@@ -65,6 +66,7 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
                 course_name=request.POST.get("course_name", ""),
                 academic_period=request.POST.get("academic_period", ""),
                 owner_id=request.POST.get("owner_id") or None,
+                advisor_id=request.POST.get("advisor_id") or None,
                 uploaded_file=uploaded_file,
             )
 
@@ -128,6 +130,17 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             students = students.filter(institution_id=user.institution_id)
 
         return [user, *students.order_by("first_name", "last_name", "username")]
+
+    def _get_available_advisors(self, user: User) -> list[User]:
+        advisors = User.objects.select_related("institution").filter(
+            role__in=[UserRole.TEACHER, UserRole.DIRECTOR],
+            is_active=True,
+        )
+
+        if not user.is_superuser:
+            advisors = advisors.filter(institution_id=user.institution_id)
+
+        return list(advisors.order_by("first_name", "last_name", "username"))
 
     def _get_recent_documents(self, user: User):
         documents = Document.objects.select_related(

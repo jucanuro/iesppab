@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import secrets
+import unicodedata
 from dataclasses import dataclass
 from decimal import Decimal
 from io import BytesIO
@@ -20,8 +21,10 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     Image,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -68,6 +71,21 @@ class CertificateGenerationService:
         self._validate_report(report=report)
 
         certificate = self._get_or_create_certificate(report=report)
+
+        certificate.issued_by = self.issued_by
+        certificate.is_active = True
+        certificate.revoked_at = None
+        certificate.revoke_reason = ""
+        certificate.save(
+            update_fields=[
+                "issued_by",
+                "is_active",
+                "revoked_at",
+                "revoke_reason",
+                "updated_at",
+            ]
+        )
+
         verification_url = self._build_verification_url(
             certificate=certificate,
         )
@@ -85,20 +103,7 @@ class CertificateGenerationService:
             ContentFile(pdf_content),
             save=False,
         )
-        certificate.issued_by = self.issued_by
-        certificate.is_active = True
-        certificate.revoked_at = None
-        certificate.revoke_reason = ""
-        certificate.save(
-            update_fields=[
-                "pdf_file",
-                "issued_by",
-                "is_active",
-                "revoked_at",
-                "revoke_reason",
-                "updated_at",
-            ]
-        )
+        certificate.save(update_fields=["pdf_file", "updated_at"])
 
         logger.info(
             "Certificado PDF generado. certificate_id=%s report_id=%s",
@@ -114,6 +119,8 @@ class CertificateGenerationService:
             "document__institution",
             "document__owner",
             "document__uploaded_by",
+            "document__advisor",
+            "document__extracted_text",
             "analysis_job",
         ).filter(document_id=document_id)
 
@@ -161,7 +168,9 @@ class CertificateGenerationService:
         if existing_certificate:
             return existing_certificate
 
-        code = self._generate_certificate_code()
+        code = self._generate_certificate_code(
+            institution=report.document.institution,
+        )
         verification_hash = self._generate_verification_hash(
             report=report,
             code=code,
@@ -175,12 +184,13 @@ class CertificateGenerationService:
             is_active=True,
         )
 
-    def _generate_certificate_code(self) -> str:
+    def _generate_certificate_code(self, institution: Any) -> str:
         year = timezone.now().year
+        prefix = self._build_certificate_prefix(institution=institution)
 
         for _ in range(10):
             token = secrets.token_hex(4).upper()
-            code = f"VQL-{year}-{token}"
+            code = f"{prefix}-{year}-{token}"
 
             if not Certificate.objects.filter(code=code).exists():
                 return code
@@ -188,6 +198,32 @@ class CertificateGenerationService:
         raise CertificateGenerationError(
             "No se pudo generar un código único de certificado."
         )
+
+    def _build_certificate_prefix(self, institution: Any) -> str:
+        if institution.short_code.strip():
+            return self._to_ascii_alnum(institution.short_code)[:15] or "CERT"
+
+        return self._derive_prefix_from_name(institution.name)
+
+    def _derive_prefix_from_name(self, name: str) -> str:
+        """
+        Deriva un prefijo corto a partir del nombre institucional: toma la
+        primera letra de cada palabra alfabética, sin tildes/diacríticos ni
+        espacios, en mayúsculas. Ej: "IESPP Alfonso Barrantes Lingán" -> "IABL".
+        """
+        ascii_name = self._to_ascii_alnum(name, keep_spaces=True)
+        words = [word for word in ascii_name.split() if word]
+        initials = "".join(word[0] for word in words)
+
+        return initials[:15] or "CERT"
+
+    def _to_ascii_alnum(self, value: str, keep_spaces: bool = False) -> str:
+        normalized = unicodedata.normalize("NFKD", value)
+        ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+
+        allowed = str.isalnum if not keep_spaces else (lambda ch: ch.isalnum() or ch.isspace())
+
+        return "".join(ch for ch in ascii_value.upper() if allowed(ch))
 
     def _generate_verification_hash(
         self,
@@ -219,6 +255,13 @@ class CertificateGenerationService:
     ) -> bytes:
         buffer = BytesIO()
 
+        institution = report.document.institution
+        owner = report.document.owner
+        issued_by = certificate.issued_by
+        document = report.document
+
+        self._prepare_letterhead(institution=institution)
+
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
@@ -227,15 +270,11 @@ class CertificateGenerationService:
             topMargin=1.8 * cm,
             bottomMargin=1.5 * cm,
             title=f"Certificado {certificate.code}",
-            author="Vertex Quant Labs",
+            author=institution.name,
         )
 
         story: list[Any] = []
         styles = self._build_styles()
-
-        institution = report.document.institution
-        owner = report.document.owner
-        issued_by = certificate.issued_by
 
         story.append(
             Paragraph(
@@ -279,7 +318,7 @@ class CertificateGenerationService:
 
         intro_text = (
             "Se deja constancia que el documento académico indicado fue "
-            "procesado por la plataforma institucional Vertex Quant Labs, "
+            f"procesado por la plataforma institucional de {institution.name}, "
             "obteniéndose los resultados técnicos de similitud textual y "
             "estimación de patrones asociados a inteligencia artificial."
         )
@@ -401,23 +440,20 @@ class CertificateGenerationService:
         qr_buffer = self._generate_qr_buffer(verification_url=verification_url)
         qr_image = Image(qr_buffer, width=3.0 * cm, height=3.0 * cm)
 
-        signature_name = (
-            institution.certificate_signature_name
-            or "Responsable de Integridad Académica"
-        )
-        signature_position = (
-            institution.certificate_signature_position
-            or "IESPP Alfonso Barrantes Lingán"
-        )
+        if document.advisor is not None:
+            advisor_name = document.advisor.get_full_name() or document.advisor.username
+        else:
+            advisor_name = "Asesor no asignado"
 
         footer_table = Table(
             [
                 [
                     Paragraph(
                         "<br/><br/>______________________________<br/>"
-                        f"<b>{signature_name}</b><br/>"
-                        f"{signature_position}<br/>"
-                        f"Emitido por: {issued_by.get_full_name() or issued_by.username}",
+                        f"<b>{advisor_name}</b><br/>"
+                        "Asesor(a) responsable<br/>"
+                        f"<font size=6.5 color='#64748B'>Emitido por: "
+                        f"{issued_by.get_full_name() or issued_by.username}</font>",
                         styles["signature"],
                     ),
                     qr_image,
@@ -438,6 +474,16 @@ class CertificateGenerationService:
         footer_table.setStyle(self._footer_table_style())
         story.append(footer_table)
 
+        story.append(PageBreak())
+        story.extend(
+            self._build_receipt_section(
+                document=document,
+                institution=institution,
+                owner=owner,
+                styles=styles,
+            )
+        )
+
         doc.build(
             story,
             onFirstPage=self._decorate_page,
@@ -457,7 +503,7 @@ class CertificateGenerationService:
                 fontSize=18,
                 leading=22,
                 alignment=TA_CENTER,
-                textColor=colors.HexColor("#7F1D1D"),
+                textColor=colors.HexColor("#123f9e"),
                 spaceAfter=4,
             ),
             "subtitle": ParagraphStyle(
@@ -624,6 +670,15 @@ class CertificateGenerationService:
                 alignment=TA_CENTER,
                 textColor=colors.HexColor("#123f9e"),
             ),
+            "receipt_footer": ParagraphStyle(
+                "receipt_footer",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=9,
+                leading=13,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#334155"),
+            ),
         }
 
     def _card_table_style(self) -> TableStyle:
@@ -778,23 +833,67 @@ class CertificateGenerationService:
 
         return buffer
 
+    def _prepare_letterhead(self, institution: Any) -> None:
+        """
+        Precalcula nombre y logo institucional para el membrete,
+        dibujado en cada página por `_decorate_page`.
+        """
+        self._letterhead_name = institution.name.upper()
+        self._letterhead_logo: ImageReader | None = None
+
+        if not institution.logo:
+            return
+
+        try:
+            institution.logo.open("rb")
+            image_bytes = institution.logo.read()
+            self._letterhead_logo = ImageReader(BytesIO(image_bytes))
+        except Exception:
+            logger.warning(
+                "No se pudo cargar el logo institucional para el certificado. "
+                "institution_id=%s",
+                institution.id,
+                exc_info=True,
+            )
+        finally:
+            institution.logo.close()
+
     def _decorate_page(self, canvas: Any, doc: Any) -> None:
         width, height = A4
+        bar_height = 1.0 * cm
 
         canvas.saveState()
 
-        canvas.setFillColor(colors.HexColor("#7F1D1D"))
-        canvas.rect(0, height - 1.0 * cm, width, 1.0 * cm, fill=1, stroke=0)
+        canvas.setFillColor(colors.HexColor("#123f9e"))
+        canvas.rect(0, height - bar_height, width, bar_height, fill=1, stroke=0)
 
         canvas.setFillColor(colors.HexColor("#0F172A"))
         canvas.rect(0, 0, width, 0.45 * cm, fill=1, stroke=0)
 
+        text_x = 1.7 * cm
+        logo = getattr(self, "_letterhead_logo", None)
+
+        if logo is not None:
+            logo_size = bar_height - 0.2 * cm
+            canvas.drawImage(
+                logo,
+                1.4 * cm,
+                height - bar_height + 0.1 * cm,
+                width=logo_size,
+                height=logo_size,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+            text_x = 1.4 * cm + logo_size + 0.3 * cm
+
+        institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
+
         canvas.setFillColor(colors.white)
         canvas.setFont("Helvetica-Bold", 7)
         canvas.drawString(
-            1.7 * cm,
+            text_x,
             height - 0.65 * cm,
-            "VERTEX QUANT LABS - INTEGRIDAD ACADEMICA",
+            f"{institution_name} - INTEGRIDAD ACADÉMICA",
         )
 
         canvas.setFont("Helvetica", 6.5)
@@ -805,6 +904,88 @@ class CertificateGenerationService:
         )
 
         canvas.restoreState()
+
+    def _build_receipt_section(
+        self,
+        document: Any,
+        institution: Any,
+        owner: User,
+        styles: dict[str, ParagraphStyle],
+    ) -> list[Any]:
+        section: list[Any] = []
+
+        section.append(Paragraph("Recibo digital de entrega", styles["title"]))
+        section.append(Spacer(1, 0.2 * cm))
+        section.append(
+            Paragraph(
+                "Comprobante de procesamiento del documento académico",
+                styles["subtitle"],
+            )
+        )
+        section.append(Spacer(1, 0.7 * cm))
+
+        extracted_text = getattr(document, "extracted_text", None)
+        word_count = (
+            f"{extracted_text.word_count:,}".replace(",", " ")
+            if extracted_text is not None
+            else "No disponible"
+        )
+
+        advisor_display = (
+            document.advisor.get_full_name() or document.advisor.username
+            if document.advisor is not None
+            else "No asignado"
+        )
+
+        rows = [
+            ("Autor de la entrega", owner.get_full_name() or owner.username),
+            ("Asesor", advisor_display),
+            ("Título de la entrega", document.title),
+            ("Nombre del archivo original", document.original_filename),
+            ("Tamaño del archivo", self._format_file_size(document.file_size_bytes)),
+            ("Total de palabras", word_count),
+            (
+                "Fecha de entrega",
+                timezone.localtime(document.created_at).strftime("%d/%m/%Y %H:%M"),
+            ),
+            ("Identificador de la entrega", str(document.id)),
+        ]
+
+        receipt_table = Table(
+            [
+                [
+                    Paragraph(f"<b>{label}</b>", styles["table_header"]),
+                    Paragraph(value, styles["table_value"]),
+                ]
+                for label, value in rows
+            ],
+            colWidths=[5.5 * cm, 11.1 * cm],
+        )
+        receipt_table.setStyle(self._info_table_style())
+        section.append(receipt_table)
+        section.append(Spacer(1, 0.8 * cm))
+
+        section.append(
+            Paragraph(
+                "Este recibo confirma que el documento fue procesado por la "
+                f"plataforma institucional de {institution.name}.",
+                styles["receipt_footer"],
+            )
+        )
+
+        return section
+
+    def _format_file_size(self, size_bytes: int) -> str:
+        size = float(size_bytes)
+
+        for unit in ("B", "KB", "MB", "GB"):
+            if size < 1024 or unit == "GB":
+                if unit == "B":
+                    return f"{int(size)} {unit}"
+                return f"{size:.2f} {unit}"
+            size /= 1024
+
+        return f"{size:.2f} GB"
 
     def _format_decimal(self, value: Decimal) -> str:
         return f"{value:.2f}"

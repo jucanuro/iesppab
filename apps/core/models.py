@@ -52,6 +52,14 @@ class Institution(TimeStampedModel):
         blank=True,
         verbose_name=_("RUC"),
     )
+    short_code = models.CharField(
+        max_length=15,
+        blank=True,
+        verbose_name=_("Código corto institucional"),
+        help_text=_(
+            "Usado como prefijo de certificados, ej: IESPPABL"
+        ),
+    )
     logo = models.ImageField(
         upload_to="private/institutions/logos/",
         blank=True,

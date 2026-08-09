@@ -73,6 +73,15 @@ class Document(TimeStampedModel):
         related_name="uploaded_documents",
         verbose_name=_("Subido por"),
     )
+    advisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="advised_documents",
+        verbose_name=_("Asesor"),
+        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR"]},
+    )
     title = models.CharField(
         max_length=250,
         db_index=True,

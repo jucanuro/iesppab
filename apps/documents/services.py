@@ -30,6 +30,7 @@ class DocumentUploadDTO:
     course_name: str
     academic_period: str
     owner_id: str | UUID | None
+    advisor_id: str | UUID | None
     uploaded_file: UploadedFile
 
 
@@ -58,6 +59,8 @@ class DocumentUploadService:
                     "Este alumno aún no ha sido habilitado por un docente."
                 )
 
+            advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
+
             self._validate_file(dto.uploaded_file)
 
             detected_mime = self._detect_mime_type(dto.uploaded_file)
@@ -69,6 +72,7 @@ class DocumentUploadService:
                 institution=owner.institution,
                 owner=owner,
                 uploaded_by=self.uploaded_by,
+                advisor=advisor,
                 title=dto.title.strip(),
                 kind=dto.kind,
                 course_name=dto.course_name.strip(),
@@ -158,6 +162,32 @@ class DocumentUploadService:
             )
 
         return owner
+
+    def _resolve_advisor(
+        self,
+        advisor_id: str | UUID | None,
+        owner: User,
+    ) -> User | None:
+        if not advisor_id:
+            return None
+
+        advisors = User.objects.filter(
+            id=advisor_id,
+            role__in=[UserRole.TEACHER, UserRole.DIRECTOR],
+            is_active=True,
+        )
+
+        if not self.uploaded_by.is_superuser:
+            advisors = advisors.filter(institution_id=owner.institution_id)
+
+        advisor = advisors.first()
+
+        if advisor is None:
+            raise DocumentUploadError(
+                "El asesor seleccionado no existe o no pertenece a la institución del alumno."
+            )
+
+        return advisor
 
     def _validate_file(self, uploaded_file: UploadedFile) -> None:
         filename = uploaded_file.name.lower()

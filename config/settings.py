@@ -404,7 +404,7 @@ WEB_ANALYSIS_ENABLED = env_bool(
 
 BRAVE_SEARCH_COUNTRY = os.getenv(
     "BRAVE_SEARCH_COUNTRY",
-    "PE",
+    "ALL",
 ).strip()
 
 BRAVE_SEARCH_LANG = os.getenv(

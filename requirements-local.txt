@@ -1,0 +1,13 @@
+# Dependencias EXPERIMENTALES para detección de IA por perplejidad (apps/analysis/engines/perplexity_detector.py).
+# SOLO para desarrollo local. NO instalar en producción todavía: el servidor de
+# producción tiene 2GB de RAM y el impacto de cargar un modelo de lenguaje no
+# ha sido validado ahí. Ver Fase 3 de la medición de impacto antes de mover
+# estas dependencias a requirements.txt.
+#
+# Instalación:
+#   pip install -r requirements.txt
+#   pip install -r requirements-local.txt
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.13.0+cpu
+transformers==5.15.0

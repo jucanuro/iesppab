@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
@@ -12,8 +13,9 @@ from django.db.models import Count
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.analysis.engines.ai_detector import SpanishAIDetector
+from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
 from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
     InternalSimilarityEngine,
@@ -68,6 +70,17 @@ class DocumentAnalysisService:
     10. Genera reporte final.
     """
 
+    # Peso de la señal de perplejidad+burstiness frente a la heurística
+    # existente cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo (ver
+    # `perplexity_detector.py`). Perplejidad captura predictibilidad a nivel
+    # de tokens (más difícil de evadir parafraseando) y es la técnica real
+    # detrás de GPTZero; la heurística de conectores/estilo es más fácil de
+    # burlar pero sigue aportando señal sobre fórmulas académicas genéricas.
+    # Por eso se le da más peso a la perplejidad (60/40) en vez de un
+    # promedio simple.
+    PERPLEXITY_SIGNAL_WEIGHT = Decimal("0.60")
+    HEURISTIC_SIGNAL_WEIGHT = Decimal("0.40")
+
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
 
@@ -80,6 +93,7 @@ class DocumentAnalysisService:
         self.web_similarity_engine = WebSimilarityEngine()
 
         self.ai_detector = SpanishAIDetector()
+        self.perplexity_detector = SpanishPerplexityDetector()
 
     def execute(self, document_id: UUID) -> AnalysisReport:
         document = self._get_allowed_document(document_id=document_id)
@@ -156,6 +170,12 @@ class DocumentAnalysisService:
                 content=analysis_content,
             )
 
+            ai_probability_percent, ai_score_breakdown = self._estimate_ai_probability(
+                document=document,
+                analysis_content=analysis_content,
+                heuristic_result=ai_result,
+            )
+
             total_similarity_percent = self._calculate_total_similarity_percent(
                 content_length=len(analysis_content),
                 internal_matches=internal_result.matches,
@@ -169,8 +189,9 @@ class DocumentAnalysisService:
                     total_similarity_percent=total_similarity_percent,
                     internal_similarity_percent=internal_result.similarity_percent,
                     web_similarity_percent=web_result.web_similarity_percent,
-                    ai_probability_percent=ai_result.ai_probability_percent,
+                    ai_probability_percent=ai_probability_percent,
                     excluded_sections=filtered_text.excluded_sections,
+                    ai_score_breakdown=ai_score_breakdown,
                 )
 
                 self._replace_internal_similarity_findings(
@@ -222,6 +243,81 @@ class DocumentAnalysisService:
             raise DocumentAnalysisError(
                 "No se pudo completar el análisis del documento."
             ) from exc
+
+    def _estimate_ai_probability(
+        self,
+        document: Document,
+        analysis_content: str,
+        heuristic_result: AIAnalysisResult,
+    ) -> tuple[Decimal, dict]:
+        """
+        Combina la heurística existente con la señal experimental de
+        perplejidad+burstiness (gateada por `PERPLEXITY_AI_DETECTION_ENABLED`,
+        desactivada por defecto — ver `perplexity_detector.py`). Si la señal
+        de perplejidad no está habilitada o falla (p. ej. torch/transformers
+        no instalados en este entorno), se conserva el comportamiento
+        original: solo la heurística.
+        """
+        breakdown = {
+            "heuristic_ai_score": str(heuristic_result.ai_probability_percent),
+            "perplexity_ai_score": None,
+            "mean_perplexity": None,
+            "burstiness": None,
+            "sentence_count": None,
+            "combination": "heuristic-only",
+        }
+
+        if not settings.PERPLEXITY_AI_DETECTION_ENABLED:
+            return heuristic_result.ai_probability_percent, breakdown
+
+        started_at = time.monotonic()
+
+        try:
+            perplexity_result = self.perplexity_detector.analyze(
+                content=analysis_content,
+            )
+        except Exception:
+            logger.exception(
+                "Fallo calculando señal de perplejidad; se usa solo la heurística. "
+                "document_id=%s",
+                document.id,
+            )
+            return heuristic_result.ai_probability_percent, breakdown
+
+        elapsed_seconds = time.monotonic() - started_at
+
+        combined_probability = (
+            heuristic_result.ai_probability_percent * self.HEURISTIC_SIGNAL_WEIGHT
+            + perplexity_result.ai_probability_percent * self.PERPLEXITY_SIGNAL_WEIGHT
+        ).quantize(Decimal("0.01"))
+
+        breakdown = {
+            "heuristic_ai_score": str(heuristic_result.ai_probability_percent),
+            "perplexity_ai_score": str(perplexity_result.ai_probability_percent),
+            "mean_perplexity": perplexity_result.mean_perplexity,
+            "burstiness": perplexity_result.burstiness,
+            "sentence_count": perplexity_result.sentence_count,
+            "combination": (
+                f"{self.PERPLEXITY_SIGNAL_WEIGHT}*perplexity_ai_score + "
+                f"{self.HEURISTIC_SIGNAL_WEIGHT}*heuristic_ai_score"
+            ),
+        }
+
+        logger.info(
+            "Señal de perplejidad calculada. document_id=%s heuristic=%s "
+            "perplexity=%s combinado=%s mean_perplexity=%s burstiness=%s "
+            "sentences=%s tiempo=%.2fs",
+            document.id,
+            heuristic_result.ai_probability_percent,
+            perplexity_result.ai_probability_percent,
+            combined_probability,
+            perplexity_result.mean_perplexity,
+            perplexity_result.burstiness,
+            perplexity_result.sentence_count,
+            elapsed_seconds,
+        )
+
+        return combined_probability, breakdown
 
     def _get_allowed_document(self, document_id: UUID) -> Document:
         queryset = Document.objects.select_related(
@@ -505,6 +601,7 @@ class DocumentAnalysisService:
         web_similarity_percent: Decimal,
         ai_probability_percent: Decimal,
         excluded_sections: list[str],
+        ai_score_breakdown: dict | None = None,
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
             similarity_percent=total_similarity_percent,
@@ -525,6 +622,7 @@ class DocumentAnalysisService:
                     "internal_similarity_algorithm": "knowledge-chunks-shingling",
                     "web_similarity_algorithm": "brave-search-html-pdf-shingling",
                     "ai_algorithm": "spanish-heuristic-v1",
+                    "ai_score_breakdown": ai_score_breakdown or {},
                     "excluded_sections": excluded_sections,
                     "note": "La similitud web depende de fuentes públicas encontradas y accesibles.",
                 },

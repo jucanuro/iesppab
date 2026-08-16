@@ -417,6 +417,17 @@ WEB_ANALYSIS_TIMEOUT_SECONDS = env_int(
     10,
 )
 
+
+# Señal experimental de detección de IA por perplejidad + burstiness
+# (apps/analysis/engines/perplexity_detector.py). Requiere `torch` y
+# `transformers` (ver requirements-local.txt) y carga un modelo de ~250MB en
+# memoria. Default False a propósito: NO activar en producción hasta medir
+# el impacto de tiempo/RAM en un servidor real (el actual tiene solo 2GB).
+PERPLEXITY_AI_DETECTION_ENABLED = env_bool(
+    "PERPLEXITY_AI_DETECTION_ENABLED",
+    False,
+)
+
 WEB_ANALYSIS_MAX_QUERY_PHRASES = env_int(
     "WEB_ANALYSIS_MAX_QUERY_PHRASES",
     8,

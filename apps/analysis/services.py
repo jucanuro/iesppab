@@ -70,16 +70,19 @@ class DocumentAnalysisService:
     10. Genera reporte final.
     """
 
-    # Peso de la señal de perplejidad+burstiness frente a la heurística
-    # existente cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo (ver
-    # `perplexity_detector.py`). Perplejidad captura predictibilidad a nivel
-    # de tokens (más difícil de evadir parafraseando) y es la técnica real
-    # detrás de GPTZero; la heurística de conectores/estilo es más fácil de
-    # burlar pero sigue aportando señal sobre fórmulas académicas genéricas.
-    # Por eso se le da más peso a la perplejidad (60/40) en vez de un
-    # promedio simple.
-    PERPLEXITY_SIGNAL_WEIGHT = Decimal("0.60")
-    HEURISTIC_SIGNAL_WEIGHT = Decimal("0.40")
+    # Cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo, la señal de
+    # perplejidad+burstiness REEMPLAZA por completo a la heurística de
+    # conectores/estilo (ver `perplexity_detector.py`) en vez de combinarse
+    # con ella. Se probaron ambos enfoques: el benchmark local
+    # (`evaluate_ai_detector.py`, ver `apps/analysis/evaluation/`) midió un
+    # AUC-like de ~0.92-0.95 para perplejidad contra ~0.42 para la
+    # heurística (peor que azar) sobre el mismo dataset de prueba. Combinar
+    # ambas señales (como se hacía antes, 60/40) solo diluye la señal buena
+    # con una que activamente empeora la clasificación. El resultado de la
+    # heurística se sigue calculando y guardando en `ai_score_breakdown`
+    # para comparación/depuración, pero no participa en el score final.
+    PERPLEXITY_SIGNAL_WEIGHT = Decimal("1.00")
+    HEURISTIC_SIGNAL_WEIGHT = Decimal("0.00")
 
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
@@ -251,12 +254,15 @@ class DocumentAnalysisService:
         heuristic_result: AIAnalysisResult,
     ) -> tuple[Decimal, dict]:
         """
-        Combina la heurística existente con la señal experimental de
-        perplejidad+burstiness (gateada por `PERPLEXITY_AI_DETECTION_ENABLED`,
-        desactivada por defecto — ver `perplexity_detector.py`). Si la señal
-        de perplejidad no está habilitada o falla (p. ej. torch/transformers
-        no instalados en este entorno), se conserva el comportamiento
-        original: solo la heurística.
+        Cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo (desactivada por
+        defecto — ver `perplexity_detector.py`), la señal de
+        perplejidad+burstiness REEMPLAZA a la heurística existente como
+        `ai_probability_percent` (ver justificación en `PERPLEXITY_SIGNAL_WEIGHT`
+        arriba). La heurística se sigue ejecutando y su score queda en
+        `breakdown["heuristic_ai_score"]` solo para comparación/depuración. Si
+        la señal de perplejidad no está habilitada o falla (p. ej.
+        torch/transformers no instalados en este entorno), se conserva el
+        comportamiento original: solo la heurística.
         """
         breakdown = {
             "heuristic_ai_score": str(heuristic_result.ai_probability_percent),
@@ -286,7 +292,7 @@ class DocumentAnalysisService:
 
         elapsed_seconds = time.monotonic() - started_at
 
-        combined_probability = (
+        final_probability = (
             heuristic_result.ai_probability_percent * self.HEURISTIC_SIGNAL_WEIGHT
             + perplexity_result.ai_probability_percent * self.PERPLEXITY_SIGNAL_WEIGHT
         ).quantize(Decimal("0.01"))
@@ -297,27 +303,23 @@ class DocumentAnalysisService:
             "mean_perplexity": perplexity_result.mean_perplexity,
             "burstiness": perplexity_result.burstiness,
             "sentence_count": perplexity_result.sentence_count,
-            "combination": (
-                f"{self.PERPLEXITY_SIGNAL_WEIGHT}*perplexity_ai_score + "
-                f"{self.HEURISTIC_SIGNAL_WEIGHT}*heuristic_ai_score"
-            ),
+            "combination": "perplexity-replaces-heuristic",
         }
 
         logger.info(
-            "Señal de perplejidad calculada. document_id=%s heuristic=%s "
-            "perplexity=%s combinado=%s mean_perplexity=%s burstiness=%s "
-            "sentences=%s tiempo=%.2fs",
+            "Señal de perplejidad calculada (reemplaza a la heurística). "
+            "document_id=%s heuristic_descartada=%s perplexity_final=%s "
+            "mean_perplexity=%s burstiness=%s sentences=%s tiempo=%.2fs",
             document.id,
             heuristic_result.ai_probability_percent,
-            perplexity_result.ai_probability_percent,
-            combined_probability,
+            final_probability,
             perplexity_result.mean_perplexity,
             perplexity_result.burstiness,
             perplexity_result.sentence_count,
             elapsed_seconds,
         )
 
-        return combined_probability, breakdown
+        return final_probability, breakdown
 
     def _get_allowed_document(self, document_id: UUID) -> Document:
         queryset = Document.objects.select_related(
@@ -551,6 +553,11 @@ class DocumentAnalysisService:
                     is_active=True,
                 )
                 .exclude(document=document)
+                # Un alumno nunca debe aparecer marcado por similitud contra
+                # su propio trabajo anterior (borradores, versiones
+                # corregidas, entregas previas). Solo aplica al corpus
+                # interno: los candidatos OAI son siempre fuentes externas.
+                .exclude(document__owner=document.owner)
             )
 
             for chunk in internal_chunks:
@@ -653,8 +660,23 @@ class DocumentAnalysisService:
             source_type=SourceType.INTERNAL,
         ).delete()
 
+        # El motor de similitud compara fragmentos solapados del documento
+        # actual (misma fuente puede quedar como "best_match" de varios
+        # fragmentos consecutivos), así que agrupamos por fuente antes de
+        # crear ReportSource para no duplicar la misma fuente en la lista.
+        matches_by_source_id: dict[UUID, list] = {}
+
         for match in matches:
-            oai_record = oai_records_by_id.get(match.source_document_id)
+            matches_by_source_id.setdefault(
+                match.source_document_id, []
+            ).append(match)
+
+        for source_document_id, source_matches in matches_by_source_id.items():
+            representative = max(
+                source_matches,
+                key=lambda item: item.matched_percent,
+            )
+            oai_record = oai_records_by_id.get(source_document_id)
 
             if oai_record is not None:
                 domain = oai_record.repository_name
@@ -669,36 +691,37 @@ class DocumentAnalysisService:
                 domain = "Repositorio interno"
                 url = ""
                 source_metadata = {
-                    "source_document_id": str(match.source_document_id),
-                    "source_owner": match.source_owner_name,
+                    "source_document_id": str(source_document_id),
+                    "source_owner": representative.source_owner_name,
                 }
                 finding_source = "internal"
 
             source = ReportSource.objects.create(
                 report=report,
                 source_type=SourceType.INTERNAL,
-                title=match.source_title,
+                title=representative.source_title,
                 url=url,
                 domain=domain,
-                matched_percent=match.matched_percent,
-                snippet=match.source_excerpt,
+                matched_percent=representative.matched_percent,
+                snippet=representative.source_excerpt,
                 metadata=source_metadata,
             )
 
-            ReportFinding.objects.create(
-                report=report,
-                source=source,
-                finding_type=FindingType.SIMILARITY,
-                start_offset=match.start_offset,
-                end_offset=match.end_offset,
-                text_excerpt=match.text_excerpt,
-                confidence_percent=match.matched_percent,
-                metadata={
-                    "algorithm": "knowledge-chunks-shingling",
-                    "source": finding_source,
-                    "source_document_id": str(match.source_document_id),
-                },
-            )
+            for match in source_matches:
+                ReportFinding.objects.create(
+                    report=report,
+                    source=source,
+                    finding_type=FindingType.SIMILARITY,
+                    start_offset=match.start_offset,
+                    end_offset=match.end_offset,
+                    text_excerpt=match.text_excerpt,
+                    confidence_percent=match.matched_percent,
+                    metadata={
+                        "algorithm": "knowledge-chunks-shingling",
+                        "source": finding_source,
+                        "source_document_id": str(source_document_id),
+                    },
+                )
 
     def _replace_web_similarity_findings(
         self,
@@ -716,35 +739,49 @@ class DocumentAnalysisService:
             source_type=SourceType.WEB,
         ).delete()
 
+        # Mismo motivo que en el similitud interna: fragmentos solapados del
+        # documento actual pueden compartir la misma página web como mejor
+        # candidato, así que agrupamos por URL antes de crear ReportSource.
+        matches_by_url: dict[str, list] = {}
+
         for match in web_result.matches:
+            matches_by_url.setdefault(match.url, []).append(match)
+
+        for url, url_matches in matches_by_url.items():
+            representative = max(
+                url_matches,
+                key=lambda item: item.matched_percent,
+            )
+
             source = ReportSource.objects.create(
                 report=report,
                 source_type=SourceType.WEB,
-                title=match.title or match.domain,
-                url=match.url,
-                domain=match.domain,
-                matched_percent=match.matched_percent,
-                snippet=match.source_excerpt,
+                title=representative.title or representative.domain,
+                url=url,
+                domain=representative.domain,
+                matched_percent=representative.matched_percent,
+                snippet=representative.source_excerpt,
                 metadata={
                     "source": "web",
-                    "url": match.url,
+                    "url": url,
                 },
             )
 
-            ReportFinding.objects.create(
-                report=report,
-                source=source,
-                finding_type=FindingType.SIMILARITY,
-                start_offset=match.start_offset,
-                end_offset=match.end_offset,
-                text_excerpt=match.text_excerpt,
-                confidence_percent=match.matched_percent,
-                metadata={
-                    "algorithm": "brave-search-html-pdf-shingling",
-                    "source": "web",
-                    "url": match.url,
-                },
-            )
+            for match in url_matches:
+                ReportFinding.objects.create(
+                    report=report,
+                    source=source,
+                    finding_type=FindingType.SIMILARITY,
+                    start_offset=match.start_offset,
+                    end_offset=match.end_offset,
+                    text_excerpt=match.text_excerpt,
+                    confidence_percent=match.matched_percent,
+                    metadata={
+                        "algorithm": "brave-search-html-pdf-shingling",
+                        "source": "web",
+                        "url": url,
+                    },
+                )
 
     def _replace_ai_findings(
         self,

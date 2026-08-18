@@ -321,6 +321,15 @@ class DocumentAnalysisService:
 
         return final_probability, breakdown
 
+    def check_permission(self, document_id: UUID) -> None:
+        """
+        Valida que ``requested_by`` puede analizar el documento sin
+        ejecutar el pipeline. Permite rechazar con 403 de forma síncrona
+        antes de encolar la tarea de análisis en background.
+        """
+
+        self._get_allowed_document(document_id=document_id)
+
     def _get_allowed_document(self, document_id: UUID) -> Document:
         queryset = Document.objects.select_related(
             "institution",

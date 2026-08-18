@@ -11,20 +11,16 @@ from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.views import View
 
-from apps.analysis.services import (
-    DocumentAnalysisError,
-    DocumentAnalysisService,
-)
+from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
+from apps.analysis.tasks import run_document_analysis
 
 logger = logging.getLogger(__name__)
 
 
 class DocumentAnalyzeView(LoginRequiredMixin, View):
     """
-    Ejecuta el análisis del documento.
-
-    Por ahora es síncrono.
-    Luego lo pasaremos a Celery.
+    Encola el análisis del documento para que corra en background (Celery),
+    sin bloquear la petición HTTP.
     """
 
     def post(
@@ -35,15 +31,20 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
         **kwargs: Any,
     ) -> HttpResponse:
         try:
-            service = DocumentAnalysisService(requested_by=request.user)
-            report = service.execute(document_id=pk)
+            # Valida permisos de forma síncrona (rápido) antes de encolar,
+            # para poder devolver un 403 inmediato si el usuario no puede
+            # analizar este documento.
+            DocumentAnalysisService(requested_by=request.user).check_permission(
+                document_id=pk,
+            )
+
+            run_document_analysis.delay(str(pk), str(request.user.id))
 
             messages.success(
                 request,
                 (
-                    "Análisis completado. "
-                    f"Similitud: {report.similarity_percent}% | "
-                    f"IA: {report.ai_probability_percent}%"
+                    "Tu documento fue enviado a análisis, el reporte "
+                    "estará listo en unos momentos."
                 ),
             )
 

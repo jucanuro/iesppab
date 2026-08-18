@@ -13,6 +13,7 @@ from django.shortcuts import render
 from django.views import View
 
 from apps.accounts.models import User
+from apps.analysis.models import AnalysisJob, AnalysisJobStatus
 from apps.certificates.models import Certificate
 from apps.documents.models import Document
 from apps.reports.models import (
@@ -66,6 +67,7 @@ class ReportDetailView(LoginRequiredMixin, View):
 
             certificate = None
             highlighted_segments: list[HighlightSegment] = []
+            analysis_job = None
 
             if report:
                 certificate = self._get_certificate(report=report)
@@ -75,12 +77,22 @@ class ReportDetailView(LoginRequiredMixin, View):
                         content=document.extracted_text.content,
                         findings=list(report.findings.all()),
                     )
+            else:
+                analysis_job = self._get_latest_job(document=document)
 
             context = {
                 "document": document,
                 "report": report,
                 "certificate": certificate,
                 "highlighted_segments": highlighted_segments,
+                "analysis_job": analysis_job,
+                "analysis_in_progress": analysis_job is not None
+                and analysis_job.status
+                in {
+                    AnalysisJobStatus.PENDING,
+                    AnalysisJobStatus.QUEUED,
+                    AnalysisJobStatus.RUNNING,
+                },
                 "sources": report.sources.all() if report else [],
                 "similarity_findings": report.findings.filter(
                     finding_type=FindingType.SIMILARITY,
@@ -174,6 +186,16 @@ class ReportDetailView(LoginRequiredMixin, View):
                 report=report,
                 is_active=True,
             )
+            .order_by("-created_at")
+            .first()
+        )
+
+    def _get_latest_job(
+        self,
+        document: Document,
+    ) -> AnalysisJob | None:
+        return (
+            AnalysisJob.objects.filter(document=document)
             .order_by("-created_at")
             .first()
         )

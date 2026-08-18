@@ -2,6 +2,12 @@
 
 {% block title %}Reporte | {{ document.title }}{% endblock %}
 
+{% block extra_head %}
+    {% if analysis_in_progress %}
+        <meta http-equiv="refresh" content="10">
+    {% endif %}
+{% endblock %}
+
 {% block content %}
 
 <section class="space-y-5">
@@ -104,16 +110,53 @@
 
     {% if not report %}
 
-        <!-- SIN REPORTE -->
-        <section class="rounded-xl border border-[#f5b400]/40 bg-[#fff8e6] p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
-            <h3 class="text-[16px] font-bold text-[#8a6100]">
-                Este documento aún no tiene reporte.
-            </h3>
+        {% if analysis_in_progress %}
 
-            <p class="mt-2 text-[13px] text-[#8a6100]">
-                Primero ejecuta el análisis desde la bandeja documental.
-            </p>
-        </section>
+            <!-- ANALIZANDO -->
+            <section class="rounded-xl border border-[#236bfd]/25 bg-[#eef3ff] p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
+                <div class="flex items-center gap-3">
+                    <span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#236bfd]/30 border-t-[#236bfd]"></span>
+
+                    <h3 class="text-[16px] font-bold text-[#123f9e]">
+                        Analizando documento...
+                    </h3>
+                </div>
+
+                <p class="mt-2 text-[13px] text-[#123f9e]/80">
+                    {% if analysis_job.current_step %}
+                        {{ analysis_job.current_step }}.
+                    {% endif %}
+                    Esta página se actualiza automáticamente cada 10 segundos.
+                </p>
+            </section>
+
+        {% elif analysis_job.status == "FAILED" %}
+
+            <!-- ANÁLISIS FALLIDO -->
+            <section class="rounded-xl border border-red-200 bg-red-50 p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
+                <h3 class="text-[16px] font-bold text-red-700">
+                    El análisis de este documento falló.
+                </h3>
+
+                <p class="mt-2 text-[13px] text-red-600">
+                    Intenta ejecutar el análisis nuevamente desde la bandeja documental.
+                </p>
+            </section>
+
+        {% else %}
+
+            <!-- SIN REPORTE -->
+            <section class="rounded-xl border border-[#f5b400]/40 bg-[#fff8e6] p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
+                <h3 class="text-[16px] font-bold text-[#8a6100]">
+                    Este documento aún no tiene reporte.
+                </h3>
+
+                <p class="mt-2 text-[13px] text-[#8a6100]">
+                    Primero ejecuta el análisis desde la bandeja documental.
+                </p>
+            </section>
+
+        {% endif %}
 
     {% else %}
 

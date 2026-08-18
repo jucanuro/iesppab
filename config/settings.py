@@ -554,3 +554,22 @@ LOGGING = {
         },
     },
 }
+
+
+# Celery: ejecuta el análisis de documentos en background (worker aparte) en
+# vez de bloquear la petición HTTP. Default a Redis local — en producción se
+# sobreescribe vía variables de entorno.
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "redis://127.0.0.1:6379/0",
+).strip()
+
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND",
+    "redis://127.0.0.1:6379/0",
+).strip()
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE

@@ -210,16 +210,29 @@ class AcademicTextFilter:
     def _classify_index_like_line(self, line: str) -> str | None:
         stripped = line.strip()
 
-        if not stripped or len(stripped) > self.INDEX_LINE_MAX_LENGTH:
+        if not stripped:
             return None
 
+        # Las señales fuertes (prefijo "Tabla N"/relleno de puntos ante el
+        # número de página) se evalúan sin tope de longitud: el relleno de
+        # puntos de una entrada de índice real puede superar por sí solo
+        # `INDEX_LINE_MAX_LENGTH` cuando el PDF exporta el "leader" del
+        # índice como una racha larga de puntos literales.
         if self.INDEX_ENTRY_PREFIX.match(stripped):
             return "strong"
 
         if self.INDEX_TRAILING_PAGE.search(stripped):
             return "strong"
 
-        if len(stripped) <= 90 and self.INDEX_SHORT_TRAILING_NUMBER.search(stripped):
+        # La señal débil (línea corta terminada en un número, sin relleno
+        # de puntos) sí necesita un tope de longitud para no confundir un
+        # párrafo de prosa normal que solo por coincidencia termina en un
+        # número.
+        if (
+            len(stripped) <= self.INDEX_LINE_MAX_LENGTH
+            and len(stripped) <= 90
+            and self.INDEX_SHORT_TRAILING_NUMBER.search(stripped)
+        ):
             return "weak"
 
         return None

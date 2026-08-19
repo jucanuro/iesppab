@@ -84,6 +84,9 @@ class DocumentAnalysisService:
     PERPLEXITY_SIGNAL_WEIGHT = Decimal("1.00")
     HEURISTIC_SIGNAL_WEIGHT = Decimal("0.00")
 
+    AI_DETECTOR_HEURISTIC = "spanish-heuristic-v1"
+    AI_DETECTOR_PERPLEXITY = "perplexity-burstiness-v1"
+
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
 
@@ -173,10 +176,12 @@ class DocumentAnalysisService:
                 content=analysis_content,
             )
 
-            ai_probability_percent, ai_score_breakdown = self._estimate_ai_probability(
-                document=document,
-                analysis_content=analysis_content,
-                heuristic_result=ai_result,
+            ai_probability_percent, ai_score_breakdown, ai_detector = (
+                self._estimate_ai_probability(
+                    document=document,
+                    analysis_content=analysis_content,
+                    heuristic_result=ai_result,
+                )
             )
 
             total_similarity_percent = self._calculate_total_similarity_percent(
@@ -193,6 +198,7 @@ class DocumentAnalysisService:
                     internal_similarity_percent=internal_result.similarity_percent,
                     web_similarity_percent=web_result.web_similarity_percent,
                     ai_probability_percent=ai_probability_percent,
+                    ai_detector=ai_detector,
                     excluded_sections=filtered_text.excluded_sections,
                     ai_score_breakdown=ai_score_breakdown,
                 )
@@ -252,7 +258,7 @@ class DocumentAnalysisService:
         document: Document,
         analysis_content: str,
         heuristic_result: AIAnalysisResult,
-    ) -> tuple[Decimal, dict]:
+    ) -> tuple[Decimal, dict, str]:
         """
         Cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo (desactivada por
         defecto — ver `perplexity_detector.py`), la señal de
@@ -274,7 +280,11 @@ class DocumentAnalysisService:
         }
 
         if not settings.PERPLEXITY_AI_DETECTION_ENABLED:
-            return heuristic_result.ai_probability_percent, breakdown
+            return (
+                heuristic_result.ai_probability_percent,
+                breakdown,
+                self.AI_DETECTOR_HEURISTIC,
+            )
 
         started_at = time.monotonic()
 
@@ -288,7 +298,11 @@ class DocumentAnalysisService:
                 "document_id=%s",
                 document.id,
             )
-            return heuristic_result.ai_probability_percent, breakdown
+            return (
+                heuristic_result.ai_probability_percent,
+                breakdown,
+                self.AI_DETECTOR_HEURISTIC,
+            )
 
         elapsed_seconds = time.monotonic() - started_at
 
@@ -319,7 +333,7 @@ class DocumentAnalysisService:
             elapsed_seconds,
         )
 
-        return final_probability, breakdown
+        return final_probability, breakdown, self.AI_DETECTOR_PERPLEXITY
 
     def check_permission(self, document_id: UUID) -> None:
         """
@@ -616,6 +630,7 @@ class DocumentAnalysisService:
         internal_similarity_percent: Decimal,
         web_similarity_percent: Decimal,
         ai_probability_percent: Decimal,
+        ai_detector: str,
         excluded_sections: list[str],
         ai_score_breakdown: dict | None = None,
     ) -> AnalysisReport:
@@ -632,17 +647,17 @@ class DocumentAnalysisService:
                 "web_similarity_percent": web_similarity_percent,
                 "internal_similarity_percent": internal_similarity_percent,
                 "ai_probability_percent": ai_probability_percent,
+                "ai_detector": ai_detector,
                 "risk_level": risk_level,
                 "summary": {
                     "engine": "internal-web-academic-v2",
                     "internal_similarity_algorithm": "knowledge-chunks-shingling",
                     "web_similarity_algorithm": "brave-search-html-pdf-shingling",
-                    "ai_algorithm": "spanish-heuristic-v1",
                     "ai_score_breakdown": ai_score_breakdown or {},
                     "excluded_sections": excluded_sections,
                     "note": "La similitud web depende de fuentes públicas encontradas y accesibles.",
                 },
-                "engine_version": "vql-web-academic-v2.0.0",
+                "engine_version": "vql-web-academic-v2.1.0",
                 "generated_at": timezone.now(),
                 "is_final": True,
             },

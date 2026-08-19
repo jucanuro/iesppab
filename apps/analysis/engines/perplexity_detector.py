@@ -305,8 +305,8 @@ BURSTINESS_SCALE = 5.0
 # depende de tener suficientes oraciones válidas y es más ruidosa en textos
 # cortos, por eso pesa menos. Si no hay suficientes oraciones para calcular
 # burstiness, el score combinado usa 100% perplejidad (ver `_combine_scores`).
-BURSTINESS_WEIGHT = Decimal("0.40")
-PERPLEXITY_WEIGHT = Decimal("0.60")
+BURSTINESS_WEIGHT = Decimal("0.00")
+PERPLEXITY_WEIGHT = Decimal("1.00")
 
 
 def _logistic_score(value: float, *, midpoint: float, scale: float) -> Decimal:

@@ -87,6 +87,12 @@ class AnalysisReport(TimeStampedModel):
         default="vql-mvp-1.0.0",
         verbose_name=_("Versión del motor"),
     )
+    ai_detector = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        verbose_name=_("Detector de IA utilizado"),
+    )
     generated_at = models.DateTimeField(
         default=timezone.now,
         db_index=True,

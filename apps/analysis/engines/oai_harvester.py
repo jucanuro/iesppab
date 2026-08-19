@@ -89,6 +89,7 @@ class OaiHarvester:
                         "source_url": record["source_url"],
                         "text_excerpt": record["text_excerpt"],
                         "normalized_text": record["normalized_text"],
+                        "source_date": record["source_date"],
                         "harvested_at": timezone.now(),
                         "is_active": True,
                     },
@@ -252,6 +253,7 @@ class OaiHarvester:
         creators = self._all_text(dc_element=dc_element, tag="creator")
         identifiers = self._all_text(dc_element=dc_element, tag="identifier")
         types = self._all_text(dc_element=dc_element, tag="type")
+        date = self._first_text(dc_element=dc_element, tag="date")
 
         if not title:
             return None
@@ -271,6 +273,7 @@ class OaiHarvester:
             "source_url": self._pick_source_url(identifiers=identifiers),
             "text_excerpt": description or title,
             "normalized_text": normalized_text,
+            "source_date": date[:40],
         }
 
     def _first_text(self, dc_element, tag: str) -> str:

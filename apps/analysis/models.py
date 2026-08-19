@@ -208,6 +208,12 @@ class OaiRecord(TimeStampedModel):
     harvested_at = models.DateTimeField(
         verbose_name=_("Cosechado el"),
     )
+    source_date = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        verbose_name=_("Fecha de publicación (dc:date)"),
+    )
     is_active = models.BooleanField(
         default=True,
         db_index=True,

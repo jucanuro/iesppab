@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
 
@@ -32,6 +32,12 @@ class SimilarityMatch:
 class SimilarityAnalysisResult:
     similarity_percent: Decimal
     matches: list[SimilarityMatch]
+    # Rangos (start_offset, end_offset) de TODOS los fragmentos que
+    # superaron el umbral, sin truncar por MAX_MATCHES. `matches` se recorta
+    # para el detalle mostrado/persistido; el cálculo del % total (aquí y en
+    # el número principal del reporte) debe usar este conjunto completo para
+    # no subestimar el plagio en una tesis larga con muchas coincidencias.
+    all_matched_ranges: list[tuple[int, int]] = field(default_factory=list)
 
 
 class InternalSimilarityEngine:
@@ -59,6 +65,7 @@ class InternalSimilarityEngine:
             return SimilarityAnalysisResult(
                 similarity_percent=Decimal("0.00"),
                 matches=[],
+                all_matched_ranges=[],
             )
 
         current_chunks = self._build_current_chunks(content=content)
@@ -113,19 +120,26 @@ class InternalSimilarityEngine:
             matches,
             key=lambda item: item.matched_percent,
             reverse=True,
-        )[: self.MAX_MATCHES]
+        )
+
+        # El % total se calcula sobre TODOS los fragmentos que superaron el
+        # umbral. Truncar antes subestima el plagio justo en la tesis larga
+        # con más de MAX_MATCHES coincidencias. El límite solo recorta el
+        # detalle que se persiste/muestra, nunca el cálculo del score.
+        all_matched_ranges = [
+            (match.start_offset, match.end_offset)
+            for match in matches
+        ]
 
         similarity_percent = self._calculate_total_similarity(
             content_length=len(content),
-            matched_ranges=[
-                (match.start_offset, match.end_offset)
-                for match in matches
-            ],
+            matched_ranges=all_matched_ranges,
         )
 
         return SimilarityAnalysisResult(
             similarity_percent=similarity_percent,
-            matches=matches,
+            matches=matches[: self.MAX_MATCHES],
+            all_matched_ranges=all_matched_ranges,
         )
 
     def _compare_chunk(

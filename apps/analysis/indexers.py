@@ -35,9 +35,9 @@ class DocumentKnowledgeIndexer:
     MIN_WORDS = 35
 
     @transaction.atomic
-    def index(self, document_text: DocumentText) -> int:
+    def index(self, document_text: DocumentText, *, content: str) -> int:
         document = document_text.document
-        chunks = self._build_chunks(content=document_text.content)
+        chunks = self._build_chunks(content=content)
 
         old_chunk_ids = list(
             DocumentKnowledgeChunk.objects.filter(

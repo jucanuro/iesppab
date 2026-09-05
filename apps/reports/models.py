@@ -82,6 +82,17 @@ class AnalysisReport(TimeStampedModel):
         blank=True,
         verbose_name=_("Resumen técnico"),
     )
+    analyzed_content = models.TextField(
+        blank=True,
+        default="",
+        verbose_name=_("Texto analizado (filtrado)"),
+        help_text=_(
+            "Texto sobre el que se calcularon los offsets de los hallazgos "
+            "(sin portada/índice/bibliografía). El visor y el PDF señalado "
+            "pintan los resaltados sobre este texto, no sobre el crudo, "
+            "para que coincidan exactamente."
+        ),
+    )
     engine_version = models.CharField(
         max_length=80,
         default="vql-mvp-1.0.0",

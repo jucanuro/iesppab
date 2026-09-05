@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Any
 from uuid import UUID
 
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch, Q
-from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.shortcuts import redirect, render
 from django.views import View
 
 from apps.accounts.models import User
@@ -21,6 +23,11 @@ from apps.reports.models import (
     FindingType,
     ReportFinding,
     ReportSource,
+)
+from apps.reports.services import (
+    HighlightedDocumentPdfError,
+    build_highlighted_document_pdf,
+    resolve_analyzed_content,
 )
 from apps.reports.suggestions import build_improvement_suggestions
 
@@ -72,11 +79,10 @@ class ReportDetailView(LoginRequiredMixin, View):
             if report:
                 certificate = self._get_certificate(report=report)
 
-                if hasattr(document, "extracted_text"):
-                    highlighted_segments = self._build_highlight_segments(
-                        content=document.extracted_text.content,
-                        findings=list(report.findings.all()),
-                    )
+                highlighted_segments = self._build_highlight_segments(
+                    content=resolve_analyzed_content(report),
+                    findings=list(report.findings.all()),
+                )
             else:
                 analysis_job = self._get_latest_job(document=document)
 
@@ -266,3 +272,116 @@ class ReportDetailView(LoginRequiredMixin, View):
             )
 
         return segments
+
+
+class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
+    """
+    Descarga en PDF el texto del documento con los mismos hallazgos
+    resaltados que el visor interactivo del reporte. No reemplaza al
+    certificado institucional: es el documento señalado, no un resumen.
+    """
+
+    def get(
+        self,
+        request: HttpRequest,
+        pk: UUID,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponse:
+        user = request.user
+
+        try:
+            document = self._get_allowed_document(
+                document_id=pk,
+                user=user,
+            )
+
+            report = self._get_report(document=document)
+
+            if report is None:
+                raise Http404("Este documento aún no tiene reporte.")
+
+            pdf_content = build_highlighted_document_pdf(report=report)
+
+            return FileResponse(
+                BytesIO(pdf_content),
+                as_attachment=True,
+                filename=f"documento-senalado-{document.id}.pdf",
+                content_type="application/pdf",
+            )
+
+        except PermissionDenied:
+            logger.warning(
+                "Permiso denegado al descargar documento señalado. "
+                "user_id=%s document_id=%s",
+                user.id,
+                pk,
+                exc_info=True,
+            )
+            raise
+
+        except Document.DoesNotExist as exc:
+            raise Http404("Documento no encontrado.") from exc
+
+        except HighlightedDocumentPdfError as exc:
+            messages.error(request, str(exc))
+            return redirect("reports:detail", pk=pk)
+
+    def _get_allowed_document(
+        self,
+        document_id: UUID,
+        user: User,
+    ) -> Document:
+        queryset = Document.objects.select_related(
+            "institution",
+            "owner",
+            "uploaded_by",
+            "extracted_text",
+        ).filter(id=document_id)
+
+        if user.is_superuser or user.is_admin_role:
+            if not user.is_superuser:
+                if user.institution_id is None:
+                    raise PermissionDenied(
+                        "Tu usuario no tiene institución asignada."
+                    )
+
+                queryset = queryset.filter(institution=user.institution)
+
+        else:
+            queryset = queryset.filter(Q(owner=user) | Q(uploaded_by=user))
+
+        document = queryset.first()
+
+        if document is None:
+            raise Document.DoesNotExist
+
+        return document
+
+    def _get_report(
+        self,
+        document: Document,
+    ) -> AnalysisReport | None:
+        return (
+            AnalysisReport.objects.select_related(
+                "document",
+                "document__institution",
+                "document__owner",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "sources",
+                    queryset=ReportSource.objects.order_by(
+                        "-matched_percent",
+                    ),
+                ),
+                Prefetch(
+                    "findings",
+                    queryset=ReportFinding.objects.select_related(
+                        "source",
+                    ).order_by("start_offset"),
+                ),
+            )
+            .filter(document=document)
+            .first()
+        )

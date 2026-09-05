@@ -49,6 +49,27 @@
                         Volver
                     </a>
 
+                    {% if report and highlighted_segments %}
+                        <a href="{% url 'reports:download_highlighted' document.id %}"
+                           title="Descargar documento señalado"
+                           class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
+
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 3V15M12 15L7 10M12 15L17 10"
+                                      stroke="currentColor"
+                                      stroke-width="2.3"
+                                      stroke-linecap="round"
+                                      stroke-linejoin="round"/>
+                                <path d="M5 19H19"
+                                      stroke="currentColor"
+                                      stroke-width="2.3"
+                                      stroke-linecap="round"/>
+                            </svg>
+
+                            Documento señalado
+                        </a>
+                    {% endif %}
+
                     {% if certificate %}
                         <a href="{% url 'certificates:download' certificate.id %}"
                            title="Descargar certificado"

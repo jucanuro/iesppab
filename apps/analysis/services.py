@@ -25,7 +25,6 @@ from apps.analysis.engines.web_search import WebCandidateCollector
 from apps.analysis.engines.web_similarity import (
     WebSimilarityAnalysisResult,
     WebSimilarityEngine,
-    WebSimilarityMatch,
 )
 from apps.analysis.indexers import DocumentKnowledgeIndexer
 from apps.analysis.models import (
@@ -129,6 +128,7 @@ class DocumentAnalysisService:
 
             self.knowledge_indexer.index(
                 document_text=document_text,
+                content=analysis_content,
             )
 
             self._mark_job_step(
@@ -186,8 +186,8 @@ class DocumentAnalysisService:
 
             total_similarity_percent = self._calculate_total_similarity_percent(
                 content_length=len(analysis_content),
-                internal_matches=internal_result.matches,
-                web_matches=web_result.matches,
+                internal_ranges=internal_result.all_matched_ranges,
+                web_ranges=web_result.all_matched_ranges,
             )
 
             with transaction.atomic():
@@ -200,6 +200,7 @@ class DocumentAnalysisService:
                     ai_probability_percent=ai_probability_percent,
                     ai_detector=ai_detector,
                     excluded_sections=filtered_text.excluded_sections,
+                    analyzed_content=analysis_content,
                     ai_score_breakdown=ai_score_breakdown,
                 )
 
@@ -632,6 +633,7 @@ class DocumentAnalysisService:
         ai_probability_percent: Decimal,
         ai_detector: str,
         excluded_sections: list[str],
+        analyzed_content: str,
         ai_score_breakdown: dict | None = None,
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
@@ -649,6 +651,7 @@ class DocumentAnalysisService:
                 "ai_probability_percent": ai_probability_percent,
                 "ai_detector": ai_detector,
                 "risk_level": risk_level,
+                "analyzed_content": analyzed_content,
                 "summary": {
                     "engine": "internal-web-academic-v2",
                     "internal_similarity_algorithm": "knowledge-chunks-shingling",
@@ -835,26 +838,18 @@ class DocumentAnalysisService:
     def _calculate_total_similarity_percent(
         self,
         content_length: int,
-        internal_matches: Iterable,
-        web_matches: Iterable[WebSimilarityMatch],
+        internal_ranges: Iterable[tuple[int, int]],
+        web_ranges: Iterable[tuple[int, int]],
     ) -> Decimal:
-        ranges: list[tuple[int, int]] = []
-
-        for match in internal_matches:
-            ranges.append(
-                (
-                    match.start_offset,
-                    match.end_offset,
-                )
-            )
-
-        for match in web_matches:
-            ranges.append(
-                (
-                    match.start_offset,
-                    match.end_offset,
-                )
-            )
+        # Recibe el conjunto COMPLETO de rangos coincidentes (todos los que
+        # superaron el umbral en cada motor), no la lista `.matches` ya
+        # truncada a MAX_MATCHES. El truncado solo aplica a la persistencia
+        # del detalle (ReportSource/ReportFinding), nunca a este número
+        # principal que define `risk_level`.
+        ranges: list[tuple[int, int]] = [
+            (start, end) for start, end in internal_ranges
+        ]
+        ranges.extend((start, end) for start, end in web_ranges)
 
         if content_length <= 0 or not ranges:
             return Decimal("0.00")

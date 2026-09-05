@@ -248,7 +248,10 @@ class SpanishAIDetector:
 
     def _phrase_ratio(self, paragraph: str, phrases: set[str]) -> float:
         paragraph_lower = paragraph.lower()
-        count = sum(paragraph_lower.count(phrase) for phrase in phrases)
+        count = sum(
+            len(re.findall(rf"\b{re.escape(phrase)}\b", paragraph_lower))
+            for phrase in phrases
+        )
         words_count = max(len(self._words(paragraph)), 1)
 
         return count / words_count

@@ -1,0 +1,24 @@
+El presente proyecto de tesis tuvo como objetivo, diseñar adecuadamente la 
+ciclovía para mejorar transitabilidad vehicular aplicando la norma CE.030 en el
+corredor paralelo a la avenida Huancané, Juliaca, 2022. 
+La investigación responde al enfoque cuantitativo de nivel aplicado,
+enmarcado a la utilización de cálculos matemáticos, el diseño de investigación, es
+no experimental transversal, porque las variables no conducen a un artificio y los
+estudios fueron encaminados en un determinado tiempo, la población corresponde
+a una longitud total de 5900 m siendo representada la muestra por una longitud de
+904 m, el muestreo es no probabilístico. 
+Como fuente importante de los resultados se ha considerado los elementos
+que componen la ciclovía, los bordillos y los hitos; se ha implementado señales
+horizontales y verticales incluyendo parqueaderos en puntos estratégicos con la
+demarcación de cruces de color rojo. La direccionalidad es dos ciclovías
+unidireccionales en una vía de doble sentido, está ubicada al margen derecho y
+será de 1.80m de ancho, con segregadores discontinuas de 20cm de ancho con un
+radio de giro de 8.8m, una pendiente del 3% y una velocidad de diseño de 35km/h. 
+Como conclusión final la aplicación de la norma CE.030 y la recopilación de
+diferentes autores de tesis nacionales e internacionales, las cuales contribuyeron
+al diseño adecuado de la ciclovía, la aplicación de la norma CE.030 ha sido
+determinante en la identificación de los elementos y determinación de las
+características técnicas, finalmente, en la elaboración del diseño se realizó los
+siguientes estudios: encuestas, aforos, análisis del pavimento mediante el método
+PCI, estudio de suelos y condiciones climatológicas, adicionalmente se realizó el
+levantamiento topográfico y diseño en 3D y el presupuesto final.

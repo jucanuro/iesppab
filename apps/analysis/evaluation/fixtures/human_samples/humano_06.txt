@@ -1,0 +1,19 @@
+En el siguiente proyecto elaborado, tiene como finalidad esencial dejar plasmado
+la relación existente entre la gestión educativa y el desempeño docente en la
+unidad educativa Milenium de la ciudad de Guayaquil, Ecuador, teniendo como
+base un modelo no experimental, correlacional, tomando como muestra a la
+población total de los docentes ya que dicha unidad educativa cuenta con una
+planta docente de 23 profesionales educativos, teniendo como técnica para la
+recolección de datos por medio de una encuesta aplicada de manera virtual, para
+el procesamiento de los datos utilizamos el programa estadístico SPSS versión
+24, el mismo que nos permitió elaborar los cuadros estadísticos respectivos, una
+vez procesada la información y tratada en los aplicativos respectivos llegamos a
+la conclusión que existe una correlación entre las variables gestión educativa y
+desempeño escolar ya que el coeficiente de correlación es igual a 0,611 con una
+significancia bilateral de 0,002, mientras que la correlación entre la gestión
+educativa y la dimensión planificación es igual a 0,511, llegando a una
+significancia de 0,013, en tanto que el valor entre la gestión educativa y los
+procesos es de 0,252 con una significancia igual 0,246 debiendo de afirmar la
+hipótesis nula entre ambas, pero la correlación entre la gestión educativa y la
+responsabilidades de 0,570 con una significancia de 0,004 teniendo una
+correlación directa y significativa.

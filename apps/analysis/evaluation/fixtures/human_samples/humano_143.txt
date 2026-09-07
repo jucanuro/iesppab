@@ -1,0 +1,16 @@
+El trabajo de investigación tuvo el objetivo de diseñar el reforzamiento estructural
+de una edificación de dos pisos para ampliarla, utilizando muros de corte y
+encamisado de columnas para mejorar el comportamiento sismorresistente de la
+edificación reforzada y ampliada para cinco niveles. Los datos obtenidos de la
+vivienda de albañilería confinada: está conformada de dos plantas, ubicada en la
+Provincia y Departamento del Callao. La metodología del estudio se puede definir
+como una investigación aplicada y de enfoque cuantitativo del nivel descriptivo y
+experimental. Los ensayos que se utilizó para el desarrollo son ensayos de
+esclerómetria y ensayos de mecánica de suelos. Así mismo, se realizó la
+estructuración con los elementos planteados, siguiendo las normas establecidas en
+el RNE, E-030 sismorresistente y el metrado de cargas con la E-020, para
+desarrollar el modelamiento en el software ETABS. Obteniendo los resultados en
+el software Etabs, se verifico que los desplazamientos de las derivas de entre piso
+se encuentran por debajo del valor límite permitido de 0.007, localizando en el tercer
+nivel en el eje X = 0.002903 y en Y = 0.000509. Se concluye que los resultados son
+satisfactorios y se encuentran acorde a la norma.

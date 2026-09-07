@@ -1,0 +1,17 @@
+Esta investigación busca analizar la relación entre justicia y compromiso
+organizacional, en trabajadores del sector metalmecánico. Es un estudio de
+diseño no experimental, corte transversal, y nivel correlacional. Participando
+221 trabajadores, entre encargados y operarios, lo cual participaron 196
+hombres y 25 mujeres, entre 18 y 65 años, seleccionados mediante un
+muestreo no probabilístico por conveniencia. Los cuestionarios utilizados para
+la variable compromiso organizacional, fue la escala de compromiso
+organizacional de Meyer y Allen (1997) adaptado en Perú por Argomedo
+(2013), y para la variable justicia, se utilizó la escala de justicia organizacional
+de Colquitt (2001) adaptado en Argentina por Omar et al. (2003). El resultado
+entre la variable justicia y las dimensiones compromiso normativo y continuidad,
+existe un valor p menor a .05, indicando la existencia de correlación, a
+diferencia con la dimensión afectivo arrojando un valor p mayor a .05. Por lo
+tanto, la variable Justicia y Compromiso organizacional no están
+correlacionadas, ya que se observa que el valor p es mayor a .05, lo que indica
+que se rechaza Hi. Aun así, existe una correlación inversa y un tamaño del
+efecto pequeño (p= .128, rs = -.103, rs2 = .01).

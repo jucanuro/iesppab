@@ -1,0 +1,24 @@
+La presente tesis titulada “Diseño de pavimento flexible, empleando método 
+AASHTO 93 para mejorar la transitabilidad vial en la calle San Donato, Moquegua, 
+2022”, cuyo objetivo de estudio fue la prolongación Calle San Donato entre las 
+progresivas Km. 0+000 al Km. 0+356.648 de la provincia de Mariscal Nieto y distrito 
+de Moquegua. Se consideró este estudio debido a que el tramo a estudiar en dicha 
+localidad se encuentra lamentablemente deteriorado, lo cual implica a la población
+relacionarse entre sí, tanto en la comercialización de sus productos agrícolas, así
+como la visita de los turistas, puesto que ello es una gran fuente de ingresos 
+importante para la localidad.
+ Esta investigación es aplicada de enfoque cuantitativo cuyo diseño no es 
+experimental con alcance descriptivo, la cual se pudo obtener los siguientes: 
+Mediante el estudio realizado en campo según a la normativa y al manual de diseño 
+de carretera se obtuvo un IMDa un total de 0 – 350 vehículos/día con una tasa de 
+crecimiento anual de 1.35% para la cual según el manual y el volumen de tráfico de 
+transito se consideró una carretera de bajo volumen de tránsito para una proyección
+de tráfico para un periodo de 10 años.
+ Según los estudios de mecánica de suelos se pudo evidenciar que según
+SUCCS estamos tratando con un suelo granulares (Arena bien graduada con 
+presencia de limo y arcilla / SW-SC-SM), y el valor de soporte de los suelos (CBR) 
+varía entre 10.65% - 11.85% y el cálculo de ejes equivalente (ESAL) se considero 
+un número estructural (SN) de 1.830. El diseño determinado en dicha información 
+fue la siguiente: Carpeta asfáltica de 5cm, base granular de 15 cm de espesor y, 
+subbase granula de15 cm. Estos resultados obtenidos se basaron de acuerdo a la 
+norma vigente del MTC, para su diseño empleando el método AASHTO 93

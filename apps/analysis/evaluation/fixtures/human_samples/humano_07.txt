@@ -1,0 +1,13 @@
+El objetivo principal del presente trabajo de investigación será mejorar el correcto
+uso de mascarillas en el supermercado Wong durante el contexto covid-19 con la
+implementación de un sistema inteligente, ya que se encontró que este es uno de
+los centros más capacidad de aglomerar personas y donde además se han
+detallado algunos casos de contagio a nivel local. Por lo cual, representa una gran
+necesidad y urgencia de implementar un dispositivo autónomo para el control de
+mascarillas. En ese sentido, el presente estudio es de tipo aplicado con un diseño
+pre-experimental. Para eso, se utilizó la metodología de Deep Learning con un
+promedio de muestra de 60 personas provenientes de San Miguel que concurren
+seguidamente en Wong. Esto con la finalidad de que los indicadores principales de
+seguridad, confianza, detección de mascarillas y rapidez de reacción sean los más
+óptimos posibles. Luego de ello, los resultados fueron destacables pues se
+concluyeron que sí hay un gran incremento de los indicadores planteados.

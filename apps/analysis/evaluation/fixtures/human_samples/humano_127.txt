@@ -1,0 +1,7 @@
+La presente investigación, denominada Acoso escolar y clima familiar en estudiantes
+
+de secundaria de una institución educativa parroquial en el distrito de Piura, 2017 tuvo como  objetivo  determinar  la  relación  existente  entre  ambas  variables,  siguiente  un diseño  no  experimental  y  tomando  como  unidad  de  estudio  a  la  población  de estudiantes de segundo tercero y cuarto de una institución educativa particular. Para
+el  análisis  de  los  datos  arrojados  por  los  indicadores,  se  hizo  uso  de  la  prueba estadística  Tau  B  de  Kendall,  la  misma  que  es  utilizada  en  casos  en  donde  las variables son de naturaleza ordinal y tienen el mismo número de categorías, tal y como las presentes en este estudio. Para el caso de los datos a nivel general se utilizó la prueba no paramétrica Rho de Spearman.
+
+En ese sentido se pudo obtener que no existe relación significativa (p = 0.212) entre el acoso  escolar  y  el  clima  social  familiar.  En  tanto  que  en  el  análisis  a  nivel  de indicadores se confirman estos resultados. Lo que nos permite concluir que al parecer
+el clima familiar no representa un factor de riesgo para la existencia de acoso.

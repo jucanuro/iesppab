@@ -1,0 +1,17 @@
+Esta investigación se alinea con el Objetivo de Desarrollo Sostenible (ODS) 4,
+enfocándose en cerrar brechas en el acceso a una educación de calidad. Su objetivo
+fue proponer un modelo didáctico que utiliza software interactivo para mejorar la
+comprensión lectora, realizándose con un enfoque cuantitativo, descriptivo y
+propositivo, y una muestra de 335 estudiantes.
+Los resultados de la validación y confiabilidad de instrumentos para evaluar el uso de
+software interactivo y la comprensión lectora, en la rúbrica utilizada reveló un
+promedio de V de Aiken de 0.81, indicando buena concordancia, pero mejorable. El
+análisis factorial confirmatorio reveló cargas significativas que favorecen la
+comprensión lectora, a excepción de dos ítems inferenciales. Se identificaron
+dificultades tecnológicas y un rendimiento general de 14.3 en comprensión lectora,
+ligeramente inferior a la población de referencia. Se propuso un modelo didáctico
+utilizando Genially y Kahoot, validado por expertos con un promedio de 0.956.
+Se recomienda profundizar en el análisis de la comprensión lectora y el uso de
+software educativo, además, implementar estudios longitudinales para evaluar el
+impacto del modelo didáctico y establecer un proceso continuo de validación que
+integre la retroalimentación de docentes y estudiantes.

@@ -1,0 +1,17 @@
+El proyecto tuvo como objetivo general determinar la influencia entre
+marketing digital y posicionamiento de una empresa dedicada al rubro de
+refrigeración industrial en la ciudad de Trujillo, 2023. La investigación tuvo enfoque
+cuantitativo, tipo básica, con diseño de investigación correlacional, transversal y
+causal. Se contó con el apoyo de una empresa local para la toma de información
+por parte de sus clientes, a través del instrumento cuestionario y la técnica encuesta
+a una muestra probabilística de 35 clientes, mediante vía telefónica y presencial.
+Los datos fueron trabajados con el método de mínimos cuadrados ponderados
+diagonalmente del modelo de ecuaciones estructurales, y se utilizó el programa
+JAMOVI 2.3.28. Se logró determinar una influencia positiva de magnitud grande
+(0.50 ≤ Zβ=.75< 1) y de significancia estadística (p<0.05) entre el marketing digital
+y posicionamiento de una empresa dedicada al rubro de refrigeración industrial en
+la ciudad de Trujillo, 2023. Se concluye en base a los resultados que existe una
+relación positiva de gran magnitud entre el marketing digital y el posicionamiento
+en una empresa de refrigeración industrial en la ciudad de Trujillo, 2023, y con ello
+se dictaminan algunas directrices a seguir para la mejora de las organizaciones del
+rubro.

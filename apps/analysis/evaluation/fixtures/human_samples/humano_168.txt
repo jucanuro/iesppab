@@ -1,0 +1,16 @@
+El proyecto titula “Comportamiento Estructural de Pavimentos Flexibles en 
+Tramos Curvos y Rectos, Carretera Interoceánica Tramo Azángaro-San Antón, 
+Puno 2021”, el objetivo es Determinar el comportamiento estructural de 
+pavimentos flexibles en tramos curvos y rectos, carretera interoceánica tramo 
+Azángaro-San Antón, Puno 2021, la metodología fue científica, con enfoque 
+cuantitativo , nivel: explicativo, de tipo aplicada y diseño experimental, para llevar 
+a cabo esta investigación se midió utilizando las deflexiones medidas con la viga 
+Benkelman de doble brazo a través de la cual se registrarían las deflexiones 
+presentes en el pavimento en estudio, la deflexión admisible Da= 86.65 𝑥 10 
+−2𝑚𝑚, deflexión critica Dcr= 92.74 𝑥 10 
+−2𝑚𝑚, deflexión característica de C1: Dc= 79.06 𝑥 10 −2𝑚𝑚, C2: Dc= 80.65 𝑥 10
+−2𝑚𝑚, C3: Dc= 75.03 𝑥 10 −2𝑚𝑚 y tramos rectos: T1: Dc= 80.26 𝑥 10 −2𝑚𝑚 y
+T2: Dc= 82.21 𝑥 10 −2𝑚𝑚 coeficiente de variación para los tramos curvos C1: 
+10.20%, C2: 7.70%, C3: 4.87% y tramos rectos T1: 3.95% y T2: 3.64%, llegándose 
+a la conclusión que las deflexiones característica y deflexiones máximos promedio 
+no superan a la deflexión admisible, donde las deflexiones varia mínimamente.

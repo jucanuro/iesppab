@@ -1,0 +1,73 @@
+motor,archivo,etiqueta,ai_probability_percent,prediccion,acierto,detalle
+heuristic,muestra_01.txt,IA,37.00,IA,True,num_findings=0
+heuristic,muestra_02.txt,IA,35.00,IA,True,num_findings=0
+heuristic,muestra_03.txt,IA,51.00,IA,True,num_findings=1
+heuristic,muestra_04.txt,IA,37.00,IA,True,num_findings=0
+heuristic,muestra_05.txt,IA,31.00,humano,False,num_findings=0
+heuristic,muestra_06.txt,IA,23.00,humano,False,num_findings=0
+heuristic,muestra_07.txt,IA,13.00,humano,False,num_findings=0
+heuristic,muestra_08.txt,IA,13.00,humano,False,num_findings=0
+heuristic,muestra_09.txt,IA,17.00,humano,False,num_findings=0
+heuristic,muestra_10.txt,IA,35.00,IA,True,num_findings=0
+heuristic,muestra_11.txt,IA,31.00,humano,False,num_findings=0
+heuristic,muestra_12.txt,IA,17.00,humano,False,num_findings=0
+heuristic,muestra_13.txt,IA,18.00,humano,False,num_findings=0
+heuristic,muestra_14.txt,IA,35.00,IA,True,num_findings=0
+heuristic,muestra_15.txt,IA,23.00,humano,False,num_findings=0
+heuristic,muestra_16.txt,IA,25.00,humano,False,num_findings=0
+heuristic,muestra_17.txt,IA,7.00,humano,False,num_findings=0
+heuristic,muestra_18.txt,IA,29.00,humano,False,num_findings=0
+heuristic,humano_01.txt,humano,27.00,humano,True,num_findings=0
+heuristic,humano_02.txt,humano,36.00,IA,False,num_findings=0
+heuristic,humano_03.txt,humano,15.00,humano,True,num_findings=0
+heuristic,humano_04.txt,humano,0.00,humano,True,num_findings=0
+heuristic,humano_05.txt,humano,30.00,humano,True,num_findings=0
+heuristic,humano_06.txt,humano,0.00,humano,True,num_findings=0
+heuristic,humano_07.txt,humano,29.00,humano,True,num_findings=0
+heuristic,humano_08.txt,humano,29.00,humano,True,num_findings=0
+heuristic,humano_09.txt,humano,35.00,IA,False,num_findings=0
+heuristic,humano_10.txt,humano,11.00,humano,True,num_findings=0
+heuristic,humano_11.txt,humano,51.00,IA,False,num_findings=1
+heuristic,humano_12.txt,humano,59.00,IA,False,num_findings=1
+heuristic,humano_13.txt,humano,52.00,IA,False,num_findings=1
+heuristic,humano_14.txt,humano,33.00,humano,True,num_findings=0
+heuristic,humano_15.txt,humano,30.00,humano,True,num_findings=0
+heuristic,humano_16.txt,humano,24.00,humano,True,num_findings=0
+heuristic,humano_17.txt,humano,51.00,IA,False,num_findings=1
+heuristic,humano_18.txt,humano,36.00,IA,False,num_findings=0
+perplexity,muestra_01.txt,IA,40.77,IA,True,mean_perplexity=48.16563066613257 burstiness=22.920289060738767 sentence_count=5
+perplexity,muestra_02.txt,IA,43.94,IA,True,mean_perplexity=41.34500942354469 burstiness=29.57160598529944 sentence_count=5
+perplexity,muestra_03.txt,IA,49.98,IA,True,mean_perplexity=38.54919967039553 burstiness=21.724702719315307 sentence_count=5
+perplexity,muestra_04.txt,IA,42.39,IA,True,mean_perplexity=45.97920065672912 burstiness=23.518864407327623 sentence_count=5
+perplexity,muestra_05.txt,IA,39.11,IA,True,mean_perplexity=45.9143715372825 burstiness=36.590493513070136 sentence_count=5
+perplexity,muestra_06.txt,IA,29.86,IA,True,mean_perplexity=55.971719475141235 burstiness=31.25984718423105 sentence_count=5
+perplexity,muestra_07.txt,IA,50.09,IA,True,mean_perplexity=33.31871500407869 burstiness=28.10142789479411 sentence_count=4
+perplexity,muestra_08.txt,IA,44.73,IA,True,mean_perplexity=40.16148795891549 burstiness=30.33579315340746 sentence_count=5
+perplexity,muestra_09.txt,IA,46.35,IA,True,mean_perplexity=43.90711407590866 burstiness=20.941111069786235 sentence_count=5
+perplexity,muestra_10.txt,IA,57.03,IA,True,mean_perplexity=43.56836576890893 burstiness=13.96343833634254 sentence_count=4
+perplexity,muestra_11.txt,IA,45.68,IA,True,mean_perplexity=45.22947524395444 burstiness=20.442135047828245 sentence_count=4
+perplexity,muestra_12.txt,IA,32.03,IA,True,mean_perplexity=53.02207679949675 burstiness=44.633480289853516 sentence_count=4
+perplexity,muestra_13.txt,IA,62.22,IA,True,mean_perplexity=42.99506199765093 burstiness=11.588958567946763 sentence_count=4
+perplexity,muestra_14.txt,IA,42.76,IA,True,mean_perplexity=41.79322325656327 burstiness=35.6616471714391 sentence_count=4
+perplexity,muestra_15.txt,IA,28.39,IA,True,mean_perplexity=57.54399806967046 burstiness=30.674268280906333 sentence_count=4
+perplexity,muestra_16.txt,IA,33.01,IA,True,mean_perplexity=51.979828609267436 burstiness=64.8323323578151 sentence_count=4
+perplexity,muestra_17.txt,IA,39.32,IA,True,mean_perplexity=45.44762239985352 burstiness=42.8654534593225 sentence_count=4
+perplexity,muestra_18.txt,IA,24.30,humano,False,mean_perplexity=60.77251799065952 burstiness=56.07010774316041 sentence_count=4
+perplexity,humano_01.txt,humano,6.52,humano,True,mean_perplexity=86.58101378272463 burstiness=95.69058298530831 sentence_count=6
+perplexity,humano_02.txt,humano,3.01,humano,True,mean_perplexity=99.12859076359688 burstiness=228.418449630819 sentence_count=5
+perplexity,humano_03.txt,humano,1.06,humano,True,mean_perplexity=116.06561013608021 burstiness=45.79605911940708 sentence_count=3
+perplexity,humano_04.txt,humano,30.40,IA,False,mean_perplexity=67.42694991434401 burstiness=None sentence_count=1
+perplexity,humano_05.txt,humano,0.16,humano,True,mean_perplexity=144.36900143213262 burstiness=61.671399567695744 sentence_count=4
+perplexity,humano_06.txt,humano,3.31,humano,True,mean_perplexity=105.63546158518473 burstiness=None sentence_count=1
+perplexity,humano_07.txt,humano,0.01,humano,True,mean_perplexity=182.32955512129163 burstiness=300.56259599565675 sentence_count=6
+perplexity,humano_08.txt,humano,0.49,humano,True,mean_perplexity=127.06241239786402 burstiness=281.80951128421617 sentence_count=7
+perplexity,humano_09.txt,humano,4.28,humano,True,mean_perplexity=103.7456780680929 burstiness=26.60965655613201 sentence_count=2
+perplexity,humano_10.txt,humano,5.22,humano,True,mean_perplexity=90.26836918604582 burstiness=264.4839427022142 sentence_count=5
+perplexity,humano_11.txt,humano,26.79,IA,False,mean_perplexity=58.22425192129788 burstiness=169.48779051502447 sentence_count=7
+perplexity,humano_12.txt,humano,2.04,humano,True,mean_perplexity=105.20641949116035 burstiness=109.13127921263055 sentence_count=4
+perplexity,humano_13.txt,humano,1.91,humano,True,mean_perplexity=106.21753378963051 burstiness=115.11157794723212 sentence_count=6
+perplexity,humano_14.txt,humano,0.01,humano,True,mean_perplexity=200.7835570173508 burstiness=1045.4018522924014 sentence_count=9
+perplexity,humano_15.txt,humano,0.44,humano,True,mean_perplexity=128.3833872257899 burstiness=139.70408059035924 sentence_count=3
+perplexity,humano_16.txt,humano,52.20,IA,False,mean_perplexity=41.77212423724673 burstiness=17.64679136556038 sentence_count=9
+perplexity,humano_17.txt,humano,37.14,IA,False,mean_perplexity=47.72163300126766 burstiness=71.45200515646538 sentence_count=13
+perplexity,humano_18.txt,humano,0.01,humano,True,mean_perplexity=185.0065580739749 burstiness=83.75450821918017 sentence_count=6

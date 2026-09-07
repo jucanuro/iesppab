@@ -1,0 +1,15 @@
+La investigación buscó determinar el impacto de la educación en el crecimiento
+económico de la región Áncash, periodo 2008-2022. Además, contribuyó al ODS N°
+4 que busca garantizar una educación inclusiva y equitativa de calidad y promover
+oportunidades de aprendizaje permanente para todos. Se empleó un enfoque
+cuantitativo, con un diseño no experimental, de nivel correlacional-causal. La
+población se compuso de los documentos y base de datos del INEI que contenían la
+información sobre las variables, se aplicó un muestreo censal, por lo tanto, la muestra
+fue la misma que la población. Para la recopilación de los datos se empleó la técnica
+del análisis documental y como instrumento se empleó la ficha de análisis
+documental. Los datos recopilados fueron procesados en Stata y Excel. Los
+resultados del modelo arrojaron un coeficiente 12.17 y un p valor de 0.000, afirmando
+que la educación impacta positiva y significativamente en el crecimiento económico
+de la región en el periodo 2008-2022. Por lo tanto, se concluyó que existe un impacto
+estadísticamente significativo de la educación en el crecimiento económico de la
+región Áncash, 2008-2022.

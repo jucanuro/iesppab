@@ -1,0 +1,22 @@
+La investigación titulada “Incidencia de las capacidades institucionales en la
+implementación del presupuesto por resultados en los gobiernos locales, 2019” tiene por
+objetivo explicar la influencia de las capacidades institucionales (capacitación del
+personal, uso de sistemas informáticos, transparencia y participación ciudadana, y uso de
+tecnologías de la información) en la implementación del presupuesto por resultados,
+entendido como la incorporación de los programas presupuestales en el presupuesto
+institucional. Para ello, se busca describir la incorporación del presupuesto por resultados
+en los gobiernos locales y determinar su relación con las capacidades institucionales de
+los gobiernos locales.
+Se trata de una investigación aplicada de carácter cuantitativo, de tipo correlacional y de
+corte transversal; conformada por un total 1 790 municipalidades de las 1 874 que existen;
+de las que se cuenta con información a partir del portal de transparencia económica del
+MEF, el Registro Nacional de Municipalidades realizado por el INEI y el Censo 2017 de
+la misma entidad.
+Se encuentra que en promedio el 42.2% del presupuesto de las municipalidades
+corresponde a programas presupuestales, mientras que sólo el 55% de estas tienen más
+del 66% de su presupuesto asignado a esta categoría presupuestal. Este promedio es
+mayor en el caso de las municipalidades provinciales (44.7%) que en las distritales
+(41.9%). Por otro lado, al realizar una regresión lineal entre esta proporción y distintos
+indicadores para las capacidades institucionales (y otras variables de control), se
+evidencia que estas no permiten explicar el grado de implementación de los programas
+presupuestales.

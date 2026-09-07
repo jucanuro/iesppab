@@ -1,0 +1,17 @@
+El presente trabajo de investigación tuvo como objetivo determinar la incidencia de
+la competencia digital y herramientas tecnológicas en el desempeño docente, para
+lo cual se empleó la metodología de enfoque cuantitativo, investigación tipo básica,
+diseño no experimental, de corte transversal y nivel descriptivo correlacional causal.
+Se empleó la técnica muestra no probabilística conformada por 85 docentes de
+instituciones educativas públicas de Chincha, los mismo que procedieron a
+responder los tres cuestionarios, cuyo resultado se empleó el estadístico de
+regresión lineal ordinal. Para la comprobación de hipótesis se obtuvo el siguiente
+resultado del R2
+ de Nagelkerke en ,578 explicando la variabilidad de los datos y se
+establece que la competencia digital y herramientas Tics influyen en un 57.8% en
+el desempeño docente. En cuanto a la significancia de p=0,000 la misma que
+muestra que p es menor al valor de significancia 0,05, lo que permite señalar que
+la incidencia es significativa. Por lo tanto, se rechaza la hipótesis nula y se acepta
+la hipótesis alterna. Concluyendo que existe incidencia significativa de la
+competencia digital y herramientas tic en el desempeño docente en instituciones
+educativas del nivel Primario, Chincha Alta – 2022.

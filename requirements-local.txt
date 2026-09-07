@@ -11,3 +11,15 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.13.0+cpu
 transformers==5.15.0
+
+# Dependencias EXPERIMENTALES para la prueba de concepto de detección de
+# parafraseo con embeddings semánticos (apps/analysis/experiments/paraphrase_poc.py,
+# apps/analysis/experiments/paraphrase_cost_benchmark.py). Reutilizan el
+# torch/transformers de arriba (mismo stack que el detector de perplejidad).
+# SOLO para el POC en local. NO instalar en producción: el servidor tiene
+# 2GB de RAM y ya está ajustado con el modelo de perplejidad cargado
+# (~620MB medido); ver la Fase 3 del POC antes de considerar mover esto a
+# requirements.txt.
+sentence-transformers==6.0.1
+scikit-learn==1.9.0
+scipy==1.17.1

@@ -1,0 +1,20 @@
+La presente investigación titulada “DISEÑO DE UNA MÁQUINA PELADORA DE
+MANÍ CON CAPACIDAD DE 500KG/H PARA LA EMPRESA RAFAIN S.A.C.” presenta
+el diseño y modelado mecánico de una maquina peladora de maní, buscando brindar solución
+a la problemática encontrada en la empresa RAFAIN S.A.C., para entrar al mercado de los
+frutos procesados, de implementarse el diseño planteado se contará con un equipo para
+mejorar la calidad del grano de maní, al poder venderlo por un mayor precio, generara
+ingresos a la empresa.
+Para el planteamiento y desarrollo de la investigación se empleó una metodología
+deductiva y analística combinada, teniendo en cuenta la totalidad del problema y buscar una
+solución económicamente viable, empleado las habilidades obtenidas en la carrera y la
+consulta bibliográfica, se establecieron los parámetros de diseño necesarios para satisfacer
+las necesidades en la empresa RAFAIN S.A.C. Logrando el diseño de una maquina con
+capacidad para pelar 500 kg/h de maní en capsula, se creó el presupuesto y una evaluación
+económica según proyecciones de la empresa, asimismo sea adjuntan los planos de
+fabricación como las fichas técnicas de piezas de fabricante.
+Se pudo concluir la factibilidad tanto técnico como económica, empleando para ello la
+validación mediante análisis computacional con el uso del software SolidWorks mediante la
+herramienta Simulation para los cálculos realizas y piezas diseñadas, adicionalmente se tomó
+en cuenta los indicadores económicos VAN y TIR, teniendo como resultado valores
+aceptables al momento de desarrollar una inversión.

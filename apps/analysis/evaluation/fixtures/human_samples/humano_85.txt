@@ -1,0 +1,16 @@
+Este estudio tiene como objetivo implementar BI en la gestión académica para
+una institución educativa particular. Tuvo como metodología de tipo aplicada,
+implementando los conocimientos teóricos relacionados con la tecnología y los
+procesos de negocios con un diseño preexperimental caracterizada por
+mediciones de un antes y después. Asimismo, como resultado en el primer
+indicador que es el tiempo en la emisión de reportes del orden de mérito por año,
+donde en la primera evaluación fue 18,4 minutos y en la segunda de 0,23,
+segundos; como segundo indicador, tiempo en la emisión de reportes del índice
+de aprobados y desaprobados por año, donde en la primera evaluación fue de los
+18,3 minutos y la segunda de 0,22 segundos y por último el indicador tiempo en la
+emisión del reporte de alumnos en recuperación por año, donde en la primera
+evaluación fue de 5,4 minutos y en la segunda de 0,19 segundos. Se utilizó la
+herramienta Power BI para la visualización de los reportes. Concluimos el impacto
+positivo de BI en la institución educativa particular reduciendo el tiempo en los
+reportes, dando una mejor eficacia y productiva en la gestión académica y
+ayudando en las decisiones a tomar.

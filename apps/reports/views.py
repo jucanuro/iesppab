@@ -17,7 +17,7 @@ from django.views import View
 from apps.accounts.models import User
 from apps.analysis.models import AnalysisJob, AnalysisJobStatus
 from apps.certificates.models import Certificate
-from apps.documents.models import Document
+from apps.documents.models import Document, DocumentStatus
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
@@ -86,19 +86,29 @@ class ReportDetailView(LoginRequiredMixin, View):
             else:
                 analysis_job = self._get_latest_job(document=document)
 
+            # "En progreso" cubre tanto el hueco entre encolar la tarea y que
+            # el worker cree el AnalysisJob (ahí solo cambia Document.status a
+            # QUEUED) como el trabajo ya corriendo.
+            analysis_in_progress = document.status in {
+                DocumentStatus.QUEUED,
+                DocumentStatus.PROCESSING,
+            } or (
+                analysis_job is not None
+                and analysis_job.status
+                in {
+                    AnalysisJobStatus.PENDING,
+                    AnalysisJobStatus.QUEUED,
+                    AnalysisJobStatus.RUNNING,
+                }
+            )
+
             context = {
                 "document": document,
                 "report": report,
                 "certificate": certificate,
                 "highlighted_segments": highlighted_segments,
                 "analysis_job": analysis_job,
-                "analysis_in_progress": analysis_job is not None
-                and analysis_job.status
-                in {
-                    AnalysisJobStatus.PENDING,
-                    AnalysisJobStatus.QUEUED,
-                    AnalysisJobStatus.RUNNING,
-                },
+                "analysis_in_progress": analysis_in_progress,
                 "sources": report.sources.all() if report else [],
                 "similarity_findings": report.findings.filter(
                     finding_type=FindingType.SIMILARITY,

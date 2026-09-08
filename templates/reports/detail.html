@@ -49,6 +49,41 @@
                         Volver
                     </a>
 
+                    {% if analysis_in_progress %}
+                        <span class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-400">
+                            <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"></span>
+                            Analizando…
+                        </span>
+                    {% elif report or analysis_job.status == "FAILED" %}
+                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    title="Reanalizar originalidad"
+                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                Reanalizar
+                            </button>
+                        </form>
+                    {% else %}
+                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    title="Analizar originalidad"
+                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M14 3v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                    <path d="M16.5 17.5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" stroke="currentColor" stroke-width="1.8"/>
+                                    <path d="M18.5 19.5 21 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                                </svg>
+                                Analizar originalidad
+                            </button>
+                        </form>
+                    {% endif %}
+
                     {% if report and highlighted_segments %}
                         <a href="{% url 'reports:download_highlighted' document.id %}"
                            title="Descargar documento señalado"
@@ -160,7 +195,7 @@
                 </h3>
 
                 <p class="mt-2 text-[13px] text-red-600">
-                    Intenta ejecutar el análisis nuevamente desde la bandeja documental.
+                    Usa el botón «Reanalizar» de la cabecera para intentarlo de nuevo.
                 </p>
             </section>
 
@@ -173,7 +208,7 @@
                 </h3>
 
                 <p class="mt-2 text-[13px] text-[#8a6100]">
-                    Primero ejecuta el análisis desde la bandeja documental.
+                    Usa el botón «Analizar originalidad» de la cabecera para generarlo.
                 </p>
             </section>
 

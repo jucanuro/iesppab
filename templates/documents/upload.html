@@ -22,13 +22,6 @@
                         </p>
                     </div>
 
-                    <a href="#nuevo-documento"
-                       class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#123f9e] to-[#236bfd] px-4 text-[13px] font-bold text-white shadow-sm transition hover:from-[#0f3486] hover:to-[#1c5be0] active:scale-[0.99]">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-                        </svg>
-                        Subir documento
-                    </a>
                 </div>
             </div>
 
@@ -337,7 +330,7 @@
                                     <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
                                     <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
                                 </svg>
-                                Enviar
+                                Registrar
                             </span>
                         </button>
                     </div>
@@ -489,20 +482,44 @@
                                             </svg>
                                         </a>
 
-                                        <form method="post"
-                                              action="{% url 'analysis:analyze' document.id %}"
-                                              class="inline-flex">
-                                            {% csrf_token %}
-                                            <button type="submit"
-                                                    title="Analizar similitud"
-                                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-red-400 hover:bg-red-50 hover:text-red-600">
-                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M5 19L19 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-                                                    <path d="M7.5 9C8.88071 9 10 7.88071 10 6.5C10 5.11929 8.88071 4 7.5 4C6.11929 4 5 5.11929 5 6.5C5 7.88071 6.11929 9 7.5 9Z" stroke="currentColor" stroke-width="2"/>
-                                                    <path d="M16.5 20C17.8807 20 19 18.8807 19 17.5C19 16.1193 17.8807 15 16.5 15C15.1193 15 14 16.1193 14 17.5C14 18.8807 15.1193 20 16.5 20Z" stroke="currentColor" stroke-width="2"/>
+                                        {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
+                                            <span title="Analizando originalidad…"
+                                                  aria-label="Analizando originalidad"
+                                                  class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400">
+                                                <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
                                                 </svg>
-                                            </button>
-                                        </form>
+                                            </span>
+                                        {% else %}
+                                            <form method="post"
+                                                  action="{% url 'analysis:analyze' document.id %}"
+                                                  class="inline-flex">
+                                                {% csrf_token %}
+                                                {% if document.status == "COMPLETED" or document.status == "FAILED" %}
+                                                    <button type="submit"
+                                                            title="Reanalizar originalidad"
+                                                            aria-label="Reanalizar originalidad"
+                                                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
+                                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                            <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                            <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                        </svg>
+                                                    </button>
+                                                {% else %}
+                                                    <button type="submit"
+                                                            title="Analizar originalidad"
+                                                            aria-label="Analizar originalidad"
+                                                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
+                                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                            <path d="M14 3v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                                            <path d="M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+                                                            <path d="M16.5 17.5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" stroke="currentColor" stroke-width="1.8"/>
+                                                            <path d="M18.5 19.5 21 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                                                        </svg>
+                                                    </button>
+                                                {% endif %}
+                                            </form>
+                                        {% endif %}
 
                                         {% if certificate %}
                                             <a href="{% url 'certificates:download' certificate.id %}"
@@ -617,16 +634,24 @@
                                         Ver
                                     </a>
 
-                                    <form method="post"
-                                          action="{% url 'analysis:analyze' document.id %}"
-                                          class="inline-flex">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                title="Analizar similitud"
-                                                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 text-red-600">
-                                            %
-                                        </button>
-                                    </form>
+                                    {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
+                                        <span class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400">
+                                            <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                <path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+                                            </svg>
+                                            Procesando…
+                                        </span>
+                                    {% else %}
+                                        <form method="post"
+                                              action="{% url 'analysis:analyze' document.id %}"
+                                              class="inline-flex">
+                                            {% csrf_token %}
+                                            <button type="submit"
+                                                    class="inline-flex items-center justify-center gap-1 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
+                                                {% if document.status == "COMPLETED" or document.status == "FAILED" %}Reanalizar{% else %}Analizar{% endif %}
+                                            </button>
+                                        </form>
+                                    {% endif %}
 
                                     <form method="post"
                                           action="{% url 'certificates:generate' document.id %}"
@@ -913,7 +938,7 @@
 
                     submitText.innerHTML = `
                         <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
-                        Enviando...
+                        Registrando...
                     `;
                 }
             });

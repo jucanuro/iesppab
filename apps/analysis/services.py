@@ -336,14 +336,17 @@ class DocumentAnalysisService:
 
         return final_probability, breakdown, self.AI_DETECTOR_PERPLEXITY
 
-    def check_permission(self, document_id: UUID) -> None:
+    def check_permission(self, document_id: UUID) -> Document:
         """
         Valida que ``requested_by`` puede analizar el documento sin
         ejecutar el pipeline. Permite rechazar con 403 de forma síncrona
         antes de encolar la tarea de análisis en background.
+
+        Devuelve el documento para que la vista pueda inspeccionar su
+        estado (p. ej. evitar re-encolar uno que ya está en cola).
         """
 
-        self._get_allowed_document(document_id=document_id)
+        return self._get_allowed_document(document_id=document_id)
 
     def _get_allowed_document(self, document_id: UUID) -> Document:
         queryset = Document.objects.select_related(

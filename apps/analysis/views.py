@@ -13,6 +13,12 @@ from django.views import View
 
 from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
 from apps.analysis.tasks import run_document_analysis
+from apps.documents.models import DocumentStatus
+
+_IN_PROGRESS_STATUSES = {
+    DocumentStatus.QUEUED,
+    DocumentStatus.PROCESSING,
+}
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +40,35 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
             # Valida permisos de forma síncrona (rápido) antes de encolar,
             # para poder devolver un 403 inmediato si el usuario no puede
             # analizar este documento.
-            DocumentAnalysisService(requested_by=request.user).check_permission(
-                document_id=pk,
+            document = DocumentAnalysisService(
+                requested_by=request.user,
+            ).check_permission(document_id=pk)
+
+            # Evita encolar dos veces el mismo documento si el alumno vuelve
+            # a pulsar el botón mientras el análisis anterior sigue en cola
+            # o procesándose.
+            if document.status in _IN_PROGRESS_STATUSES:
+                messages.info(
+                    request,
+                    (
+                        "Este documento ya está en análisis, "
+                        "el reporte estará listo en unos momentos."
+                    ),
+                )
+
+                return redirect("reports:detail", pk=pk)
+
+            # Marca el documento como "en cola" de inmediato para que la
+            # bandeja y el reporte reflejen el estado sin esperar a que el
+            # worker recoja la tarea.
+            document.status = DocumentStatus.QUEUED
+            document.error_message = ""
+            document.save(
+                update_fields=[
+                    "status",
+                    "error_message",
+                    "updated_at",
+                ]
             )
 
             run_document_analysis.delay(str(pk), str(request.user.id))

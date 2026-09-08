@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Política de privacidad | {{ institution_name }}{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-3xl space-y-5">
+
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
+        <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-6 py-5">
+            <span class="inline-flex items-center gap-2 rounded-full border border-[#236bfd]/25 bg-[#eef3ff] px-3 py-1">
+                <span class="h-2 w-2 rounded-full bg-[#236bfd]"></span>
+                <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#123f9e]">
+                    Documento legal
+                </span>
+            </span>
+
+            <h1 class="mt-3 text-[22px] font-semibold text-[#123f9e]">
+                Política de privacidad
+            </h1>
+            <p class="mt-1 text-[13px] text-slate-500">
+                {{ institution_name }} · Última actualización: {{ last_updated|date:"d/m/Y" }}
+            </p>
+        </div>
+
+        <div class="border-b border-amber-200 bg-amber-50 px-6 py-3 text-[12.5px] font-semibold text-amber-800">
+            Borrador pendiente de revisión legal. El texto siguiente describe el
+            tratamiento de datos tal como funciona la plataforma hoy; debe ser
+            validado por la instancia legal de la institución antes de publicarse
+            como definitivo.
+        </div>
+
+        <div class="space-y-6 px-6 py-6 text-[13.5px] leading-6 text-slate-700">
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">1. Responsable del tratamiento</h2>
+                <p class="mt-1.5">
+                    El responsable del tratamiento de los datos personales recogidos
+                    en esta plataforma es {{ institution_name }} (en adelante, «la
+                    Institución»), con domicilio en San Miguel, Cajamarca, Perú. Las
+                    consultas sobre esta política pueden dirigirse a través del
+                    <a href="{% url 'core:help' %}" class="font-semibold text-[#236bfd] hover:underline">Centro de Ayuda</a>.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">2. Datos que recopilamos</h2>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>
+                        <span class="font-semibold">Datos de cuenta:</span> nombres,
+                        apellidos, correo electrónico institucional, nombre de usuario,
+                        rol (alumno, docente, director, administrador) e institución.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Documentos académicos:</span> los
+                        archivos PDF o DOCX que el usuario sube para análisis, junto con
+                        su título, tipo de trabajo, curso, periodo y asesor asignado.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Resultados del análisis:</span> el
+                        texto extraído del documento, los porcentajes de similitud e
+                        indicios de generación por IA, las fuentes detectadas y los
+                        reportes y certificados generados a partir de ellos.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Datos técnicos:</span> registros
+                        (logs) del servidor con fecha, hora y operación realizada, y una
+                        cookie de sesión estrictamente necesaria para mantener la sesión
+                        iniciada.
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">3. Finalidad</h2>
+                <p class="mt-1.5">
+                    Los datos se utilizan para: (a) autenticar al usuario y controlar el
+                    acceso según su rol; (b) analizar la originalidad de los documentos
+                    académicos y estimar la presencia de texto generado por inteligencia
+                    artificial; (c) emitir reportes y certificados verificables; y (d)
+                    mantener la seguridad e integridad del servicio. No se utilizan los
+                    datos con fines comerciales ni se realizan decisiones automatizadas
+                    con efectos jurídicos sobre el usuario distintas de la generación
+                    del reporte técnico.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">4. Base legal</h2>
+                <p class="mt-1.5">
+                    El tratamiento se ampara en la relación académica entre el usuario y
+                    la Institución y en el interés legítimo de esta en garantizar la
+                    integridad académica, conforme a la Ley N.° 29733, Ley de Protección
+                    de Datos Personales del Perú, y su reglamento. Cuando corresponda, se
+                    solicitará el consentimiento expreso del titular.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">5. Conservación</h2>
+                <p class="mt-1.5">
+                    Los documentos, reportes y certificados se conservan mientras exista
+                    la relación académica y durante el plazo que la normativa interna de
+                    la Institución establezca para fines de verificación posterior.
+                    Transcurrido ese plazo, los datos se eliminan o anonimizan. El
+                    usuario puede solicitar la supresión anticipada según la sección 8.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">6. Encargados y terceros</h2>
+                <p class="mt-1.5">
+                    Para prestar el servicio, la plataforma se apoya en:
+                </p>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>
+                        Infraestructura de servidor y base de datos donde se almacenan
+                        los datos, bajo control de la Institución o de su proveedor de
+                        alojamiento.
+                    </li>
+                    <li>
+                        Un servicio externo de búsqueda web (Brave Search) al que se
+                        envían fragmentos de texto del documento para detectar
+                        coincidencias en internet. Esta función puede estar desactivada.
+                    </li>
+                    <li>
+                        Repositorios académicos públicos consultados mediante el
+                        protocolo OAI-PMH para comparar contra tesis y artículos ya
+                        publicados.
+                    </li>
+                    <li>
+                        Un proveedor de correo electrónico para el envío de mensajes de
+                        recuperación de contraseña.
+                    </li>
+                </ul>
+                <p class="mt-1.5">
+                    No se transfieren datos a terceros con fines distintos de los
+                    descritos.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">7. Seguridad</h2>
+                <p class="mt-1.5">
+                    Los archivos se guardan en rutas privadas y no predecibles, separadas
+                    del nombre original del documento. Las contraseñas se almacenan
+                    cifradas mediante funciones de hash. El acceso a los documentos está
+                    restringido al propio usuario y al personal docente o administrativo
+                    de su institución. La plataforma aplica protección contra CSRF,
+                    cabeceras de seguridad y, en producción, conexión cifrada (HTTPS).
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">8. Derechos del titular</h2>
+                <p class="mt-1.5">
+                    El titular puede ejercer sus derechos de acceso, rectificación,
+                    cancelación y oposición (derechos ARCO) sobre sus datos personales,
+                    así como retirar su consentimiento cuando este sea la base del
+                    tratamiento. Para ello debe contactar a la Institución a través de
+                    los canales indicados en el
+                    <a href="{% url 'core:help' %}" class="font-semibold text-[#236bfd] hover:underline">Centro de Ayuda</a>.
+                    La Institución responderá en los plazos previstos por la Ley
+                    N.° 29733.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">9. Cookies</h2>
+                <p class="mt-1.5">
+                    La plataforma solo utiliza una cookie de sesión estrictamente
+                    necesaria para el funcionamiento del inicio de sesión. No se emplean
+                    cookies de analítica, publicidad ni seguimiento de terceros.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">10. Cambios en esta política</h2>
+                <p class="mt-1.5">
+                    Esta política puede actualizarse para reflejar cambios en la
+                    plataforma o en la normativa aplicable. La fecha de la última
+                    actualización se indica al inicio del documento.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">11. Contacto</h2>
+                <p class="mt-1.5">
+                    Para cualquier consulta relacionada con esta política o con el
+                    tratamiento de datos personales, escríbenos desde el
+                    <a href="{% url 'core:help' %}" class="font-semibold text-[#236bfd] hover:underline">Centro de Ayuda</a>.
+                </p>
+            </div>
+
+        </div>
+    </div>
+</section>
+{% endblock %}

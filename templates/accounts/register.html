@@ -5,9 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crear cuenta | {{ institution_name|default:"IESPP" }}</title>
+
+    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'img/logo-iesppabl.png' %}">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; }
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
 
         .bg-institutional {
             background:

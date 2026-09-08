@@ -55,10 +55,11 @@
                             Analizando…
                         </span>
                     {% elif report or analysis_job.status == "FAILED" %}
-                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex">
+                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex" data-submit-spinner>
                             {% csrf_token %}
                             <button type="submit"
                                     title="Reanalizar originalidad"
+                                    data-loading-label="Enviando…"
                                     class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -68,10 +69,11 @@
                             </button>
                         </form>
                     {% else %}
-                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex">
+                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex" data-submit-spinner>
                             {% csrf_token %}
                             <button type="submit"
                                     title="Analizar originalidad"
+                                    data-loading-label="Enviando…"
                                     class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
                                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <path d="M14 3v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>

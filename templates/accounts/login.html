@@ -5,9 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar sesión | {{ institution_name|default:"IESPP" }}</title>
+
+    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'img/logo-iesppabl.png' %}">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Segoe UI', Arial, Helvetica, sans-serif; }
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
 
         .bg-institutional {
             background:
@@ -142,10 +149,10 @@
 
                     <!-- Links -->
                     <div class="mt-5 flex items-center justify-between text-[12.5px]">
-                        <a href="#" class="font-medium text-[#236bfd] transition hover:underline">
+                        <a href="{% url 'accounts:password_reset' %}" class="font-medium text-[#236bfd] transition hover:underline">
                             ¿Olvidaste tu contraseña?
                         </a>
-                        <a href="#" class="font-medium text-[#236bfd] transition hover:underline">
+                        <a href="{% url 'core:help' %}" class="font-medium text-[#236bfd] transition hover:underline">
                             Ayuda
                         </a>
                     </div>

@@ -1,0 +1,83 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Acceso | {{ institution_name|default:"IESPP" }}{% endblock %}</title>
+
+    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
+    <link rel="apple-touch-icon" href="{% static 'img/logo-iesppabl.png' %}">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+                Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        .bg-institutional {
+            background:
+                radial-gradient(1200px 600px at 50% -10%, rgba(35,107,253,0.10), transparent 60%),
+                linear-gradient(180deg, #f4f8ff 0%, #eef3fb 100%);
+        }
+
+        .accent-bar {
+            background: linear-gradient(90deg, #f5b400 0%, #236bfd 55%, #123f9e 100%);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen bg-institutional text-slate-900">
+    <main class="flex min-h-screen flex-col items-center justify-center px-4 py-10">
+
+        <section class="w-full max-w-[380px] overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_10px_40px_-12px_rgba(15,45,110,0.25)]">
+            <div class="accent-bar h-[4px] w-full"></div>
+
+            <div class="px-7 pb-8 pt-7">
+
+                <div class="mb-5 flex justify-center">
+                    <img src="{% static 'img/logo-iesppabl.png' %}"
+                         alt="Escudo {{ institution_name|default:'IESPP' }}"
+                         title="{{ institution_name|default:'IESPP' }}"
+                         class="h-40 w-auto select-none drop-shadow-sm">
+                </div>
+
+                <div class="text-center">
+                    <h1 class="text-[21px] font-bold tracking-tight text-slate-950">
+                        {% block auth_title %}Acceso{% endblock %}
+                    </h1>
+                    <p class="mt-1 text-[13px] text-slate-500">
+                        {% block auth_subtitle %}{% endblock %}
+                    </p>
+                </div>
+
+                {% if messages %}
+                    <div class="mt-4 space-y-2" aria-live="polite">
+                        {% for message in messages %}
+                            <div role="alert"
+                                 class="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] font-medium
+                                {% if message.tags == 'success' %}
+                                    border-emerald-200 bg-emerald-50 text-emerald-700
+                                {% elif message.tags == 'error' %}
+                                    border-red-200 bg-red-50 text-red-700
+                                {% else %}
+                                    border-sky-200 bg-sky-50 text-sky-700
+                                {% endif %}
+                            ">
+                                {{ message }}
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+
+                {% block auth_body %}{% endblock %}
+            </div>
+        </section>
+
+        <p class="mt-6 text-center text-[11px] text-slate-400">
+            © {% now "Y" %} {{ institution_name|default:"IESPP" }}. Todos los derechos reservados.
+        </p>
+    </main>
+</body>
+</html>

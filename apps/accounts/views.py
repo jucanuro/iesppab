@@ -6,6 +6,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -16,7 +17,7 @@ from django.http import (
     HttpResponseForbidden,
 )
 from django.shortcuts import redirect, render
-from django.urls import reverse
+from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import TemplateView
@@ -133,6 +134,56 @@ class InstitutionalLoginView(View):
             logger.exception("Error inesperado en login institucional.")
             messages.error(request, "Ocurrió un error al iniciar sesión.")
             return redirect("accounts:login")
+
+
+class _InstitutionNameContextMixin:
+    """
+    Añade ``institution_name`` al contexto para que las plantillas de
+    recuperación de contraseña (que extienden ``accounts/auth_base.html``)
+    muestren el nombre real de la institución, igual que login/registro.
+    """
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        institution = Institution.objects.filter(is_active=True).first()
+        context["institution_name"] = (
+            institution.name
+            if institution
+            else 'IESPP "Alfonso Barrantes Lingán"'
+        )
+        return context
+
+
+class PasswordResetView(
+    _InstitutionNameContextMixin,
+    auth_views.PasswordResetView,
+):
+    template_name = "accounts/password_reset_form.html"
+    email_template_name = "accounts/password_reset_email.html"
+    subject_template_name = "accounts/password_reset_subject.txt"
+    success_url = reverse_lazy("accounts:password_reset_done")
+
+
+class PasswordResetDoneView(
+    _InstitutionNameContextMixin,
+    auth_views.PasswordResetDoneView,
+):
+    template_name = "accounts/password_reset_done.html"
+
+
+class PasswordResetConfirmView(
+    _InstitutionNameContextMixin,
+    auth_views.PasswordResetConfirmView,
+):
+    template_name = "accounts/password_reset_confirm.html"
+    success_url = reverse_lazy("accounts:password_reset_complete")
+
+
+class PasswordResetCompleteView(
+    _InstitutionNameContextMixin,
+    auth_views.PasswordResetCompleteView,
+):
+    template_name = "accounts/password_reset_complete.html"
 
 
 class InstitutionalLogoutView(LoginRequiredMixin, View):

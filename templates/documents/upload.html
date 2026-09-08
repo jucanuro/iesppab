@@ -493,7 +493,8 @@
                                         {% else %}
                                             <form method="post"
                                                   action="{% url 'analysis:analyze' document.id %}"
-                                                  class="inline-flex">
+                                                  class="inline-flex"
+                                                  data-submit-spinner>
                                                 {% csrf_token %}
                                                 {% if document.status == "COMPLETED" or document.status == "FAILED" %}
                                                     <button type="submit"
@@ -644,9 +645,11 @@
                                     {% else %}
                                         <form method="post"
                                               action="{% url 'analysis:analyze' document.id %}"
-                                              class="inline-flex">
+                                              class="inline-flex"
+                                              data-submit-spinner>
                                             {% csrf_token %}
                                             <button type="submit"
+                                                    data-loading-label="Enviando…"
                                                     class="inline-flex items-center justify-center gap-1 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
                                                 {% if document.status == "COMPLETED" or document.status == "FAILED" %}Reanalizar{% else %}Analizar{% endif %}
                                             </button>

@@ -556,6 +556,34 @@ LOGGING = {
 }
 
 
+# Email: se usa para la recuperación de contraseña (flujo integrado de Django).
+# Si `EMAIL_HOST` está configurado se envía por SMTP; si no, los correos se
+# imprimen en la consola (útil en local sin servidor de correo).
+EMAIL_HOST = os.getenv("EMAIL_HOST", "").strip()
+EMAIL_PORT = env_int("EMAIL_PORT", 587)
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "").strip()
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
+EMAIL_TIMEOUT = env_int("EMAIL_TIMEOUT", 15)
+
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "").strip() or (
+    "django.core.mail.backends.smtp.EmailBackend"
+    if EMAIL_HOST
+    else "django.core.mail.backends.console.EmailBackend"
+)
+
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    'IESPP "Alfonso Barrantes Lingán" <no-reply@iesppabl.edu.pe>',
+).strip()
+
+SERVER_EMAIL = os.getenv("SERVER_EMAIL", DEFAULT_FROM_EMAIL).strip()
+
+# Validez del enlace de recuperación de contraseña (segundos). 3 días.
+PASSWORD_RESET_TIMEOUT = env_int("PASSWORD_RESET_TIMEOUT", 259200)
+
+
 # Celery: ejecuta el análisis de documentos en background (worker aparte) en
 # vez de bloquear la petición HTTP. Default a Redis local — en producción se
 # sobreescribe vía variables de entorno.

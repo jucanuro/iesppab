@@ -39,3 +39,46 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 - `DocumentAnalysisService.check_permission` (`apps/analysis/services.py`) ahora
   devuelve el `Document` validado (antes no devolvía nada) para que la vista pueda
   inspeccionar su estado.
+
+### Added
+- Recuperación de contraseña ("¿Olvidaste tu contraseña?"): flujo completo con las
+  vistas integradas de Django, subclasadas en `apps/accounts/views.py`
+  (`PasswordResetView` y las otras tres) para inyectar el nombre de la institución.
+  Rutas bajo `apps/accounts/urls.py` (`/clave/recuperar/`, `/clave/recuperar/enviado/`,
+  `/clave/nueva/<uidb64>/<token>/`, `/clave/nueva/lista/`). Plantillas nuevas en
+  `templates/accounts/`: `auth_base.html` (shell común para las pantallas de acceso),
+  `password_reset_form/done/confirm/complete.html`, `password_reset_email.html` y
+  `password_reset_subject.txt`.
+- Configuración de email en `config/settings.py` y `.env.example`: `EMAIL_HOST`,
+  `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS/SSL`,
+  `DEFAULT_FROM_EMAIL`, `PASSWORD_RESET_TIMEOUT` (3 días). Sin `EMAIL_HOST` los correos
+  se imprimen en consola; con `EMAIL_HOST` se envían por SMTP.
+- Página "Política de privacidad" (`/privacidad/`, `apps.core`): borrador completo
+  alineado con el tratamiento real de datos de la plataforma y la Ley N.º 29733,
+  marcado visiblemente como pendiente de revisión legal.
+- Página "Centro de Ayuda" (`/ayuda/`, `apps.core`): guía de uso y preguntas
+  frecuentes (acceso, registro y habilitación, recuperación de contraseña, carga,
+  análisis, lectura del reporte, descargas, roles).
+- `apps/core/views.py` y `apps/core/urls.py` (nuevo), montado en `config/urls.py`.
+- Favicon del sitio: `templates/base.html`, `templates/accounts/login.html` y
+  `templates/accounts/register.html` enlazan `img/logo-iesppabl.png` como `icon` y
+  `apple-touch-icon` (antes la pestaña salía sin icono).
+- Avisos (mensajes de Django) en `templates/base.html`: botón "×" para cerrarlos,
+  auto-ocultado a los 6 s para los de tipo `success`, y `role="alert"` /
+  `aria-live="polite"` para lectores de pantalla.
+- Spinner de envío reutilizable en `templates/base.html`: cualquier
+  `<form data-submit-spinner>` deshabilita su botón de envío y muestra un spinner
+  (con texto opcional vía `data-loading-label`) al enviarse. Aplicado a los botones
+  "Analizar"/"Reanalizar" de la bandeja (`templates/documents/upload.html`) y de la
+  página de reporte (`templates/reports/detail.html`).
+
+### Changed
+- Tipografía base: `templates/base.html`, `login.html` y `register.html` pasan de
+  `Arial, Helvetica, sans-serif` a un stack de fuente de sistema
+  (`ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, …`).
+- `templates/base.html`: los enlaces del pie "Política de privacidad" y
+  "Centro de Ayuda" (antes `href="#"`) ahora apuntan a `core:privacy` y `core:help`.
+- `templates/accounts/login.html`: "¿Olvidaste tu contraseña?" (antes `href="#"`)
+  apunta a `accounts:password_reset` y "Ayuda" a `core:help`.
+- `templates/accounts/login.html` y `register.html`: favicon y stack de fuente de
+  sistema (tienen `<head>` propio, no heredan de `base.html`).

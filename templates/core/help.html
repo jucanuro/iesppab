@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Centro de Ayuda | {{ institution_name }}{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-3xl space-y-5">
+
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
+        <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-6 py-5">
+            <span class="inline-flex items-center gap-2 rounded-full border border-[#236bfd]/25 bg-[#eef3ff] px-3 py-1">
+                <span class="h-2 w-2 rounded-full bg-[#236bfd]"></span>
+                <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#123f9e]">
+                    Centro de Ayuda
+                </span>
+            </span>
+
+            <h1 class="mt-3 text-[22px] font-semibold text-[#123f9e]">
+                Guía de uso de la plataforma
+            </h1>
+            <p class="mt-1 text-[13px] text-slate-500">
+                {{ institution_name }} · Plataforma de Originalidad Académica
+            </p>
+        </div>
+
+        <div class="space-y-6 px-6 py-6 text-[13.5px] leading-6 text-slate-700">
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Iniciar sesión</h2>
+                <p class="mt-1.5">
+                    Los alumnos y docentes ingresan con su <span class="font-semibold">correo
+                    institucional</span> y su contraseña. Las cuentas administrativas
+                    pueden ingresar además con su nombre de usuario. Si el correo no
+                    pertenece al dominio de la institución, el acceso se rechaza.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Crear una cuenta (alumnos)</h2>
+                <p class="mt-1.5">
+                    Usa la opción <span class="font-semibold">«Regístrate»</span> de la
+                    pantalla de inicio de sesión con tu correo institucional. Tras
+                    registrarte, un docente o director debe <span class="font-semibold">habilitar
+                    tu cuenta</span> antes de que puedas subir documentos. Mientras
+                    tanto podrás iniciar sesión pero no cargar trabajos.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Recuperar la contraseña</h2>
+                <p class="mt-1.5">
+                    En la pantalla de inicio de sesión, pulsa
+                    <span class="font-semibold">«¿Olvidaste tu contraseña?»</span> e
+                    introduce tu correo institucional. Recibirás un enlace para elegir
+                    una contraseña nueva; el enlace caduca a los 3 días y solo puede
+                    usarse una vez. Revisa la carpeta de spam si no lo ves.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Subir un documento</h2>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>Formatos aceptados: <span class="font-semibold">PDF o DOCX</span>.</li>
+                    <li>Tamaño máximo: <span class="font-semibold">25 MB</span>.</li>
+                    <li>
+                        Completa el título, el tipo de trabajo, el curso y el periodo.
+                        El asesor es opcional.
+                    </li>
+                    <li>
+                        Los docentes y administradores pueden subir un documento en
+                        nombre de un alumno de su institución.
+                    </li>
+                    <li>
+                        El archivo se guarda de forma privada: solo tú y el personal
+                        docente o administrativo de tu institución pueden verlo.
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Analizar la originalidad</h2>
+                <p class="mt-1.5">
+                    En la bandeja de documentos, pulsa <span class="font-semibold">«Analizar
+                    originalidad»</span> en la fila del documento (o el mismo botón desde
+                    la página del reporte). El análisis se ejecuta en segundo plano y el
+                    estado del documento avanza así:
+                </p>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li><span class="font-semibold">En cola:</span> el análisis está encolado y a punto de empezar.</li>
+                    <li><span class="font-semibold">Procesando:</span> se está extrayendo el texto y comparando fuentes.</li>
+                    <li><span class="font-semibold">Completado:</span> el reporte está listo.</li>
+                    <li><span class="font-semibold">Fallido:</span> ocurrió un error; puedes pulsar «Reanalizar».</li>
+                </ul>
+                <p class="mt-1.5">
+                    La página del reporte se actualiza sola mientras el análisis está en
+                    curso. Un documento típico tarda entre unos segundos y un par de
+                    minutos.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Interpretar el reporte</h2>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>
+                        <span class="font-semibold">Similitud:</span> porcentaje de texto
+                        que coincide con otros documentos internos o con páginas web.
+                        Los fragmentos coincidentes se resaltan en rojo en el visor.
+                    </li>
+                    <li>
+                        <span class="font-semibold">IA estimada:</span> probabilidad de
+                        que partes del texto hayan sido generadas por inteligencia
+                        artificial. Se resaltan en azul. Es una estimación orientativa,
+                        no una prueba concluyente.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Fuentes detectadas:</span> lista de
+                        documentos o páginas con coincidencias, ordenadas por porcentaje.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Nivel de riesgo:</span> resumen
+                        (bajo, moderado, alto) que combina similitud e indicios de IA
+                        para orientar la revisión docente.
+                    </li>
+                </ul>
+                <p class="mt-1.5">
+                    El reporte es una herramienta de apoyo: la valoración final del
+                    trabajo corresponde siempre al docente.
+                </p>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Descargas</h2>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li>
+                        <span class="font-semibold">Documento señalado:</span> el texto
+                        del trabajo con los mismos resaltados del visor, en PDF.
+                    </li>
+                    <li>
+                        <span class="font-semibold">Certificado:</span> documento
+                        verificable con un enlace público de comprobación por hash. Se
+                        genera desde la página del reporte.
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Roles</h2>
+                <ul class="mt-1.5 list-disc space-y-1 pl-5">
+                    <li><span class="font-semibold">Alumno:</span> sube y analiza sus propios documentos.</li>
+                    <li><span class="font-semibold">Docente:</span> además, habilita alumnos y sube o analiza documentos de alumnos de su institución.</li>
+                    <li><span class="font-semibold">Director / Administrador:</span> visión de todos los documentos de la institución y acceso al panel de administración.</li>
+                </ul>
+            </div>
+
+            <div>
+                <h2 class="text-[15px] font-bold text-slate-900">Soporte</h2>
+                <p class="mt-1.5">
+                    Si tienes un problema técnico que esta guía no resuelve, contacta con
+                    la coordinación académica de tu institución o con el docente
+                    responsable de tu curso.
+                    <span class="text-slate-500">(La institución puede añadir aquí un
+                    correo o teléfono de soporte.)</span>
+                </p>
+            </div>
+
+        </div>
+    </div>
+</section>
+{% endblock %}

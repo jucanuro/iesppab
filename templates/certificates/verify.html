@@ -43,25 +43,20 @@
                     {% if certificate %}
                         <a href="{% url 'certificates:download' certificate.id %}"
                            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 3V15M12 15L7 10M12 15L17 10" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
-                                <path d="M5 19H19" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-                            </svg>
+                            {% include "certificates/_seal_download_icon.html" %}
                             Descargar
                         </a>
                     {% else %}
                         <form method="post"
                               action="{% url 'certificates:generate' document.id %}"
-                              class="inline-flex">
+                              class="inline-flex"
+                              data-submit-spinner>
                             {% csrf_token %}
                             <button type="submit"
+                                    data-loading-label="Generando…"
                                     class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                    <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                    <path d="M9 14H15M9 17H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                </svg>
-                                Exportar
+                                {% include "certificates/_seal_icon.html" %}
+                                Generar
                             </button>
                         </form>
                     {% endif %}

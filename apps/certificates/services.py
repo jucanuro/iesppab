@@ -35,7 +35,7 @@ from reportlab.platypus import (
 from apps.accounts.models import User
 from apps.certificates.models import Certificate
 from apps.documents.models import DocumentStatus
-from apps.reports.models import AnalysisReport
+from apps.reports.models import AnalysisReport, ReportRiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +155,12 @@ class CertificateGenerationService:
         if report.document.status != DocumentStatus.COMPLETED:
             raise ValidationError(
                 "El documento debe estar completado antes de generar certificado."
+            )
+
+        if report.risk_level == ReportRiskLevel.HIGH:
+            raise ValidationError(
+                "No se puede emitir un certificado para un reporte con nivel "
+                "de riesgo alto. Revisa el documento y vuelve a analizarlo."
             )
 
     def _get_or_create_certificate(

@@ -547,31 +547,7 @@
                                             </form>
                                         {% endif %}
 
-                                        {% if certificate %}
-                                            <a href="{% url 'certificates:download' certificate.id %}"
-                                               title="Descargar certificado"
-                                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
-                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M12 3V15M12 15L7 10M12 15L17 10" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
-                                                    <path d="M5 19H19" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-                                                </svg>
-                                            </a>
-                                        {% else %}
-                                            <form method="post"
-                                                  action="{% url 'certificates:generate' document.id %}"
-                                                  class="inline-flex">
-                                                {% csrf_token %}
-                                                <button type="submit"
-                                                        title="Generar certificado"
-                                                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
-                                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                        <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                        <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                        <path d="M9 14H15M9 17H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                    </svg>
-                                                </button>
-                                            </form>
-                                        {% endif %}
+                                        {% include "certificates/_action_button.html" %}
                                     </div>
                                 </td>
                             </tr>
@@ -681,16 +657,7 @@
                                         </form>
                                     {% endif %}
 
-                                    <form method="post"
-                                          action="{% url 'certificates:generate' document.id %}"
-                                          class="inline-flex">
-                                        {% csrf_token %}
-                                        <button type="submit"
-                                                title="Generar certificado"
-                                                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600">
-                                            PDF
-                                        </button>
-                                    </form>
+                                    {% include "certificates/_action_button.html" %}
                                 </div>
                             </div>
                         </div>

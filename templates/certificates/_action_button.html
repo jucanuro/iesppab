@@ -1,0 +1,35 @@
+{% comment %}
+Botón de certificado (icono) para un documento en la bandeja. Espera `document`.
+
+  - certificado ya emitido        -> enlace "Descargar certificado"
+  - análisis COMPLETED, riesgo ≠ alto -> botón "Generar certificado"
+  - análisis COMPLETED, riesgo alto   -> deshabilitado (no se certifica riesgo alto)
+  - análisis sin terminar             -> deshabilitado (aún no hay reporte)
+{% endcomment %}
+{% if document.report.certificate.is_active %}
+    <a href="{% url 'certificates:download' document.report.certificate.id %}"
+       title="Descargar certificado"
+       aria-label="Descargar certificado"
+       class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
+        {% include "certificates/_seal_download_icon.html" %}
+    </a>
+{% elif document.status == "COMPLETED" and document.report and document.report.risk_level != "HIGH" %}
+    <form method="post"
+          action="{% url 'certificates:generate' document.id %}"
+          class="inline-flex"
+          data-submit-spinner>
+        {% csrf_token %}
+        <button type="submit"
+                title="Generar certificado"
+                aria-label="Generar certificado"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
+            {% include "certificates/_seal_icon.html" %}
+        </button>
+    </form>
+{% else %}
+    <span class="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-300"
+          aria-label="Certificado no disponible"
+          title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' %}No se puede emitir un certificado para un documento con riesgo alto. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+        {% include "certificates/_seal_icon.html" %}
+    </span>
+{% endif %}

@@ -28,6 +28,27 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
   la tarea y que el worker cree el `AnalysisJob` (antes ese lapso no mostraba el spinner
   ni activaba el auto-refresco de la página).
 
+### Changed
+- El certificado ya no se puede emitir para reportes con nivel de riesgo alto.
+  - `CertificateGenerationService._validate_report` (`apps/certificates/services.py`)
+    lanza `ValidationError` si `report.risk_level == HIGH` (además de las validaciones
+    de reporte final y documento completado que ya había).
+  - Nuevo parcial `templates/certificates/_action_button.html`: el botón de certificado
+    de la bandeja (`templates/documents/upload.html`, desktop + móvil) muestra
+    "Descargar certificado" si ya está emitido; "Generar certificado" solo si el
+    análisis terminó y el riesgo no es alto; y una versión deshabilitada con tooltip
+    explicativo en los demás casos (riesgo alto, o análisis sin terminar).
+  - Misma lógica en la cabecera de `templates/reports/detail.html`: el botón
+    "Generar certificado" se sustituye por "Certificado no disponible" (deshabilitado)
+    cuando el riesgo es alto o no hay reporte.
+  - `DocumentUploadView._get_recent_documents` (`apps/documents/views.py`) añade
+    `report__certificate` al `select_related` para no disparar consultas N+1 al
+    pintar el botón por fila.
+
+### Added
+- `apps/certificates/tests.py` (antes vacío): `CertificateRiskGateTests` cubre que
+  un reporte con riesgo alto no se certifica y que uno con riesgo bajo sí.
+
 ### Fixed
 - `DocumentAnalyzeView` (`apps/analysis/views.py`) ahora marca el documento como
   `QUEUED` antes de encolar la tarea Celery, para que la bandeja y el reporte reflejen
@@ -71,6 +92,14 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
   (con texto opcional vía `data-loading-label`) al enviarse. Aplicado a los botones
   "Analizar"/"Reanalizar" de la bandeja (`templates/documents/upload.html`) y de la
   página de reporte (`templates/reports/detail.html`).
+- Iconos de certificado (`templates/certificates/_seal_icon.html` y
+  `_seal_download_icon.html`, nuevos): una roseta/sello para "Generar certificado"
+  y la misma roseta con flecha para "Descargar certificado", sustituyendo el icono
+  de documento genérico y la flecha de descarga sueltos. Aplicados en la bandeja
+  (`templates/documents/upload.html`, desktop + móvil, donde el botón móvil deja de
+  mostrar el texto "PDF"), en la página de reporte (`templates/reports/detail.html`)
+  y en la de verificación (`templates/certificates/verify.html`). El botón "Exportar"
+  del reporte pasa a llamarse "Generar certificado".
 
 ### Added
 - Leyenda de estados en la bandeja (`templates/documents/upload.html`): un

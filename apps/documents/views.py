@@ -148,6 +148,7 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             "owner",
             "uploaded_by",
             "report",
+            "report__certificate",
         )
 
         if user.is_superuser or user.is_admin_role:

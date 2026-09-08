@@ -4,6 +4,55 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
 ## [2026-09-08]
 
+### Added
+- WhiteNoise (`requirements.txt`, middleware en `config/settings.py`) para servir los
+  estáticos ya recogidos por `collectstatic` sin depender de `DEBUG` ni de un servidor
+  web aparte. Necesario para exponer el proyecto detrás del túnel Cloudflare con
+  `DEBUG=False` (antes `ManifestStaticFilesStorage` + `runserver` sin `collectstatic`
+  daba 500 en toda página que usa `{% static %}`). `WHITENOISE_MANIFEST_STRICT=False` y
+  `WHITENOISE_USE_FINDERS` en modo local para no reventar si no se ha corrido
+  `collectstatic`.
+- Navegación entre coincidencias en el visor del reporte
+  (`templates/reports/detail.html`): stepper "◀ N / total ▶" con filtro
+  (todas / solo similitud / solo IA) que hace scroll suave a cada fragmento
+  resaltado y lo destaca un instante. Los `<span>` resaltados ganan
+  `data-mark` + clase `js-mark`.
+- Páginas de error con la identidad del sitio: `templates/403.html`,
+  `templates/404.html` y `templates/500.html`. La de 403 distingue "sin permiso"
+  de "sesión expirada".
+- Vista `apps.core.views.csrf_failure` (configurada en `CSRF_FAILURE_VIEW`): un
+  formulario enviado tras caducar la sesión ya no devuelve un 403 crudo, sino la
+  página "Tu sesión expiró" con enlace a iniciar sesión.
+- Aviso de "plataforma sin configurar": `apps/core/context_processors.py`
+  (`institution_status`, registrado en `TEMPLATES`) + banner en `templates/base.html`
+  cuando no hay ninguna `Institution` activa — con enlace directo a crearla para
+  superusuarios/administradores, y un mensaje neutro para el resto.
+- Vista previa del archivo en la zona de carga (`templates/documents/upload.html`):
+  al seleccionar o arrastrar un archivo ahora se muestra su nombre, tipo (PDF/DOCX)
+  y tamaño formateado, no solo el nombre.
+- Auto-refresco del reporte por polling: nuevo endpoint `reports:status`
+  (`/documentos/<uuid>/reporte/estado/`, `ReportStatusView` en `apps/reports/views.py`)
+  que devuelve `{status, status_display, in_progress}` en JSON. `templates/reports/detail.html`
+  deja de usar `<meta http-equiv="refresh" content="10">` (recarga completa, pierde
+  scroll, parpadea) y en su lugar consulta ese endpoint cada 3 s mientras el análisis
+  está en curso, recargando solo cuando pasa a `COMPLETED`/`FAILED`.
+- Bandeja de documentos: filtros (estado, tipo, búsqueda por título o alumno) y
+  paginación de 10 en 10 (`DocumentUploadView.get_context_data` + `_scoped_documents` /
+  `_apply_filters` / `_filter_querystring` en `apps/documents/views.py`; antes cortaba en
+  `[:10]` sin forma de ver el resto). El estado vacío distingue "sin documentos" de
+  "sin resultados para el filtro".
+
+### Changed
+- `apps/reports/views.py`: `ReportDetailView._get_allowed_document` pasa a `@staticmethod`
+  para reutilizarla desde `ReportStatusView`.
+- Accesibilidad de teclado: foco visible (`outline` azul en `:focus-visible`) para
+  enlaces, botones y `<summary>` en `templates/base.html` y en las plantillas de acceso
+  (`auth_base.html`, `login.html`, `register.html`), que tienen `<head>` propio. El reset
+  de Tailwind (CDN) atenuaba el outline nativo.
+- Bandeja: el icono/botón "Ver reporte" (ojo en desktop, "Ver" en móvil) se deshabilita
+  cuando el documento está `UPLOADED` (nunca analizado), con tooltip explicativo, en vez
+  de llevar a una página de reporte vacía. Añadido `aria-label` al enlace del ojo.
+
 ### Changed
 - Bandeja de documentos (`templates/documents/upload.html`):
   - Eliminado el botón "Subir documento" del encabezado (el enlace `<a href="#nuevo-documento">`),
@@ -48,6 +97,12 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 ### Added
 - `apps/certificates/tests.py` (antes vacío): `CertificateRiskGateTests` cubre que
   un reporte con riesgo alto no se certifica y que uno con riesgo bajo sí.
+- Branding del admin de Django (`/admin/`): `templates/admin/base_site.html` (nuevo)
+  pone el logo institucional en la cabecera y sobreescribe las variables de color del
+  admin con la paleta azul institucional (`#123f9e` / `#236bfd`, acento `#f5b400`);
+  en modo oscuro la cabecera y los botones siguen azules y el resto usa la paleta
+  oscura nativa. `config/urls.py` fija `site_header`, `site_title` e `index_title`.
+  Sin dependencias ni cambios en la funcionalidad del admin.
 
 ### Fixed
 - `DocumentAnalyzeView` (`apps/analysis/views.py`) ahora marca el documento como

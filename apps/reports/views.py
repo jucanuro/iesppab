@@ -10,7 +10,13 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.db.models import Prefetch, Q
-from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    JsonResponse,
+)
 from django.shortcuts import redirect, render
 from django.views import View
 
@@ -135,8 +141,8 @@ class ReportDetailView(LoginRequiredMixin, View):
         except Document.DoesNotExist as exc:
             raise Http404("Documento no encontrado.") from exc
 
+    @staticmethod
     def _get_allowed_document(
-        self,
         document_id: UUID,
         user: User,
     ) -> Document:
@@ -282,6 +288,44 @@ class ReportDetailView(LoginRequiredMixin, View):
             )
 
         return segments
+
+
+class ReportStatusView(LoginRequiredMixin, View):
+    """
+    Devuelve el estado del análisis de un documento en JSON, para que la
+    página del reporte lo consulte por polling mientras el análisis está en
+    curso (en vez de recargar la página entera cada pocos segundos).
+    """
+
+    _IN_PROGRESS = {
+        DocumentStatus.QUEUED,
+        DocumentStatus.PROCESSING,
+    }
+
+    def get(
+        self,
+        request: HttpRequest,
+        pk: UUID,
+        *args: Any,
+        **kwargs: Any,
+    ) -> JsonResponse:
+        try:
+            document = ReportDetailView._get_allowed_document(
+                document_id=pk,
+                user=request.user,
+            )
+        except PermissionDenied:
+            return JsonResponse({"detail": "forbidden"}, status=403)
+        except Document.DoesNotExist:
+            raise Http404("Documento no encontrado.")
+
+        return JsonResponse(
+            {
+                "status": document.status,
+                "status_display": document.get_status_display(),
+                "in_progress": document.status in self._IN_PROGRESS,
+            }
+        )
 
 
 class DownloadHighlightedDocumentView(LoginRequiredMixin, View):

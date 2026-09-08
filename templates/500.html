@@ -1,0 +1,34 @@
+{% load static %}<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Error del servidor | IESPP Alfonso Barrantes Lingán</title>
+    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
+    <style>
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0; background: #f4f8ff; color: #334155;
+            display: flex; min-height: 100vh; align-items: center; justify-content: center;
+        }
+        .box { max-width: 420px; padding: 32px; text-align: center; }
+        h1 { color: #123f9e; font-size: 20px; font-weight: 600; margin: 16px 0 8px; }
+        p { font-size: 14px; line-height: 1.6; margin: 0 0 20px; }
+        a {
+            display: inline-block; padding: 10px 20px; border-radius: 8px;
+            background: #123f9e; color: #fff; font-weight: 700; font-size: 13px; text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <img src="{% static 'img/logo-iesppabl.png' %}" alt="" style="height:56px;width:auto;">
+        <h1>Algo salió mal</h1>
+        <p>
+            Ocurrió un error inesperado en el servidor. El equipo técnico ha
+            sido notificado. Intenta de nuevo en unos minutos.
+        </p>
+        <a href="/">Volver al inicio</a>
+    </div>
+</body>
+</html>

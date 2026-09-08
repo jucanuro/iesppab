@@ -2,12 +2,6 @@
 
 {% block title %}Reporte | {{ document.title }}{% endblock %}
 
-{% block extra_head %}
-    {% if analysis_in_progress %}
-        <meta http-equiv="refresh" content="10">
-    {% endif %}
-{% endblock %}
-
 {% block content %}
 
 <section class="space-y-5">
@@ -165,7 +159,7 @@
                     {% if analysis_job.current_step %}
                         {{ analysis_job.current_step }}.
                     {% endif %}
-                    Esta página se actualiza automáticamente cada 10 segundos.
+                    Esta página se actualizará sola en cuanto el reporte esté listo.
                 </p>
             </section>
 
@@ -287,24 +281,50 @@
                             </span>
                         </div>
                     </div>
+
+                    <div id="markNav"
+                         class="mt-3 hidden flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[12px]">
+                        <span class="font-semibold text-slate-500">Coincidencias</span>
+
+                        <select id="markFilter"
+                                class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+                            <option value="all">Todas</option>
+                            <option value="similarity">Solo similitud</option>
+                            <option value="ai">Solo IA</option>
+                        </select>
+
+                        <div class="inline-flex items-center gap-1">
+                            <button type="button" id="markPrev" aria-label="Coincidencia anterior"
+                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white disabled:hover:text-slate-600">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
+
+                            <span id="markCounter" class="min-w-[64px] text-center font-bold text-slate-700">0 / 0</span>
+
+                            <button type="button" id="markNext" aria-label="Coincidencia siguiente"
+                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white disabled:hover:text-slate-600">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="max-h-[70vh] overflow-y-auto bg-white p-5">
+                <div id="markViewport" class="max-h-[70vh] overflow-y-auto bg-white p-5">
                     <div class="whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-5 text-[14px] leading-8 text-slate-700">
                         {% for segment in highlighted_segments %}
                             {% if segment.finding_type == "SIMILARITY" %}
                                 {% if report.similarity_level == "alto" %}
-                                    <span class="rounded-sm bg-red-100 px-1 py-0.5 text-red-900 ring-1 ring-red-200"
+                                    <span data-mark="similarity" class="js-mark scroll-mt-6 rounded-sm bg-red-100 px-1 py-0.5 text-red-900 ring-1 ring-red-200"
                                           title="Similitud {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                                 {% elif report.similarity_level == "moderado" %}
-                                    <span class="rounded-sm px-1 py-0.5 text-[#8a6100] ring-1 ring-[#f5b400]/40" style="background-color:#fff3cf;"
+                                    <span data-mark="similarity" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 text-[#8a6100] ring-1 ring-[#f5b400]/40" style="background-color:#fff3cf;"
                                           title="Similitud {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                                 {% else %}
-                                    <span class="rounded-sm bg-emerald-100 px-1 py-0.5 text-emerald-900 ring-1 ring-emerald-200"
+                                    <span data-mark="similarity" class="js-mark scroll-mt-6 rounded-sm bg-emerald-100 px-1 py-0.5 text-emerald-900 ring-1 ring-emerald-200"
                                           title="Similitud {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                                 {% endif %}
                             {% elif segment.finding_type == "AI_GENERATED" %}
-                                <span class="rounded-sm px-1 py-0.5 text-[#123f9e] ring-1 ring-[#236bfd]/30" style="background-color:#e3ecff;"
+                                <span data-mark="ai" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 text-[#123f9e] ring-1 ring-[#236bfd]/30" style="background-color:#e3ecff;"
                                       title="IA {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                             {% else %}
                                 {{ segment.text }}
@@ -510,4 +530,103 @@
     {% endif %}
 </section>
 
+{% endblock %}
+
+{% block extra_js %}
+{% if analysis_in_progress %}
+<script>
+    (function () {
+        var endpoint = "{% url 'reports:status' document.id %}";
+
+        function poll() {
+            fetch(endpoint, { headers: { "X-Requested-With": "XMLHttpRequest" } })
+                .then(function (response) {
+                    return response.ok ? response.json() : null;
+                })
+                .then(function (data) {
+                    if (!data) {
+                        setTimeout(poll, 5000);
+                        return;
+                    }
+
+                    if (!data.in_progress) {
+                        window.location.reload();
+                        return;
+                    }
+
+                    setTimeout(poll, 3000);
+                })
+                .catch(function () {
+                    setTimeout(poll, 5000);
+                });
+        }
+
+        setTimeout(poll, 3000);
+    })();
+</script>
+{% endif %}
+
+{% if report %}
+<script>
+    (function () {
+        var nav = document.getElementById("markNav");
+        var viewport = document.getElementById("markViewport");
+        if (!nav || !viewport) return;
+
+        var allMarks = Array.prototype.slice.call(
+            viewport.querySelectorAll(".js-mark")
+        );
+        if (allMarks.length === 0) return;
+
+        nav.classList.remove("hidden");
+        nav.classList.add("flex");
+
+        var filterSelect = document.getElementById("markFilter");
+        var counter = document.getElementById("markCounter");
+        var prevBtn = document.getElementById("markPrev");
+        var nextBtn = document.getElementById("markNext");
+
+        var marks = allMarks;
+        var index = -1;
+
+        function render() {
+            counter.textContent =
+                (marks.length ? index + 1 : 0) + " / " + marks.length;
+            prevBtn.disabled = marks.length === 0;
+            nextBtn.disabled = marks.length === 0;
+        }
+
+        function flash(el) {
+            el.style.transition = "box-shadow .15s ease";
+            el.style.boxShadow = "0 0 0 3px rgba(35,107,253,.55)";
+            setTimeout(function () { el.style.boxShadow = ""; }, 900);
+        }
+
+        function go(step) {
+            if (marks.length === 0) return;
+            index = (index + step + marks.length) % marks.length;
+            var el = marks[index];
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            flash(el);
+            render();
+        }
+
+        filterSelect.addEventListener("change", function () {
+            var value = filterSelect.value;
+            marks = value === "all"
+                ? allMarks
+                : allMarks.filter(function (el) {
+                    return el.getAttribute("data-mark") === value;
+                });
+            index = -1;
+            render();
+        });
+
+        prevBtn.addEventListener("click", function () { go(-1); });
+        nextBtn.addEventListener("click", function () { go(1); });
+
+        render();
+    })();
+</script>
+{% endif %}
 {% endblock %}

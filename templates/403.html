@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Acceso no permitido | IESPP Alfonso Barrantes Lingán{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-md py-12 text-center">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eef3ff] text-[#123f9e]">
+        <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M8 11V7.5A4 4 0 0 1 16 7.5V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+    </div>
+
+    <h1 class="mt-5 text-[20px] font-semibold text-[#123f9e]">
+        {% if is_csrf %}Tu sesión expiró{% else %}No tienes acceso a esta página{% endif %}
+    </h1>
+
+    <p class="mt-2 text-[13.5px] leading-6 text-slate-600">
+        {% if is_csrf %}
+            La sesión o el formulario caducaron por inactividad. Vuelve a iniciar
+            sesión y repite la acción.
+        {% else %}
+            Tu cuenta no tiene permiso para ver o realizar esta acción. Si crees
+            que es un error, contacta con la coordinación de tu institución.
+        {% endif %}
+    </p>
+
+    <div class="mt-6 flex justify-center gap-2">
+        <a href="{% url 'accounts:login' %}"
+           class="inline-flex h-10 items-center justify-center rounded-lg bg-gradient-to-r from-[#123f9e] to-[#236bfd] px-5 text-[13px] font-bold text-white shadow-sm transition hover:from-[#0f3486] hover:to-[#1c5be0]">
+            Iniciar sesión
+        </a>
+        <a href="{% url 'core:help' %}"
+           class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-[13px] font-bold text-slate-600 transition hover:bg-slate-50">
+            Centro de Ayuda
+        </a>
+    </div>
+</section>
+{% endblock %}

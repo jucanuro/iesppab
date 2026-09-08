@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Página no encontrada | IESPP Alfonso Barrantes Lingán{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-md py-12 text-center">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#eef3ff] text-[#123f9e]">
+        <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M20 20L16 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+    </div>
+
+    <h1 class="mt-5 text-[20px] font-semibold text-[#123f9e]">
+        Página no encontrada
+    </h1>
+
+    <p class="mt-2 text-[13.5px] leading-6 text-slate-600">
+        La dirección que buscas no existe o el recurso fue movido.
+    </p>
+
+    <div class="mt-6 flex justify-center gap-2">
+        <a href="{% url 'documents:upload' %}"
+           class="inline-flex h-10 items-center justify-center rounded-lg bg-gradient-to-r from-[#123f9e] to-[#236bfd] px-5 text-[13px] font-bold text-white shadow-sm transition hover:from-[#0f3486] hover:to-[#1c5be0]">
+            Ir a mis documentos
+        </a>
+    </div>
+</section>
+{% endblock %}

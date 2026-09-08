@@ -17,6 +17,19 @@
             font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
                 Roboto, "Helvetica Neue", Arial, sans-serif;
         }
+
+        /* Foco de teclado visible en todo elemento interactivo. El reset de
+           Tailwind (CDN) atenúa el outline nativo; esto lo restablece de forma
+           consistente sin afectar al foco por ratón (:focus-visible). */
+        a:focus-visible,
+        button:focus-visible,
+        summary:focus-visible,
+        [tabindex]:focus-visible,
+        [role="button"]:focus-visible {
+            outline: 2px solid #236bfd;
+            outline-offset: 2px;
+            border-radius: 4px;
+        }
     </style>
 
     {% block extra_head %}{% endblock %}
@@ -140,6 +153,32 @@
                             </button>
                         </div>
                     {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if no_active_institution %}
+                <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3.5 text-[13px] text-amber-900"
+                     role="alert">
+                    {% if request.user.is_superuser or request.user.is_admin_role %}
+                        <p class="font-bold">La plataforma aún no está configurada</p>
+                        <p class="mt-1 leading-5">
+                            No hay ninguna institución activa. Crea una en el panel de
+                            administración (nombre, dominio de correo y márcala como
+                            activa) para habilitar el registro de alumnos y la carga de
+                            documentos.
+                        </p>
+                        <a href="/admin/core/institution/add/"
+                           class="mt-2 inline-flex h-8 items-center justify-center rounded-lg bg-amber-600 px-3 text-[12px] font-bold text-white transition hover:bg-amber-700">
+                            Crear institución
+                        </a>
+                    {% else %}
+                        <p class="font-bold">La plataforma aún no está disponible</p>
+                        <p class="mt-1 leading-5">
+                            Un administrador todavía no ha terminado la configuración
+                            inicial. Vuelve a intentarlo más tarde o contacta con la
+                            coordinación de tu institución.
+                        </p>
+                    {% endif %}
                 </div>
             {% endif %}
 

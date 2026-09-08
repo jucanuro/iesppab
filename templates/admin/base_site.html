@@ -1,0 +1,49 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+<div id="site-name">
+    <a href="{% url 'admin:index' %}">
+        <img src="{% static 'img/logo-iesppabl.png' %}" alt=""
+             style="height:28px;width:auto;vertical-align:middle;margin-right:10px;">
+        {{ site_header|default:_('Django administration') }}
+    </a>
+</div>
+{% if user.is_anonymous %}
+    {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+    /* Paleta institucional IESPP "Alfonso Barrantes Lingán".
+       Solo se sobreescriben las variables de color del admin de Django; en
+       modo oscuro la cabecera y los botones se mantienen azules (usan
+       --secondary, que el tema oscuro de Django no redefine) y el resto de
+       la interfaz usa la paleta oscura nativa. */
+    :root {
+        --primary: #236bfd;
+        --secondary: #123f9e;
+        --accent: #f5b400;
+
+        --link-fg: #123f9e;
+        --link-hover-color: #236bfd;
+        --link-selected-fg: #0f3486;
+
+        --button-bg: #123f9e;
+        --button-hover-bg: #0f3486;
+        --default-button-bg: #236bfd;
+        --default-button-hover-bg: #1c5be0;
+
+        --object-tools-bg: #123f9e;
+        --object-tools-hover-bg: #0f3486;
+    }
+
+    #branding h1,
+    #site-name a { display: inline-flex; align-items: center; }
+</style>
+{% endblock %}

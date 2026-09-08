@@ -2,10 +2,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import render
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.core.models import Institution
+
+
+def csrf_failure(
+    request: HttpRequest,
+    reason: str = "",
+    *args: Any,
+    **kwargs: Any,
+) -> HttpResponse:
+    """
+    Vista de fallo de CSRF (configurada en `CSRF_FAILURE_VIEW`). En vez de
+    devolver el 403 crudo de Django, muestra la página de "sesión expirada"
+    con un enlace para volver a iniciar sesión. El caso típico es un
+    formulario enviado tras caducar la sesión por inactividad.
+    """
+    return render(
+        request,
+        "403.html",
+        {"is_csrf": True, "reason": reason},
+        status=403,
+    )
 
 
 class _InstitutionContextMixin:

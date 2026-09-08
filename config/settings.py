@@ -124,6 +124,9 @@ AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Sirve los estáticos ya recogidos por collectstatic sin depender de
+    # DEBUG ni de un servidor web aparte (útil detrás del túnel Cloudflare).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -148,6 +151,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.context_processors.institution_status",
             ],
         },
     },
@@ -275,6 +279,15 @@ STATICFILES_DIRS = (
     else []
 )
 
+# Con DEBUG=False se usa el almacenamiento con manifiesto de WhiteNoise. Si
+# `collectstatic` no se ha ejecutado (tests, primer arranque), no queremos que
+# `{% static %}` reviente: se sirve la ruta sin hashear.
+WHITENOISE_MANIFEST_STRICT = False
+
+# En modo local (DJANGO_ENV=local) aunque DEBUG=False, WhiteNoise sirve también
+# los archivos de STATICFILES_DIRS sin necesidad de collectstatic previo.
+WHITENOISE_USE_FINDERS = not IS_PRODUCTION
+
 
 MEDIA_URL = "/media/"
 
@@ -304,8 +317,8 @@ else:
         },
         "staticfiles": {
             "BACKEND": (
-                "django.contrib.staticfiles.storage."
-                "ManifestStaticFilesStorage"
+                "whitenoise.storage."
+                "CompressedManifestStaticFilesStorage"
             ),
         },
     }
@@ -351,6 +364,10 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 
 CSRF_COOKIE_SAMESITE = "Lax"
+
+# Página amable de "sesión expirada" en vez del 403 crudo de Django cuando
+# falla la verificación CSRF (formulario enviado con la sesión ya caducada).
+CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 

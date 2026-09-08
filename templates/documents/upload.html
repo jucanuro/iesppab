@@ -358,7 +358,7 @@
                         Trabajos académicos registrados
                     </h3>
 
-                    {% if recent_documents %}
+                    {% if has_any_documents %}
                         <details class="group w-full text-[12px] sm:w-auto">
                             <summary class="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-600 transition hover:border-[#236bfd]/40 hover:text-[#123f9e] sm:w-auto [&::-webkit-details-marker]:hidden">
                                 <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -406,6 +406,51 @@
                         </details>
                     {% endif %}
                 </div>
+
+                {% if has_any_documents %}
+                    <form method="get"
+                          class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[12px]">
+                        <input type="search"
+                               name="q"
+                               value="{{ active_filters.q }}"
+                               placeholder="Buscar por título o alumno"
+                               class="h-9 min-w-[180px] flex-1 rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+
+                        <select name="estado"
+                                onchange="this.form.submit()"
+                                class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+                            <option value="">Todos los estados</option>
+                            {% for value, label in status_choices %}
+                                <option value="{{ value }}" {% if active_filters.estado == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+
+                        <select name="tipo"
+                                onchange="this.form.submit()"
+                                class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+                            <option value="">Todos los tipos</option>
+                            {% for value, label in kind_choices %}
+                                <option value="{{ value }}" {% if active_filters.tipo == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+
+                        <button type="submit"
+                                class="inline-flex h-9 items-center justify-center rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-3 text-[12px] font-bold text-[#123f9e] transition hover:bg-[#e3ecff]">
+                            Filtrar
+                        </button>
+
+                        {% if has_active_filters %}
+                            <a href="{% url 'documents:upload' %}"
+                               class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50">
+                                Limpiar
+                            </a>
+                        {% endif %}
+
+                        <span class="ml-auto text-[11px] font-semibold text-slate-500">
+                            {{ documents_total }} resultado{{ documents_total|pluralize }}
+                        </span>
+                    </form>
+                {% endif %}
             </div>
 
             <!-- Tabla desktop -->
@@ -498,14 +543,26 @@
 
                                 <td class="px-4 py-2.5">
                                     <div class="flex justify-end gap-1.5">
-                                        <a href="{% url 'reports:detail' document.id %}"
-                                           title="Ver reporte"
-                                           class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
-                                            </svg>
-                                        </a>
+                                        {% if document.status == "UPLOADED" %}
+                                            <span aria-label="El reporte aún no está disponible"
+                                                  title="El reporte estará disponible tras analizar el documento"
+                                                  class="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-300">
+                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                    <path d="M4 4L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                                </svg>
+                                            </span>
+                                        {% else %}
+                                            <a href="{% url 'reports:detail' document.id %}"
+                                               title="Ver reporte"
+                                               aria-label="Ver reporte"
+                                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
+                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                                    <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
+                                                </svg>
+                                            </a>
+                                        {% endif %}
 
                                         {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
                                             <span title="Analizando originalidad…"
@@ -565,13 +622,24 @@
                                             </svg>
                                         </div>
 
-                                        <h4 class="mt-4 text-[15px] font-bold text-slate-800">
-                                            Aún no hay documentos enviados
-                                        </h4>
+                                        {% if has_active_filters %}
+                                            <h4 class="mt-4 text-[15px] font-bold text-slate-800">
+                                                Sin resultados
+                                            </h4>
 
-                                        <p class="mt-1.5 text-xs leading-5 text-slate-500">
-                                            Usa el formulario de arriba para registrar el primer trabajo académico.
-                                        </p>
+                                            <p class="mt-1.5 text-xs leading-5 text-slate-500">
+                                                Ningún documento coincide con el filtro.
+                                                <a href="{% url 'documents:upload' %}" class="font-semibold text-[#236bfd] hover:underline">Limpiar filtros</a>.
+                                            </p>
+                                        {% else %}
+                                            <h4 class="mt-4 text-[15px] font-bold text-slate-800">
+                                                Aún no hay documentos enviados
+                                            </h4>
+
+                                            <p class="mt-1.5 text-xs leading-5 text-slate-500">
+                                                Usa el formulario de arriba para registrar el primer trabajo académico.
+                                            </p>
+                                        {% endif %}
                                     </div>
                                 </td>
                             </tr>
@@ -631,10 +699,17 @@
                                 </div>
 
                                 <div class="mt-2 flex gap-1.5">
-                                    <a href="{% url 'reports:detail' document.id %}"
-                                       class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
-                                        Ver
-                                    </a>
+                                    {% if document.status == "UPLOADED" %}
+                                        <span class="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400"
+                                              title="El reporte estará disponible tras analizar el documento">
+                                            Ver
+                                        </span>
+                                    {% else %}
+                                        <a href="{% url 'reports:detail' document.id %}"
+                                           class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
+                                            Ver
+                                        </a>
+                                    {% endif %}
 
                                     {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
                                         <span class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400">
@@ -674,16 +749,55 @@
                             </svg>
                         </div>
 
-                        <p class="mt-3 text-sm font-bold text-slate-800">
-                            Aún no hay documentos enviados.
-                        </p>
-
-                        <p class="mt-1 text-xs text-slate-500">
-                            Registra el primer trabajo académico.
-                        </p>
+                        {% if has_active_filters %}
+                            <p class="mt-3 text-sm font-bold text-slate-800">
+                                Sin resultados
+                            </p>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Ningún documento coincide con el filtro.
+                                <a href="{% url 'documents:upload' %}" class="font-semibold text-[#236bfd] hover:underline">Limpiar</a>.
+                            </p>
+                        {% else %}
+                            <p class="mt-3 text-sm font-bold text-slate-800">
+                                Aún no hay documentos enviados.
+                            </p>
+                            <p class="mt-1 text-xs text-slate-500">
+                                Registra el primer trabajo académico.
+                            </p>
+                        {% endif %}
                     </div>
                 {% endfor %}
             </div>
+
+            {% if page_obj.paginator.num_pages > 1 %}
+                <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-[12px]">
+                    {% if page_obj.has_previous %}
+                        <a href="?page={{ page_obj.previous_page_number }}{{ filter_querystring }}"
+                           class="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
+                            ← Anterior
+                        </a>
+                    {% else %}
+                        <span class="inline-flex h-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 font-bold text-slate-300">
+                            ← Anterior
+                        </span>
+                    {% endif %}
+
+                    <span class="font-semibold text-slate-500">
+                        Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                    </span>
+
+                    {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}{{ filter_querystring }}"
+                           class="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
+                            Siguiente →
+                        </a>
+                    {% else %}
+                        <span class="inline-flex h-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 font-bold text-slate-300">
+                            Siguiente →
+                        </span>
+                    {% endif %}
+                </div>
+            {% endif %}
         </section>
 
     </main>
@@ -774,6 +888,19 @@
             dropZone.classList.add("border-[#236bfd]", "bg-[#eef3ff]");
         }
 
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + " B";
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
+            return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+        }
+
+        function fileKindLabel(file) {
+            var name = file.name.toLowerCase();
+            if (name.endsWith(".pdf")) return "PDF";
+            if (name.endsWith(".docx")) return "DOCX";
+            return "Documento";
+        }
+
         function setFileSelectedState(file) {
             if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
 
@@ -798,8 +925,9 @@
                 "text-emerald-600"
             );
 
-            dropTitle.textContent = "Archivo listo";
-            fileName.textContent = file.name;
+            dropTitle.textContent = file.name;
+            fileName.textContent =
+                fileKindLabel(file) + " · " + formatSize(file.size);
         }
 
         function isAllowedFile(file) {

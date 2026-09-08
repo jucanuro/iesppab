@@ -6,6 +6,7 @@ from typing import Any, cast
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
@@ -14,8 +15,10 @@ from django.views.generic import TemplateView
 
 from apps.accounts.models import User, UserRole
 from apps.documents.exceptions import DocumentUploadError
-from apps.documents.models import Document, DocumentKind
+from apps.documents.models import Document, DocumentKind, DocumentStatus
 from apps.documents.services import DocumentUploadDTO, DocumentUploadService
+
+DOCUMENTS_PER_PAGE = 10
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +41,33 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         context = super().get_context_data(**kwargs)
         user = cast(User, self.request.user)
 
+        scoped_documents = self._scoped_documents(user)
+        filtered_documents = self._apply_filters(scoped_documents)
+
+        paginator = Paginator(filtered_documents, DOCUMENTS_PER_PAGE)
+        page = paginator.get_page(self.request.GET.get("page"))
+
+        active_filters = {
+            "estado": self.request.GET.get("estado", "").strip(),
+            "tipo": self.request.GET.get("tipo", "").strip(),
+            "q": self.request.GET.get("q", "").strip(),
+        }
+
         context["document_kinds"] = DocumentKind.choices
         context["students"] = self._get_available_students(user)
         context["advisors"] = self._get_available_advisors(user)
-        context["recent_documents"] = self._get_recent_documents(user)
+
+        context["recent_documents"] = page
+        context["page_obj"] = page
+        context["paginator"] = paginator
+        context["documents_total"] = paginator.count
+        context["has_any_documents"] = scoped_documents.exists()
+
+        context["status_choices"] = DocumentStatus.choices
+        context["kind_choices"] = DocumentKind.choices
+        context["active_filters"] = active_filters
+        context["has_active_filters"] = any(active_filters.values())
+        context["filter_querystring"] = self._filter_querystring()
 
         return context
 
@@ -142,7 +168,8 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
 
         return list(advisors.order_by("first_name", "last_name", "username"))
 
-    def _get_recent_documents(self, user: User):
+    def _scoped_documents(self, user: User):
+        """Documentos visibles para el usuario, sin filtros de la UI."""
         documents = Document.objects.select_related(
             "institution",
             "owner",
@@ -157,7 +184,36 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         else:
             documents = documents.filter(Q(owner=user) | Q(uploaded_by=user))
 
-        return documents.order_by("-created_at")[:10]
+        return documents.order_by("-created_at")
+
+    def _apply_filters(self, documents):
+        """Aplica los filtros de la bandeja (estado, tipo, búsqueda)."""
+        estado = self.request.GET.get("estado", "").strip()
+        if estado in DocumentStatus.values:
+            documents = documents.filter(status=estado)
+
+        tipo = self.request.GET.get("tipo", "").strip()
+        if tipo in DocumentKind.values:
+            documents = documents.filter(kind=tipo)
+
+        query = self.request.GET.get("q", "").strip()
+        if query:
+            documents = documents.filter(
+                Q(title__icontains=query)
+                | Q(owner__first_name__icontains=query)
+                | Q(owner__last_name__icontains=query)
+                | Q(owner__username__icontains=query)
+                | Q(owner__email__icontains=query)
+            )
+
+        return documents
+
+    def _filter_querystring(self) -> str:
+        """Querystring de los filtros activos (sin `page`), con `&` inicial."""
+        params = self.request.GET.copy()
+        params.pop("page", None)
+        encoded = params.urlencode()
+        return f"&{encoded}" if encoded else ""
 
     def _format_validation_error(self, error: ValidationError) -> str:
         if hasattr(error, "message_dict"):

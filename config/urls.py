@@ -6,6 +6,11 @@ from django.contrib import admin
 from django.urls import path,include
 
 
+admin.site.site_header = 'IESPP "Alfonso Barrantes Lingán" · Administración'
+admin.site.site_title = "Administración IESPP ABL"
+admin.site.index_title = "Panel de administración"
+
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.core.urls")),

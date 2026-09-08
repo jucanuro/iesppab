@@ -72,7 +72,26 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
   "Analizar"/"Reanalizar" de la bandeja (`templates/documents/upload.html`) y de la
   página de reporte (`templates/reports/detail.html`).
 
+### Added
+- Leyenda de estados en la bandeja (`templates/documents/upload.html`): un
+  desplegable nativo `<details>` ("¿Qué significan los estados?") junto al título
+  "Trabajos académicos registrados", cerrado por defecto, que explica cada insignia
+  reutilizando el parcial `_status_badge.html` (así nunca se desincroniza del diseño
+  real) y enlaza al Centro de Ayuda. Solo se muestra si hay documentos.
+- Tooltips (`title`) en todas las insignias de estado, no solo en las de riesgo.
+  El parcial `_status_badge.html` acepta ahora `status` y `risk_level` como
+  parámetros de `{% include %}` para pintar insignias de muestra sin un documento.
+
 ### Changed
+- Insignias de estado en "Trabajos académicos registrados"
+  (`templates/documents/upload.html`, tabla desktop + tarjeta móvil): extraídas a
+  un parcial `templates/documents/_status_badge.html`. `UPLOADED` pasa de "Subido"
+  a "Sin analizar" (insignia tenue, llamada a la acción); `QUEUED` pasa de ámbar a
+  gris neutro; `PROCESSING` muestra "Analizando…" con el punto latiendo; `FAILED`
+  pasa a contorno rojo sin relleno ("Falló"); y `COMPLETED` deja de mostrar
+  "Completado" para mostrar el nivel de riesgo del reporte ("Riesgo bajo/medio/alto",
+  verde/ámbar/rojo) con un tooltip "Similitud X% · IA Y%". Fallback "Analizado" si
+  el documento está completo pero sin reporte asociado.
 - Tipografía base: `templates/base.html`, `login.html` y `register.html` pasan de
   `Arial, Helvetica, sans-serif` a un stack de fuente de sistema
   (`ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, …`).

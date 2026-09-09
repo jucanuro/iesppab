@@ -28,6 +28,7 @@ from apps.reports.models import (
     FindingType,
     ReportFinding,
     ReportSource,
+    SourceType,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,9 +99,36 @@ class _HighlightedDocumentPdfBuilder:
     AI_BACKGROUND = "#E3ECFF"
     AI_TEXT_COLOR = "#123F9E"
 
+    # Colores para numerar las fuentes primarias (chip en el texto + fila en
+    # la lista), al estilo de un informe de originalidad.
+    SOURCE_PALETTE = [
+        "#E2483D",
+        "#D6249F",
+        "#7A3FF2",
+        "#0E9E96",
+        "#3F9C35",
+        "#9A6B1E",
+        "#7A241D",
+        "#1D3F9E",
+        "#B0208A",
+        "#0F766E",
+    ]
+
+    SOURCE_TYPE_LABELS = {
+        SourceType.WEB: "Internet",
+        SourceType.REPOSITORY: "Repositorio académico",
+        SourceType.INTERNAL: "Base interna",
+    }
+
     def __init__(self, report: AnalysisReport) -> None:
         self.report = report
         self.document = report.document
+
+    def _source_color(self, number: int) -> str:
+        return self.SOURCE_PALETTE[(number - 1) % len(self.SOURCE_PALETTE)]
+
+    def _source_type_label(self, source: ReportSource) -> str:
+        return self.SOURCE_TYPE_LABELS.get(source.source_type, "Fuente")
 
     def build(self) -> bytes:
         content = resolve_analyzed_content(self.report)
@@ -122,31 +150,19 @@ class _HighlightedDocumentPdfBuilder:
             leftMargin=1.7 * cm,
             topMargin=1.8 * cm,
             bottomMargin=1.5 * cm,
-            title=f"Documento señalado - {self.document.title}",
+            title=f"Informe de originalidad - {self.document.title}",
             author=institution.name,
         )
 
         styles = self._build_styles()
         story: list[Any] = []
 
-        story.append(
-            Paragraph(
-                "DOCUMENTO CON HALLAZGOS SEÑALADOS",
-                styles["title"],
-            )
-        )
-        story.append(Spacer(1, 0.2 * cm))
-        story.append(
-            Paragraph(
-                "Copia técnica del documento con los pasajes señalados por el análisis de originalidad",
-                styles["subtitle"],
-            )
-        )
-        story.append(Spacer(1, 0.55 * cm))
+        story.append(Paragraph(self._escape(self.document.title), styles["title"]))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(Paragraph("INFORME DE ORIGINALIDAD", styles["kicker"]))
+        story.append(Spacer(1, 0.35 * cm))
 
-        story.append(self._build_info_table(styles=styles))
-        story.append(Spacer(1, 0.4 * cm))
-        story.append(self._build_legend(styles=styles))
+        story.append(self._build_metrics_row(styles=styles))
         story.append(Spacer(1, 0.5 * cm))
 
         findings = list(
@@ -156,22 +172,27 @@ class _HighlightedDocumentPdfBuilder:
         )
         sources_by_id = {source.id: source for source in self.report.sources.all()}
 
-        body_markup, cited_sources = self._render_body_markup(
+        body_markup, cited_sources, word_counts = self._render_body_markup(
             content=content,
             findings=findings,
             sources_by_id=sources_by_id,
         )
 
-        story.append(Paragraph(body_markup, styles["body"]))
-
         if cited_sources:
-            story.append(Spacer(1, 0.6 * cm))
             story.extend(
-                self._build_sources_section(
+                self._build_primary_sources(
                     cited_sources=cited_sources,
+                    word_counts=word_counts,
                     styles=styles,
                 )
             )
+            story.append(Spacer(1, 0.5 * cm))
+
+        story.append(self._build_legend(styles=styles))
+        story.append(Spacer(1, 0.35 * cm))
+        story.append(Paragraph("TEXTO ANALIZADO", styles["kicker"]))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(body_markup, styles["body"]))
 
         doc.build(
             story,
@@ -186,7 +207,7 @@ class _HighlightedDocumentPdfBuilder:
         content: str,
         findings: list[ReportFinding],
         sources_by_id: dict[UUID, ReportSource],
-    ) -> tuple[str, list[tuple[int, ReportSource]]]:
+    ) -> tuple[str, list[tuple[int, ReportSource]], dict[UUID, int]]:
         segments = self._build_segments(content=content, findings=findings)
 
         similarity_bg, similarity_text = self.SIMILARITY_COLORS.get(
@@ -196,6 +217,7 @@ class _HighlightedDocumentPdfBuilder:
 
         source_numbers: dict[UUID, int] = {}
         cited_sources: list[tuple[int, ReportSource]] = []
+        word_counts: dict[UUID, int] = {}
         parts: list[str] = []
 
         for text, finding_type, source_id in segments:
@@ -213,10 +235,17 @@ class _HighlightedDocumentPdfBuilder:
                     source_numbers[source_id] = number
                     cited_sources.append((number, sources_by_id[source_id]))
 
+                word_counts[source_id] = word_counts.get(source_id, 0) + len(
+                    text.split()
+                )
+
+                chip_color = self._source_color(number)
                 parts.append(
                     f'<span backColor="{similarity_bg}" color="{similarity_text}">'
                     f"{escaped}</span>"
-                    f'<super><font size="6">{number}</font></super>'
+                    f'<super><font size="6"> '
+                    f'<span backColor="{chip_color}" color="#FFFFFF">'
+                    f"&nbsp;{number}&nbsp;</span></font></super>"
                 )
 
             elif finding_type == FindingType.AI_GENERATED:
@@ -228,7 +257,7 @@ class _HighlightedDocumentPdfBuilder:
             else:
                 parts.append(escaped)
 
-        return "".join(parts), cited_sources
+        return "".join(parts), cited_sources, word_counts
 
     def _build_segments(
         self,
@@ -287,43 +316,76 @@ class _HighlightedDocumentPdfBuilder:
         escaped = html.escape(text, quote=False)
         return escaped.replace("\n", "<br/>\n")
 
-    def _build_info_table(self, styles: dict[str, ParagraphStyle]) -> Table:
+    def _build_metrics_row(self, styles: dict[str, ParagraphStyle]) -> Table:
         owner = self.document.owner
 
-        table = Table(
+        def cell(value: Decimal, label: str, accent: bool = False) -> Paragraph:
+            number_style = styles["metric_number_accent" if accent else "metric_number"]
+            return Paragraph(
+                f'<font size="20"><b>{self._format_percent(value)}</b></font>'
+                f'<font size="9">%</font><br/>'
+                f'<font size="7.5" color="#64748B">{label}</font>',
+                number_style,
+            )
+
+        metrics = Table(
             [
                 [
-                    Paragraph(
-                        f"<b>Documento:</b><br/>{self.document.title}",
-                        styles["small"],
-                    ),
-                    Paragraph(
-                        "<b>Autor / Alumno:</b><br/>"
-                        f"{owner.get_full_name() or owner.username}",
-                        styles["small"],
-                    ),
-                    Paragraph(
-                        "<b>Similitud / IA:</b><br/>"
-                        f"{self._format_decimal(self.report.similarity_percent)}% / "
-                        f"{self._format_decimal(self.report.ai_probability_percent)}%",
-                        styles["small"],
-                    ),
+                    cell(self.report.similarity_percent, "ÍNDICE DE SIMILITUD", accent=True),
+                    cell(self.report.web_similarity_percent, "FUENTES DE INTERNET"),
+                    cell(self.report.internal_similarity_percent, "TRABAJOS / REPOSITORIOS"),
+                    cell(self.report.ai_probability_percent, "IA ESTIMADA"),
                 ]
             ],
-            colWidths=[7.4 * cm, 5.1 * cm, 4.1 * cm],
+            colWidths=[4.15 * cm] * 4,
         )
-        table.setStyle(
+        metrics.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("PADDING", (0, 0), (-1, -1), 8),
+                    ("LINEBELOW", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
+                    ("LINEABOVE", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
                 ]
             )
         )
-        return table
+
+        header = Table(
+            [
+                [
+                    Paragraph(
+                        f"<b>Autor:</b> {self._escape(owner.get_full_name() or owner.username)}"
+                        f" &nbsp;·&nbsp; <b>Tipo:</b> {self.document.get_kind_display()}"
+                        f" &nbsp;·&nbsp; <b>Riesgo:</b> {self.report.get_risk_level_display()}",
+                        styles["small"],
+                    )
+                ]
+            ],
+            colWidths=[16.6 * cm],
+        )
+        header.setStyle(
+            TableStyle(
+                [
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+
+        wrapper = Table([[header], [metrics]], colWidths=[16.6 * cm])
+        wrapper.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        return wrapper
 
     def _build_legend(self, styles: dict[str, ParagraphStyle]) -> Table:
         similarity_bg, similarity_text = self.SIMILARITY_COLORS.get(
@@ -345,8 +407,8 @@ class _HighlightedDocumentPdfBuilder:
                         styles["legend"],
                     ),
                     Paragraph(
-                        "Los números en superíndice remiten a la sección "
-                        "«Fuentes citadas» al final del documento.",
+                        "Los números junto a cada pasaje remiten a la lista "
+                        "«Fuentes primarias».",
                         styles["legend_note"],
                     ),
                 ]
@@ -354,79 +416,56 @@ class _HighlightedDocumentPdfBuilder:
             colWidths=[3.4 * cm, 3.4 * cm, 9.8 * cm],
         )
 
-    def _build_sources_section(
+    def _build_primary_sources(
         self,
         cited_sources: list[tuple[int, ReportSource]],
+        word_counts: dict[UUID, int],
         styles: dict[str, ParagraphStyle],
     ) -> list[Any]:
-        section: list[Any] = []
-
-        accent_bar = Table([[""]], colWidths=[16.6 * cm], rowHeights=[0.12 * cm])
-        accent_bar.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F5B400")),
-                ]
-            )
-        )
-        section.append(accent_bar)
-        section.append(Spacer(1, 0.25 * cm))
-
-        section.append(Paragraph("Fuentes citadas", styles["sources_title"]))
-        section.append(Spacer(1, 0.25 * cm))
-
-        rows: list[list[Any]] = [
-            [
-                Paragraph("#", styles["sources_header"]),
-                Paragraph("Dominio", styles["sources_header"]),
-                Paragraph("Título", styles["sources_header"]),
-                Paragraph("%", styles["sources_header"]),
-            ]
+        section: list[Any] = [
+            Paragraph("FUENTES PRIMARIAS", styles["kicker"]),
+            Spacer(1, 0.2 * cm),
         ]
 
-        for number, source in cited_sources:
+        rows: list[list[Any]] = []
+        row_styles: list[tuple] = [
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+            ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#0F172A")),
+            ("ALIGN", (0, 0), (0, -1), "CENTER"),
+            ("ALIGN", (2, 0), (2, -1), "RIGHT"),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (0, -1), 0),
+        ]
+
+        for index, (number, source) in enumerate(cited_sources):
+            color = self._source_color(number)
+            row_styles.append(
+                ("BACKGROUND", (0, index), (0, index), colors.HexColor(color))
+            )
+
+            words = word_counts.get(source.id, 0)
+            label = source.domain or self._truncate(source.title, 60) or "Fuente"
+
             rows.append(
                 [
-                    Paragraph(str(number), styles["sources_percent"]),
+                    Paragraph(f'<font color="#FFFFFF"><b>{number}</b></font>', styles["source_num"]),
                     Paragraph(
-                        source.domain or "—",
-                        styles["sources_cell"],
+                        f'<font color="{color}"><b>{self._escape(label)}</b></font><br/>'
+                        f'<font size="7" color="#64748B">{self._source_type_label(source)}</font>',
+                        styles["source_name"],
                     ),
                     Paragraph(
-                        self._truncate(source.title, 90),
-                        styles["sources_cell"],
-                    ),
-                    Paragraph(
-                        f"{self._format_decimal(source.matched_percent)}%",
-                        styles["sources_percent"],
+                        f'{words} palabra{"" if words == 1 else "s"} &nbsp;—&nbsp; '
+                        f'<font size="11"><b>{self._format_percent(source.matched_percent)}%</b></font>',
+                        styles["source_meta"],
                     ),
                 ]
             )
 
-        table = Table(
-            rows,
-            colWidths=[1.0 * cm, 4.0 * cm, 9.1 * cm, 2.5 * cm],
-            repeatRows=1,
-        )
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#123F9E")),
-                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
-                    (
-                        "ROWBACKGROUNDS",
-                        (0, 1),
-                        (-1, -1),
-                        [colors.white, colors.HexColor("#F0F5FF")],
-                    ),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("ALIGN", (0, 0), (0, -1), "CENTER"),
-                    ("ALIGN", (3, 0), (3, -1), "CENTER"),
-                    ("PADDING", (0, 0), (-1, -1), 6),
-                ]
-            )
-        )
+        table = Table(rows, colWidths=[0.8 * cm, 11.3 * cm, 4.5 * cm])
+        table.setStyle(TableStyle(row_styles))
         section.append(table)
 
         return section
@@ -442,6 +481,9 @@ class _HighlightedDocumentPdfBuilder:
     def _format_decimal(self, value: Decimal) -> str:
         return f"{value:.2f}"
 
+    def _format_percent(self, value: Decimal) -> str:
+        return f"{value:.0f}"
+
     def _build_styles(self) -> dict[str, ParagraphStyle]:
         base = getSampleStyleSheet()
 
@@ -450,11 +492,61 @@ class _HighlightedDocumentPdfBuilder:
                 "hd_title",
                 parent=base["Title"],
                 fontName="Helvetica-Bold",
-                fontSize=16,
-                leading=20,
+                fontSize=15,
+                leading=19,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
+                spaceAfter=2,
+            ),
+            "kicker": ParagraphStyle(
+                "hd_kicker",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=9,
+                leading=12,
+                textColor=colors.HexColor("#E2483D"),
+            ),
+            "metric_number": ParagraphStyle(
+                "hd_metric_number",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=20,
+                leading=22,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "metric_number_accent": ParagraphStyle(
+                "hd_metric_number_accent",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=20,
+                leading=22,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#E2483D"),
+            ),
+            "source_num": ParagraphStyle(
+                "hd_source_num",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=9,
+                leading=11,
                 alignment=TA_CENTER,
-                textColor=colors.HexColor("#123F9E"),
-                spaceAfter=4,
+            ),
+            "source_name": ParagraphStyle(
+                "hd_source_name",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=9,
+                leading=12,
+            ),
+            "source_meta": ParagraphStyle(
+                "hd_source_meta",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8.5,
+                leading=13,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
             ),
             "subtitle": ParagraphStyle(
                 "hd_subtitle",
@@ -591,7 +683,7 @@ class _HighlightedDocumentPdfBuilder:
         canvas.drawString(
             text_x,
             height - 0.65 * cm,
-            f"{institution_name} - DOCUMENTO SEÑALADO",
+            f"{institution_name} - INFORME DE ORIGINALIDAD",
         )
 
         canvas.setFont("Helvetica", 6.5)

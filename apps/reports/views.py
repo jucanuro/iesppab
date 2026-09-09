@@ -360,7 +360,7 @@ class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
             return FileResponse(
                 BytesIO(pdf_content),
                 as_attachment=True,
-                filename=f"documento-senalado-{document.id}.pdf",
+                filename=f"informe-originalidad-{document.id}.pdf",
                 content_type="application/pdf",
             )
 

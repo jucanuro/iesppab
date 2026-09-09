@@ -80,9 +80,9 @@
                         </form>
                     {% endif %}
 
-                    {% if report and highlighted_segments %}
+                    {% if report %}
                         <a href="{% url 'reports:download_highlighted' document.id %}"
-                           title="Descargar documento señalado"
+                           title="Descargar el informe de originalidad en PDF"
                            class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
 
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -97,12 +97,13 @@
                                       stroke-linecap="round"/>
                             </svg>
 
-                            Documento señalado
+                            Informe en PDF
                         </a>
                     {% endif %}
 
                     {% if certificate %}
                         <a href="{% url 'certificates:download' certificate.id %}"
+                           id="certDownloadLink"
                            title="Descargar certificado"
                            class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-[12px] font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100">
                             {% include "certificates/_seal_download_icon.html" %}
@@ -533,6 +534,23 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    // Tras generar el certificado la vista redirige aquí con
+    // ?descargar_certificado=1: disparamos la descarga automáticamente y
+    // limpiamos el parámetro para que un F5 no vuelva a descargar.
+    (function () {
+        if (window.location.search.indexOf("descargar_certificado") === -1) return;
+
+        var link = document.getElementById("certDownloadLink");
+        if (link) {
+            setTimeout(function () { link.click(); }, 400);
+        }
+
+        var clean = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, "", clean);
+    })();
+</script>
+
 {% if analysis_in_progress %}
 <script>
     (function () {

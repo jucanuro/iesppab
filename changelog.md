@@ -4,6 +4,21 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
 ## [2026-09-08]
 
+### Changed
+- El PDF descargable del reporte (`apps/reports/services.py`,
+  `_HighlightedDocumentPdfBuilder`) pasa de "documento señalado" a un **informe de
+  originalidad** con formato tipo Turnitin: cabecera con 4 métricas grandes (índice de
+  similitud, fuentes de internet, trabajos/repositorios, IA estimada), lista
+  "FUENTES PRIMARIAS" con badge numerado de color, dominio, tipo de fuente y
+  "N palabras — X%", y el texto analizado completo con los resaltados y un chip
+  numerado de color junto a cada pasaje que remite a su fuente. El nº de palabras por
+  fuente se calcula a partir de los offsets de los hallazgos. El botón del reporte
+  pasa de "Documento señalado" a "Informe en PDF" y se muestra siempre que hay
+  reporte (antes exigía que hubiera resaltados); el archivo se llama
+  `informe-originalidad-<id>.pdf`.
+- `apps/reports/tests.py`: `test_pdf_has_the_originality_report_layout` verifica (con
+  `pypdf`) que el PDF trae las secciones del nuevo formato.
+
 ### Added
 - WhiteNoise (`requirements.txt`, middleware en `config/settings.py`) para servir los
   estáticos ya recogidos por `collectstatic` sin depender de `DEBUG` ni de un servidor
@@ -105,6 +120,13 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
   Sin dependencias ni cambios en la funcionalidad del admin.
 
 ### Fixed
+- `CertificateGenerateView` (`apps/certificates/views.py`) redirige a la página del
+  reporte con `?descargar_certificado=1` tras generar, en vez de directo a la descarga
+  del PDF. Antes, al pulsar "Generar certificado" el navegador bajaba el PDF pero no
+  cambiaba de página, así que el botón se quedaba bloqueado en "Generando…". Ahora la
+  página recarga (el botón pasa a "Descargar certificado") y un `<script>` en
+  `templates/reports/detail.html` dispara la descarga automáticamente al detectar ese
+  parámetro, limpiándolo después para que un F5 no vuelva a descargar.
 - `DocumentAnalyzeView` (`apps/analysis/views.py`) ahora marca el documento como
   `QUEUED` antes de encolar la tarea Celery, para que la bandeja y el reporte reflejen
   el estado sin esperar a que el worker recoja el trabajo (antes quedaba en `UPLOADED`

@@ -127,6 +127,24 @@ class HighlightedDocumentPdfServiceTests(ReportsTestCaseMixin, TestCase):
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
         self.assertGreater(len(pdf_bytes), 1000)
 
+    def test_pdf_has_the_originality_report_layout(self) -> None:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        pdf_bytes = build_highlighted_document_pdf(report=self.report)
+        text = "\n".join(
+            page.extract_text() for page in PdfReader(BytesIO(pdf_bytes)).pages
+        )
+
+        self.assertIn("INFORME DE ORIGINALIDAD", text)
+        self.assertIn("ÍNDICE DE SIMILITUD", text)
+        self.assertIn("FUENTES DE INTERNET", text)
+        self.assertIn("FUENTES PRIMARIAS", text)
+        self.assertIn("TEXTO ANALIZADO", text)
+        # el dominio de la fuente citada aparece en la lista de fuentes primarias
+        self.assertIn("example.com", text)
+
 
 class DownloadHighlightedDocumentViewTests(ReportsTestCaseMixin, TestCase):
     def test_owner_can_download_the_pdf(self) -> None:

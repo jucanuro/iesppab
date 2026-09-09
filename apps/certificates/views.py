@@ -9,6 +9,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.views import View
 
 from apps.certificates.models import Certificate
@@ -39,17 +40,21 @@ class CertificateGenerateView(LoginRequiredMixin, View):
                 absolute_base_url=base_url,
             )
 
-            certificate = service.execute(document_id=pk)
+            service.execute(document_id=pk)
 
             messages.success(
                 request,
                 "Certificado generado correctamente.",
             )
 
-            return redirect(
-                "certificates:download",
-                pk=certificate.id,
-            )
+            # Volvemos a la página del reporte (no directo a la descarga): así
+            # la página recarga y el botón pasa a "Descargar certificado", en
+            # vez de quedarse el navegador en la página anterior con el botón
+            # de "Generando…" bloqueado tras bajar el PDF. El parámetro
+            # `descargar_certificado` hace que la página dispare la descarga
+            # automáticamente al cargar.
+            detail_url = reverse("reports:detail", kwargs={"pk": pk})
+            return redirect(f"{detail_url}?descargar_certificado=1")
 
         except PermissionDenied as exc:
             logger.warning(

@@ -5,6 +5,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.generic import TemplateView
 
 from apps.core.models import Institution
@@ -18,15 +19,29 @@ def csrf_failure(
 ) -> HttpResponse:
     """
     Vista de fallo de CSRF (configurada en `CSRF_FAILURE_VIEW`). En vez de
-    devolver el 403 crudo de Django, muestra la página de "sesión expirada"
-    con un enlace para volver a iniciar sesión. El caso típico es un
-    formulario enviado tras caducar la sesión por inactividad.
+    devolver el 403 crudo de Django, muestra una página explicando que el
+    formulario ya no es válido (token CSRF desincronizado: sesión caducada,
+    formulario abierto demasiado tiempo, o se inició sesión en otra pestaña
+    del mismo navegador mientras este formulario estaba abierto) con un
+    enlace para volver a la página de origen y reintentarlo con un formulario
+    fresco.
     """
+    referer = request.META.get("HTTP_REFERER", "")
+    retry_url = referer if _is_safe_redirect(request, referer) else None
+
     return render(
         request,
         "403.html",
-        {"is_csrf": True, "reason": reason},
+        {"is_csrf": True, "reason": reason, "retry_url": retry_url},
         status=403,
+    )
+
+
+def _is_safe_redirect(request: HttpRequest, url: str) -> bool:
+    return bool(url) and url_has_allowed_host_and_scheme(
+        url=url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
     )
 
 

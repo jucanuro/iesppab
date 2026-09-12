@@ -2,6 +2,27 @@
 
 Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
+## [2026-09-12]
+
+### Changed
+- Página de fallo de CSRF (`templates/403.html`, `apps/core/views.py::csrf_failure`):
+  el texto deja de asumir siempre "tu sesión expiró" (confuso en páginas públicas
+  como `/registro/`, donde no hay sesión que expirar) y ahora explica las causas
+  reales: formulario abierto demasiado tiempo, sesión caducada, o token CSRF
+  rotado por haber iniciado sesión en otra pestaña del mismo navegador. El botón
+  pasa a "Volver a intentarlo" y enlaza a la página de origen (`HTTP_REFERER`,
+  validado con `url_has_allowed_host_and_scheme` para no seguir un referer
+  externo) para reintentar con un formulario fresco; si no hay una URL de origen
+  segura, cae de vuelta al botón "Iniciar sesión" de antes.
+
+### Added
+- `docs/roles.md`: referencia del sistema de roles (ADMIN/DIRECTOR/TEACHER/STUDENT),
+  la regla de alcance por institución, una tabla de qué puede ver/hacer cada rol por
+  función (bandeja, reportes, análisis, certificados, panel admin) y las
+  inconsistencias detectadas en el código actual (p. ej. que TEACHER/DIRECTOR pueden
+  analizar o certificar documentos de su institución que no ven en su propia bandeja,
+  o que el rol ADMIN no otorga acceso real a `/admin/` porque no toca `is_staff`).
+
 ## [2026-09-08]
 
 ### Changed

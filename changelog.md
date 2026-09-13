@@ -4,6 +4,14 @@ Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
 ## [2026-09-13]
 
+### Added
+- Selector "Por página" en la bandeja de documentos (`templates/documents/upload.html`,
+  `apps/documents/views.py`): permite 10/25/50/100 resultados por página vía
+  `?por_pagina=`, con **10 por defecto**. Valores inválidos o fuera de esas opciones
+  caen de vuelta a 10 (`DocumentUploadView._page_size`). Se preserva junto al resto
+  de filtros al paginar (reutiliza `_filter_querystring`, que ya copiaba todos los
+  parámetros de la URL salvo `page`).
+
 ### Changed
 - Tarjeta de `templates/accounts/login.html` y `register.html`: ancho máximo de
   `max-w-[380px]` a `max-w-[480px]` (se probó `max-w-3xl`, pero a ese ancho los

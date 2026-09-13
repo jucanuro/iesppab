@@ -434,6 +434,17 @@
                             {% endfor %}
                         </select>
 
+                        <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                            Por página
+                            <select name="por_pagina"
+                                    onchange="this.form.submit()"
+                                    class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
+                                {% for choice in page_size_choices %}
+                                    <option value="{{ choice }}" {% if page_size == choice %}selected{% endif %}>{{ choice }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+
                         <button type="submit"
                                 class="inline-flex h-9 items-center justify-center rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-3 text-[12px] font-bold text-[#123f9e] transition hover:bg-[#e3ecff]">
                             Filtrar

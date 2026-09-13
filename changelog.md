@@ -2,6 +2,14 @@
 
 Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
+## [2026-09-13]
+
+### Changed
+- Tarjeta de `templates/accounts/login.html` y `register.html`: ancho máximo de
+  `max-w-[380px]` a `max-w-[480px]` (se probó `max-w-3xl`, pero a ese ancho los
+  campos de una sola columna —usuario/correo, contraseña— quedaban demasiado
+  estirados; `480px` da más aire sin ese efecto).
+
 ## [2026-09-12]
 
 ### Changed

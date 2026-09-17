@@ -59,12 +59,40 @@ FRAGMENT_WORD_SIZE = InternalSimilarityEngine.CHUNK_WORD_SIZE
 # burstiness fuera de rango tras este clip.
 MAX_SENTENCE_PERPLEXITY_FOR_BURSTINESS = 400.0
 
-# Tamaño de lote para el forward pass batched de compute_burstiness. 16 es
-# conservador para CPU con ~6GB libres y GPT-2 small (~250MB en fp32): deja
-# margen amplio incluso si varias oraciones cercanas a MAX_TOKENS caen en el
-# mismo lote. Bajar este valor si se despliega en un entorno con menos
-# memoria disponible.
-BURSTINESS_BATCH_SIZE = 16
+# Batching adaptativo por presupuesto de memoria para el forward pass de
+# compute_burstiness(). Un batch_size fijo (el diseño anterior usaba 16) es
+# seguro solo mientras las oraciones de ese lote sean cortas: como las
+# oraciones se ordenan por longitud antes de agrupar (bucketing), las más
+# largas —típicamente texto mal extraído de PDF/DOCX: tablas, listas sin
+# puntuación, párrafos pegados— terminan juntas en los últimos lotes. Se
+# midió que 16 oraciones cercanas a MAX_TOKENS=900 disparan un pico de
+# ~4.4-4.6GB (tensor de logits + matrices de atención de las 12 capas) en
+# un solo forward pass, sin relación con el tamaño total del documento —
+# suficiente para tumbar un worker en un servidor de 2-4GB.
+#
+# En su lugar, cada lote se arma dinámicamente para que su forward pass
+# estimado (`_estimate_forward_pass_bytes`) quepa en una fracción de la RAM
+# libre en ese momento (`psutil.virtual_memory().available`), recalculada
+# lote a lote. Esto acota el pico real de memoria (que depende del producto
+# batch_size × longitud², no solo de la cantidad de oraciones) en vez de
+# acotar un conteo fijo que ignora la longitud.
+BURSTINESS_BATCH_MEMORY_FRACTION = 0.5
+
+# Margen sobre la estimación teórica de `_estimate_forward_pass_bytes`: esa
+# fórmula solo modela los dos tensores dominantes (logits y atención) y
+# omite overhead menor (embeddings, estados ocultos intermedios, activaciones
+# de las capas feed-forward). La validación empírica de FASE 0 (predicho
+# ~4.4GB, medido ~4.6GB de pico real) ya está dentro de este margen.
+BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR = 1.2
+
+# Techo de seguridad final: un lote de 1 oración SIEMPRE se procesa, exceda
+# o no el presupuesto estimado, para que el documento nunca deje de
+# analizarse por falta de RAM "de sobra" — ver `_pack_indices_by_memory_budget`.
+# Si ni siquiera ese lote mínimo cabe en la memoria física real, el
+# try/except alrededor del forward pass en `_batch_sequence_perplexities`
+# lo detecta y degrada con gracia (se omite esa oración, no se revienta el
+# proceso).
+MIN_BURSTINESS_BATCH_SIZE = 1
 
 _load_lock = threading.Lock()
 _tokenizer = None
@@ -129,6 +157,159 @@ def _get_model_and_tokenizer():
         return _tokenizer, _model
 
 
+_OOM_RUNTIME_ERROR_MARKERS = ("alloc", "memory", "bad_alloc")
+
+
+def _is_out_of_memory_error(exc: Exception) -> bool:
+    """
+    PyTorch en CPU no siempre lanza `MemoryError` ante una asignación que no
+    cabe en RAM: a menudo es un `RuntimeError` cuyo mensaje viene del
+    allocator de C++ (p.ej. "[enforce fail at alloc_cpu.cpp...] std::bad_alloc"
+    o "DefaultCPUAllocator: not enough memory"). Se distingue de otros
+    `RuntimeError` (por ejemplo, un error de forma de tensor) buscando esas
+    señales en el mensaje, para no silenciar errores que sí deberían
+    propagarse.
+    """
+    if isinstance(exc, MemoryError):
+        return True
+
+    if isinstance(exc, RuntimeError):
+        message = str(exc).lower()
+        return any(marker in message for marker in _OOM_RUNTIME_ERROR_MARKERS)
+
+    return False
+
+
+def _estimate_forward_pass_bytes(batch_size: int, seq_len: int, model) -> int:
+    """
+    Estimación conservadora del pico de memoria (bytes) de un forward pass
+    batched de GPT-2, dominado por dos tensores: `logits`
+    (batch × seq_len × vocab_size × 4 bytes) y las matrices de atención de
+    TODAS las capas (num_layers × batch × num_heads × seq_len² × 4 bytes).
+
+    Validada empíricamente en la auditoría de FASE 0: para batch=16,
+    seq_len≈900 con este modelo (12 capas, 12 cabezas, vocab≈50257) la
+    fórmula predice ~4.4GB; el pico real medido sobre un documento grande
+    fue ~4.6GB por encima del baseline del modelo cargado — dentro del
+    margen de `BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR`.
+    """
+    config = model.config
+    vocab_size = config.vocab_size
+    num_layers = config.n_layer
+    num_heads = config.n_head
+
+    logits_bytes = batch_size * seq_len * vocab_size * 4
+    attention_bytes = num_layers * batch_size * num_heads * seq_len * seq_len * 4
+
+    return int((logits_bytes + attention_bytes) * BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR)
+
+
+def _cgroup_memory_limit_and_usage_bytes() -> tuple[int, int] | None:
+    """
+    Límite y uso actual de memoria del cgroup del proceso, si corre dentro
+    de uno con límite configurado (p. ej. un contenedor Docker con
+    `--memory`). `psutil.virtual_memory()` reporta la RAM del HOST, no la
+    del cgroup — dentro de un contenedor con límite más estricto que el
+    host, eso hace que el presupuesto adaptativo sobreestime enormemente lo
+    disponible (confirmado en la verificación de FASE 3: un contenedor con
+    `--memory=2g` en un host con ~6.7GB libres fue OOM-killed porque el
+    presupuesto se calculó sobre esos 6.7GB, no sobre el límite real de
+    2GB). Devuelve `None` si no hay límite de cgroup aplicable (proceso
+    corriendo directo en el host, o límite "unlimited").
+    """
+    try:
+        with open("/sys/fs/cgroup/memory.max") as f:
+            raw_limit = f.read().strip()
+        if raw_limit != "max":
+            with open("/sys/fs/cgroup/memory.current") as f:
+                usage = int(f.read().strip())
+            return int(raw_limit), usage
+    except OSError:
+        pass
+
+    try:
+        with open("/sys/fs/cgroup/memory/memory.limit_in_bytes") as f:
+            limit = int(f.read().strip())
+        # cgroup v1 representa "sin límite" con un número enorme (cercano a
+        # 2^63), no con la palabra "max" como cgroup v2.
+        if limit < (1 << 62):
+            with open("/sys/fs/cgroup/memory/memory.usage_in_bytes") as f:
+                usage = int(f.read().strip())
+            return limit, usage
+    except OSError:
+        pass
+
+    return None
+
+
+def _available_batch_memory_budget_bytes() -> int:
+    """
+    Fracción de la memoria libre AHORA MISMO (no un valor fijo de arranque)
+    que un solo lote de compute_burstiness puede usar. Se recalcula en cada
+    lote nuevo porque la memoria disponible fluctúa entre lotes (otras
+    peticiones, otros procesos del servidor). Toma el MÍNIMO entre la RAM
+    libre del host (`psutil`) y la memoria libre dentro del cgroup actual,
+    si el proceso corre bajo un límite de contenedor — ver
+    `_cgroup_memory_limit_and_usage_bytes`.
+    """
+    import psutil
+
+    available = psutil.virtual_memory().available
+
+    cgroup_info = _cgroup_memory_limit_and_usage_bytes()
+    if cgroup_info is not None:
+        limit, usage = cgroup_info
+        available = min(available, max(0, limit - usage))
+
+    return int(available * BURSTINESS_BATCH_MEMORY_FRACTION)
+
+
+def _pack_indices_by_memory_budget(
+    order: list[int],
+    lengths: list[int],
+    model,
+) -> list[list[int]]:
+    """
+    Agrupa índices (ya ordenados por longitud en `order`) en lotes cuyo
+    forward pass estimado no exceda el presupuesto de memoria disponible en
+    ese momento. El presupuesto se recalcula al empezar cada lote nuevo.
+
+    Techo de seguridad: un lote de tamaño 1 SIEMPRE se acepta así exceda el
+    presupuesto estimado (`MIN_BURSTINESS_BATCH_SIZE`), para que el
+    documento completo siempre termine de procesarse pase lo que pase con
+    la estimación. Si ni siquiera ese lote mínimo cabe en la memoria física
+    real, el try/except alrededor del forward pass en
+    `_batch_sequence_perplexities` es quien degrada con gracia.
+    """
+    batches: list[list[int]] = []
+    current: list[int] = []
+    current_max_len = 0
+    budget = _available_batch_memory_budget_bytes()
+
+    for idx in order:
+        length = lengths[idx]
+        candidate_max_len = max(current_max_len, length)
+        candidate_size = len(current) + 1
+
+        if (
+            current
+            and _estimate_forward_pass_bytes(candidate_size, candidate_max_len, model)
+            > budget
+        ):
+            batches.append(current)
+            current = [idx]
+            current_max_len = length
+            budget = _available_batch_memory_budget_bytes()
+        else:
+            current.append(idx)
+            current_max_len = candidate_max_len
+
+    if current:
+        batches.append(current)
+
+    return batches
+
+
 def _sentence_split(text: str) -> list[str]:
     sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     return [sentence.strip() for sentence in sentences if sentence.strip()]
@@ -190,8 +371,18 @@ def _sequence_perplexity(text: str, *, max_tokens: int = MAX_TOKENS) -> float | 
     if input_ids.shape[1] < 2:
         return None
 
-    with torch.no_grad():
-        output = model(input_ids, labels=input_ids)
+    try:
+        with torch.no_grad():
+            output = model(input_ids, labels=input_ids)
+    except (MemoryError, RuntimeError) as exc:
+        if not _is_out_of_memory_error(exc):
+            raise
+        logger.error(
+            "Cálculo de perplejidad omitido por falta de memoria (%d tokens): %s",
+            input_ids.shape[1],
+            exc,
+        )
+        return None
 
     loss = output.loss.item()
 
@@ -205,7 +396,6 @@ def _batch_sequence_perplexities(
     texts: list[str],
     *,
     max_tokens: int = MAX_TOKENS,
-    batch_size: int = BURSTINESS_BATCH_SIZE,
 ) -> list[float | None]:
     """
     Perplejidad de cada texto en `texts`, procesados en lotes en vez de un
@@ -216,7 +406,12 @@ def _batch_sequence_perplexities(
     Las oraciones se ordenan por longitud antes de agruparlas en lotes
     (bucketing) para que el padding dentro de cada lote sea mínimo: mezclar
     una oración de 8 tokens con una de 300 en el mismo lote forzaría
-    paddear la corta a 300, desperdiciando memoria y cómputo.
+    paddear la corta a 300, desperdiciando memoria y cómputo. Los lotes se
+    arman por PRESUPUESTO DE MEMORIA, no por una cantidad fija de oraciones
+    (ver `_pack_indices_by_memory_budget`): el pico de RAM depende del
+    producto batch_size × longitud², así que un lote con oraciones largas
+    debe ser más chico que uno con oraciones cortas para que el pico total
+    se mantenga acotado sin importar el tamaño del documento.
     """
     import torch
     from torch.nn import functional as F
@@ -226,11 +421,16 @@ def _batch_sequence_perplexities(
 
     tokenizer, model = _get_model_and_tokenizer()
 
-    order = sorted(range(len(texts)), key=lambda i: len(tokenizer.encode(texts[i])))
+    lengths = [
+        len(tokenizer.encode(text, truncation=True, max_length=max_tokens))
+        for text in texts
+    ]
+    order = sorted(range(len(texts)), key=lambda i: lengths[i])
     results: list[float | None] = [None] * len(texts)
 
-    for start in range(0, len(order), batch_size):
-        chunk_indices = order[start : start + batch_size]
+    batches = _pack_indices_by_memory_budget(order, lengths, model)
+
+    for chunk_indices in batches:
         chunk_texts = [texts[i] for i in chunk_indices]
 
         encoding = tokenizer(
@@ -243,8 +443,20 @@ def _batch_sequence_perplexities(
         input_ids = encoding["input_ids"]
         attention_mask = encoding["attention_mask"]
 
-        with torch.no_grad():
-            output = model(input_ids, attention_mask=attention_mask)
+        try:
+            with torch.no_grad():
+                output = model(input_ids, attention_mask=attention_mask)
+        except (MemoryError, RuntimeError) as exc:
+            if not _is_out_of_memory_error(exc):
+                raise
+            logger.error(
+                "Lote de burstiness omitido por falta de memoria (%d oraciones, "
+                "máx %d tokens en el lote): %s",
+                len(chunk_indices),
+                max(lengths[i] for i in chunk_indices),
+                exc,
+            )
+            continue
 
         # Sin `labels=` en la llamada al modelo porque la pérdida interna de
         # `transformers` promedia sobre TODAS las posiciones desplazadas,
@@ -396,10 +608,14 @@ class SpanishPerplexityDetector:
         Las oraciones válidas se evalúan en lotes (`_batch_sequence_perplexities`)
         en vez de un forward pass por oración — con documentos de varias
         decenas de oraciones, procesarlas una por una es el cuello de botella
-        dominante de todo el análisis. El batching se hace sobre todas las
-        oraciones del documento a la vez (no por fragmento) para no perder
-        ese beneficio de rendimiento; el agrupamiento en fragmentos ocurre
-        después, sobre los resultados ya calculados.
+        dominante de todo el análisis. El tamaño de cada lote se decide de
+        forma adaptativa según la RAM libre en ese momento (ver
+        `_pack_indices_by_memory_budget`), no un conteo fijo de oraciones, para
+        que el pico de memoria se mantenga acotado sin importar el tamaño del
+        documento ni cuánta RAM tenga el servidor. El batching se hace sobre
+        todas las oraciones del documento a la vez (no por fragmento) para no
+        perder ese beneficio de rendimiento; el agrupamiento en fragmentos
+        ocurre después, sobre los resultados ya calculados.
 
         Texto humano = alta variación entre oraciones (bursty).
         Texto de IA = variación baja (uniforme).

@@ -12,6 +12,13 @@
 torch==2.13.0+cpu
 transformers==5.15.0
 
+# Lee la RAM libre en runtime (psutil.virtual_memory) para el batching
+# adaptativo de compute_burstiness() en perplexity_detector.py — el tamaño
+# de cada lote se decide según la memoria disponible en ese momento, no un
+# valor fijo, para acotar el pico de RAM sin importar el tamaño del
+# documento ni la RAM del servidor.
+psutil==7.1.0
+
 # Dependencias EXPERIMENTALES para la prueba de concepto de detección de
 # parafraseo con embeddings semánticos (apps/analysis/experiments/paraphrase_poc.py,
 # apps/analysis/experiments/paraphrase_cost_benchmark.py). Reutilizan el

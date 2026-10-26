@@ -34,6 +34,7 @@ from apps.reports.services import (
     HighlightedDocumentPdfError,
     build_highlighted_document_pdf,
     resolve_analyzed_content,
+    split_similarity_around_exclusions,
 )
 from apps.reports.suggestions import build_improvement_suggestions
 
@@ -88,6 +89,7 @@ class ReportDetailView(LoginRequiredMixin, View):
                 highlighted_segments = self._build_highlight_segments(
                     content=resolve_analyzed_content(report),
                     findings=list(report.findings.all()),
+                    excluded_ranges=report.excluded_quote_ranges,
                 )
             else:
                 analysis_job = self._get_latest_job(document=document)
@@ -229,6 +231,7 @@ class ReportDetailView(LoginRequiredMixin, View):
         self,
         content: str,
         findings: list[ReportFinding],
+        excluded_ranges: list[tuple[int, int]] | None = None,
     ) -> list[HighlightSegment]:
         """
         Convierte el texto plano en segmentos resaltables.
@@ -237,6 +240,7 @@ class ReportDetailView(LoginRequiredMixin, View):
         - Similitud en rojo.
         - IA en azul.
         - Si hay solapamiento, se respeta el primer hallazgo válido.
+        - Las citas excluidas del % no se pintan como similitud.
         """
 
         if not content:
@@ -271,13 +275,25 @@ class ReportDetailView(LoginRequiredMixin, View):
                     )
                 )
 
-            segments.append(
-                HighlightSegment(
-                    text=content[start:end],
-                    finding_type=finding.finding_type,
-                    confidence_percent=str(finding.confidence_percent),
+            if finding.finding_type == FindingType.SIMILARITY:
+                pieces = split_similarity_around_exclusions(
+                    start=start,
+                    end=end,
+                    excluded_ranges=excluded_ranges or [],
                 )
-            )
+            else:
+                pieces = [(start, end, True)]
+
+            for piece_start, piece_end, painted in pieces:
+                segments.append(
+                    HighlightSegment(
+                        text=content[piece_start:piece_end],
+                        finding_type=finding.finding_type if painted else None,
+                        confidence_percent=(
+                            str(finding.confidence_percent) if painted else None
+                        ),
+                    )
+                )
 
             cursor = end
 

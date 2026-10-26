@@ -20,6 +20,7 @@ from apps.reports.models import (
     SourceType,
 )
 from apps.reports.services import (
+    _HighlightedDocumentPdfBuilder,
     build_highlighted_document_pdf,
     resolve_analyzed_content,
 )
@@ -447,6 +448,91 @@ class ResolveAnalyzedContentFallbackTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+
+class ExclusionOptionsDisplayTests(ReportsTestCaseMixin, TestCase):
+    """
+    El reporte muestra qué se excluyó según las opciones GUARDADAS, y la
+    similitud no se pinta dentro de una cita excluida.
+    """
+
+    def _quote_inside_similarity_finding(self) -> tuple[int, int]:
+        # "metodologia aplicada" es el hallazgo de similitud; se marca
+        # "aplicada" como cita excluida.
+        quote_start = SAMPLE_TEXT.index("aplicada")
+        quote_end = quote_start + len("aplicada")
+        self.report.analyzed_content = SAMPLE_TEXT
+        self.report.summary = {"excluded_quote_ranges": [[quote_start, quote_end]]}
+        self.report.save()
+        return quote_start, quote_end
+
+    def test_label_reflects_saved_options(self) -> None:
+        self.assertEqual(self.report.excluded_options_label, "citas, bibliografía")
+
+        self.report.exclude_quotes = False
+        self.assertEqual(self.report.excluded_options_label, "bibliografía")
+
+        self.report.exclude_bibliography = False
+        self.assertEqual(self.report.excluded_options_label, "")
+
+    def test_detail_shows_excluded_legend(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+
+        self.assertContains(response, "Excluidas: citas, bibliografía")
+
+    def test_legacy_report_does_not_claim_quotes_excluded(self) -> None:
+        self.report.exclude_quotes = False
+        self.report.save()
+        self.client.force_login(self.student)
+
+        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+
+        self.assertContains(response, "Excluidas: bibliografía")
+        self.assertNotContains(response, "Excluidas: citas")
+
+    def test_viewer_does_not_paint_similarity_inside_excluded_quote(self) -> None:
+        self._quote_inside_similarity_finding()
+        self.client.force_login(self.student)
+
+        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+        segments = response.context["highlighted_segments"]
+
+        painted = [
+            segment.text
+            for segment in segments
+            if segment.finding_type == FindingType.SIMILARITY
+        ]
+        self.assertEqual(painted, ["metodologia "])
+        self.assertIn(
+            "aplicada",
+            [segment.text for segment in segments if segment.finding_type is None],
+        )
+
+    def test_quote_ranges_ignored_when_quotes_were_not_excluded(self) -> None:
+        self._quote_inside_similarity_finding()
+        self.report.exclude_quotes = False
+        self.report.save()
+
+        self.assertEqual(self.report.excluded_quote_ranges, [])
+
+    def test_pdf_still_builds_with_excluded_quote(self) -> None:
+        self._quote_inside_similarity_finding()
+
+        segments = _HighlightedDocumentPdfBuilder(report=self.report)._build_segments(
+            content=SAMPLE_TEXT,
+            findings=list(self.report.findings.order_by("start_offset")),
+        )
+        painted = [
+            text for text, finding_type, _ in segments
+            if finding_type == FindingType.SIMILARITY
+        ]
+        self.assertEqual(painted, ["metodologia "])
+
+        pdf = build_highlighted_document_pdf(self.report)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
 
 
 class ExclusionFlagsMigrationTests(TransactionTestCase):

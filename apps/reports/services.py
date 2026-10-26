@@ -69,6 +69,39 @@ def resolve_analyzed_content(report: AnalysisReport) -> str:
     return filtered.content or extracted_text.content
 
 
+def split_similarity_around_exclusions(
+    start: int,
+    end: int,
+    excluded_ranges: list[tuple[int, int]],
+) -> list[tuple[int, int, bool]]:
+    """
+    Parte el tramo [start, end) de un hallazgo de similitud en piezas
+    (inicio, fin, pintar): las que caen dentro de una cita excluida no se
+    pintan, porque no sumaron al % de similitud.
+    """
+    pieces: list[tuple[int, int, bool]] = []
+    cursor = start
+
+    for excluded_start, excluded_end in excluded_ranges:
+        if excluded_end <= cursor:
+            continue
+
+        if excluded_start >= end:
+            break
+
+        if excluded_start > cursor:
+            pieces.append((cursor, excluded_start, True))
+
+        piece_end = min(excluded_end, end)
+        pieces.append((max(cursor, excluded_start), piece_end, False))
+        cursor = piece_end
+
+    if cursor < end:
+        pieces.append((cursor, end, True))
+
+    return pieces
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -275,6 +308,8 @@ class _HighlightedDocumentPdfBuilder:
         if not content:
             return []
 
+        excluded_ranges = self.report.excluded_quote_ranges
+
         valid_findings = sorted(
             [
                 finding
@@ -298,13 +333,29 @@ class _HighlightedDocumentPdfBuilder:
             if cursor < start:
                 segments.append((content[cursor:start], None, None))
 
-            segments.append(
-                (
-                    content[start:end],
-                    finding.finding_type,
-                    finding.source_id,
+            if finding.finding_type == FindingType.SIMILARITY:
+                for piece_start, piece_end, painted in (
+                    split_similarity_around_exclusions(
+                        start=start,
+                        end=end,
+                        excluded_ranges=excluded_ranges,
+                    )
+                ):
+                    segments.append(
+                        (
+                            content[piece_start:piece_end],
+                            finding.finding_type if painted else None,
+                            finding.source_id if painted else None,
+                        )
+                    )
+            else:
+                segments.append(
+                    (
+                        content[start:end],
+                        finding.finding_type,
+                        finding.source_id,
+                    )
                 )
-            )
 
             cursor = end
 
@@ -409,7 +460,12 @@ class _HighlightedDocumentPdfBuilder:
                     ),
                     Paragraph(
                         "Los números junto a cada pasaje remiten a la lista "
-                        "«Fuentes primarias».",
+                        "«Fuentes primarias»."
+                        + (
+                            f" Excluidas: {self.report.excluded_options_label}."
+                            if self.report.excluded_options_label
+                            else ""
+                        ),
                         styles["legend_note"],
                     ),
                 ]

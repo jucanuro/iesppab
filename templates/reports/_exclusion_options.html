@@ -1,0 +1,12 @@
+{# Opciones de exclusión del análisis (como en Turnitin). El campo oculto avisa a la vista que el formulario las ofrece: sin él, se excluye todo por defecto. #}
+<input type="hidden" name="exclusion_options" value="1">
+<span class="inline-flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-500">
+    <label class="inline-flex cursor-pointer items-center gap-1.5" title="Las citas cortas entre comillas no suman al % de similitud">
+        <input type="checkbox" name="exclude_quotes" checked class="h-3.5 w-3.5 rounded border-slate-300 accent-[#236bfd]">
+        Excluir citas
+    </label>
+    <label class="inline-flex cursor-pointer items-center gap-1.5" title="Las referencias, bibliografía y anexos no suman al % de similitud">
+        <input type="checkbox" name="exclude_bibliography" checked class="h-3.5 w-3.5 rounded border-slate-300 accent-[#236bfd]">
+        Excluir bibliografía
+    </label>
+</span>

@@ -142,6 +142,36 @@ class AnalysisReport(TimeStampedModel):
         return f"Reporte - {self.document.title}"
 
     @property
+    def excluded_options_label(self) -> str:
+        """
+        Qué se excluyó del % de similitud según las opciones GUARDADAS del
+        análisis ("citas, bibliografía"); vacío si no se excluyó nada.
+        """
+        excluded = []
+
+        if self.exclude_quotes:
+            excluded.append("citas")
+
+        if self.exclude_bibliography:
+            excluded.append("bibliografía")
+
+        return ", ".join(excluded)
+
+    @property
+    def excluded_quote_ranges(self) -> list[tuple[int, int]]:
+        """
+        Rangos de `analyzed_content` descontados del % por ser citas. El
+        visor y el PDF no pintan similitud dentro de ellos.
+        """
+        if not self.exclude_quotes:
+            return []
+
+        return [
+            (int(start), int(end))
+            for start, end in (self.summary or {}).get("excluded_quote_ranges", [])
+        ]
+
+    @property
     def similarity_level(self) -> str:
         if self.similarity_percent < Decimal("15.00"):
             return "bajo"

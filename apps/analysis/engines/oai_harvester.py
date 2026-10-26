@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 OAI_NS = "{http://www.openarchives.org/OAI/2.0/}"
 DC_NS = "{http://purl.org/dc/elements/1.1/}"
 
+# Algunos repositorios (ej. PUCP) devuelven 403 ante clientes HTTP sin
+# User-Agent identificable (bloquean el default de `requests`/`curl` por
+# heurística anti-bot), aunque el endpoint OAI-PMH es público y está pensado
+# justamente para ser cosechado por máquinas. Nos identificamos con un UA
+# descriptivo en vez de simular un navegador.
+HTTP_HEADERS = {
+    "User-Agent": (
+        "IESPPAB-OAI-Harvester/1.0 (+https://iesppab.edu.pe; "
+        "cosecha de metadatos OAI-PMH con fines academicos)"
+    ),
+}
+
 THESIS_KEYWORDS = (
     "tesis",
     "trabajo de investigacion",
@@ -60,6 +72,8 @@ class OaiHarvester:
     TIMEOUT_SECONDS = 20
     MAX_PAGES = 200
     PAGE_DELAY_SECONDS = 0.4
+    MAX_RETRIES = 3
+    RETRY_BACKOFF_SECONDS = 5
 
     def __init__(self, max_pages: int | None = None) -> None:
         if max_pages is not None:
@@ -147,6 +161,56 @@ class OaiHarvester:
             skipped_count=skipped_count,
         )
 
+    def _get_with_retry(
+        self,
+        repository: OaiRepositoryConfig,
+        request_params: dict,
+    ) -> requests.Response:
+        """
+        GET con reintentos ante errores transitorios (timeouts, errores de
+        conexión, 5xx de proxy/servidor). Los errores 4xx (mal request, set
+        inválido, etc.) no se reintentan porque no son transitorios.
+        """
+        last_exc: Exception | None = None
+
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                response = requests.get(
+                    repository.base_url,
+                    params=request_params,
+                    timeout=self.TIMEOUT_SECONDS,
+                    headers=HTTP_HEADERS,
+                )
+
+                if response.status_code >= 500:
+                    response.raise_for_status()
+
+                return response
+
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.HTTPError,
+            ) as exc:
+                last_exc = exc
+
+                if attempt == self.MAX_RETRIES:
+                    break
+
+                wait_seconds = self.RETRY_BACKOFF_SECONDS * attempt
+                logger.warning(
+                    "Error transitorio en request OAI, reintentando. "
+                    "repository=%s intento=%s/%s espera=%ss error=%s",
+                    repository.name,
+                    attempt,
+                    self.MAX_RETRIES,
+                    wait_seconds,
+                    exc,
+                )
+                time.sleep(wait_seconds)
+
+        raise last_exc
+
     def _iter_records(
         self,
         repository: OaiRepositoryConfig,
@@ -178,10 +242,9 @@ class OaiHarvester:
                 else initial_params
             )
 
-            response = requests.get(
-                repository.base_url,
-                params=request_params,
-                timeout=self.TIMEOUT_SECONDS,
+            response = self._get_with_retry(
+                repository=repository,
+                request_params=request_params,
             )
             response.raise_for_status()
 

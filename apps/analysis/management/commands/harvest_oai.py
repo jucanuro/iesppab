@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import time
+
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
@@ -22,6 +24,16 @@ class Command(BaseCommand):
                 "pruebas rápidas sin recorrer el repositorio completo."
             ),
         )
+        parser.add_argument(
+            "--repository",
+            type=str,
+            default=None,
+            help=(
+                "Nombre (o substring, sin distinguir mayúsculas) de un solo "
+                "repositorio de OAI_HARVEST_REPOSITORIES a cosechar, en vez "
+                "de todos los configurados."
+            ),
+        )
 
     def handle(self, *args, **options) -> None:
         if not getattr(settings, "OAI_HARVEST_ENABLED", True):
@@ -42,9 +54,28 @@ class Command(BaseCommand):
             )
             return
 
+        repository_filter = (options.get("repository") or "").strip().lower()
+
+        if repository_filter:
+            repositories = [
+                repository_data
+                for repository_data in repositories
+                if repository_filter in repository_data["name"].lower()
+            ]
+
+            if not repositories:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"Ningún repositorio coincide con --repository="
+                        f"'{options.get('repository')}'."
+                    )
+                )
+                return
+
         harvester = OaiHarvester(max_pages=options.get("max_pages"))
         total_created = 0
         total_updated = 0
+        start = time.monotonic()
 
         for repository_data in repositories:
             repository = OaiRepositoryConfig(
@@ -58,14 +89,18 @@ class Command(BaseCommand):
                 f"Cosechando {repository.name} ({repository.base_url})..."
             )
 
+            repo_start = time.monotonic()
             summary = harvester.harvest_repository(repository=repository)
+            repo_elapsed = time.monotonic() - repo_start
 
             total_created += summary.created_count
             total_updated += summary.updated_count
 
             if summary.error:
                 self.stdout.write(
-                    self.style.ERROR(f"  Error: {summary.error}")
+                    self.style.ERROR(
+                        f"  Error tras {repo_elapsed:.1f}s: {summary.error}"
+                    )
                 )
                 continue
 
@@ -73,13 +108,15 @@ class Command(BaseCommand):
                 self.style.SUCCESS(
                     f"  Nuevos: {summary.created_count} | "
                     f"Actualizados: {summary.updated_count} | "
-                    f"Omitidos: {summary.skipped_count}"
+                    f"Omitidos: {summary.skipped_count} | "
+                    f"Tiempo: {repo_elapsed:.1f}s"
                 )
             )
 
+        total_elapsed = time.monotonic() - start
         self.stdout.write(
             self.style.SUCCESS(
-                f"Harvest OAI completado. "
+                f"Harvest OAI completado en {total_elapsed:.1f}s. "
                 f"Total nuevos: {total_created} | "
                 f"Total actualizados: {total_updated}"
             )

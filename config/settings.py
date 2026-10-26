@@ -469,6 +469,11 @@ OAI_HARVEST_ENABLED = env_bool(
 # (esa lista no se modifica).
 #
 # Repos probados SIN OAI-PMH confirmado (revisar manualmente más adelante):
+#   - Repositorio UNSA (repositorio.unsa.edu.pe): los 3 patrones (/oai/request,
+#     /server/oai/request, /dspace-oai/request) cierran la conexión sin
+#     respuesta ("empty reply from server") tanto con curl como con
+#     `requests`, incluso en "/" sin verb — no es un 403 de aplicación como
+#     PUCP, parece un bloqueo a nivel TLS/conexión (similar a UNASAM).
 #   - ALICIA - CONCYTEC (alicia.concytec.gob.pe): los 3 patrones devuelven 404,
 #     no es DSpace en esa ruta; probablemente requiere descubrir su endpoint
 #     OAI real (agregador propio de CONCYTEC/RENATI).
@@ -520,6 +525,26 @@ OAI_HARVEST_REPOSITORIES = [
         "name": "Repositorio UNE",
         "domain": "repositorio.une.edu.pe",
         "base_url": "https://repositorio.une.edu.pe/oai/request",
+    },
+    {
+        "name": "Repositorio de Tesis PUCP",
+        "domain": "tesis.pucp.edu.pe",
+        "base_url": "https://tesis.pucp.edu.pe/oai/request",
+    },
+    {
+        "name": "Repositorio UNI",
+        "domain": "repositorio.uni.edu.pe",
+        "base_url": "https://repositorio.uni.edu.pe/oai/request",
+    },
+    {
+        "name": "Repositorio UNAP",
+        "domain": "repositorio.unap.edu.pe",
+        "base_url": "https://repositorio.unap.edu.pe/server/oai/request",
+    },
+    {
+        "name": "Repositorio UPeU",
+        "domain": "repositorio.upeu.edu.pe",
+        "base_url": "https://repositorio.upeu.edu.pe/server/oai/request",
     },
 ]
 

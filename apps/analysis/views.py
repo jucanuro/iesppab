@@ -9,16 +9,20 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
+from django.utils import timezone
 from django.views import View
 
 from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
 from apps.analysis.tasks import run_document_analysis
-from apps.documents.models import DocumentStatus
+from apps.documents.models import Document, DocumentStatus
 
-_IN_PROGRESS_STATUSES = {
-    DocumentStatus.QUEUED,
-    DocumentStatus.PROCESSING,
-}
+# Estados desde los que se puede (re)encolar un análisis. QUEUED/PROCESSING
+# quedan fuera: el documento ya está en análisis.
+_ANALYZABLE_STATUSES = [
+    DocumentStatus.UPLOADED,
+    DocumentStatus.COMPLETED,
+    DocumentStatus.FAILED,
+]
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +48,19 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
                 requested_by=request.user,
             ).check_permission(document_id=pk)
 
-            # Evita encolar dos veces el mismo documento si el alumno vuelve
-            # a pulsar el botón mientras el análisis anterior sigue en cola
-            # o procesándose.
-            if document.status in _IN_PROGRESS_STATUSES:
+            # Pasa a "en cola" con un UPDATE condicional: solo una petición
+            # puede ganar la transición, así un doble clic (o dos pestañas)
+            # no encola el mismo documento dos veces.
+            queued = Document.objects.filter(
+                pk=document.pk,
+                status__in=_ANALYZABLE_STATUSES,
+            ).update(
+                status=DocumentStatus.QUEUED,
+                error_message="",
+                updated_at=timezone.now(),
+            )
+
+            if queued != 1:
                 messages.info(
                     request,
                     (
@@ -58,20 +71,22 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
 
                 return redirect("reports:detail", pk=pk)
 
-            # Marca el documento como "en cola" de inmediato para que la
-            # bandeja y el reporte reflejen el estado sin esperar a que el
-            # worker recoja la tarea.
-            document.status = DocumentStatus.QUEUED
-            document.error_message = ""
-            document.save(
-                update_fields=[
-                    "status",
-                    "error_message",
-                    "updated_at",
-                ]
-            )
-
-            run_document_analysis.delay(str(pk), str(request.user.id))
+            try:
+                run_document_analysis.delay(str(pk), str(request.user.id))
+            except Exception:
+                # Sin esto el documento quedaría en QUEUED para siempre.
+                Document.objects.filter(
+                    pk=document.pk,
+                    status=DocumentStatus.QUEUED,
+                ).update(
+                    status=DocumentStatus.FAILED,
+                    error_message=(
+                        "No se pudo enviar el documento a análisis. "
+                        "Vuelve a intentarlo en unos minutos."
+                    ),
+                    updated_at=timezone.now(),
+                )
+                raise
 
             messages.success(
                 request,

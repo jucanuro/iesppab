@@ -7,6 +7,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
+from django.urls import reverse
 
 from apps.accounts.models import User, UserRole
 from apps.analysis.engines.fingerprint import compute_fingerprints
@@ -1163,3 +1164,68 @@ class AnalysisRedeliveryIdempotencyTests(TestCase):
         self.assertEqual(job.status, AnalysisJobStatus.SUCCESS)
         self.assertEqual(job.delivery_count, 1)
         self.assertEqual(job.celery_task_id, "tarea-nueva")
+
+
+class AnalyzeEnqueueTests(TestCase):
+    """El encolado del análisis es atómico: un doble envío encola una sola vez."""
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.client.force_login(self.student)
+
+    def _post(self, document: Document):
+        return self.client.post(reverse("analysis:analyze", args=[document.id]))
+
+    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    def test_double_submit_enqueues_once(self, delay: mock.Mock) -> None:
+        document = make_test_document(self.institution, self.student)
+
+        self._post(document)
+        self._post(document)
+
+        delay.assert_called_once_with(str(document.id), str(self.student.id))
+        document.refresh_from_db()
+        self.assertEqual(document.status, DocumentStatus.QUEUED)
+
+    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    def test_document_in_progress_is_not_enqueued(self, delay: mock.Mock) -> None:
+        for status in (DocumentStatus.QUEUED, DocumentStatus.PROCESSING):
+            document = make_test_document(
+                self.institution,
+                self.student,
+                title=f"Documento {status}",
+                status=status,
+            )
+
+            self._post(document)
+
+            document.refresh_from_db()
+            self.assertEqual(document.status, status)
+
+        delay.assert_not_called()
+
+    @mock.patch(
+        "apps.analysis.views.run_document_analysis.delay",
+        side_effect=ConnectionError("broker caído"),
+    )
+    def test_enqueue_failure_does_not_leave_document_queued(
+        self,
+        delay: mock.Mock,
+    ) -> None:
+        document = make_test_document(self.institution, self.student)
+
+        self._post(document)
+
+        document.refresh_from_db()
+        self.assertEqual(document.status, DocumentStatus.FAILED)
+        self.assertIn("No se pudo enviar", document.error_message)

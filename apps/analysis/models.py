@@ -64,6 +64,14 @@ class AnalysisJob(TimeStampedModel):
         db_index=True,
         verbose_name=_("ID de tarea Celery"),
     )
+    delivery_count = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name=_("Entregas de la tarea"),
+        help_text=_(
+            "Veces que Celery entregó la tarea para este intento "
+            "(>1 si el worker murió y la tarea se reencoló)."
+        ),
+    )
     current_step = models.CharField(
         max_length=120,
         blank=True,

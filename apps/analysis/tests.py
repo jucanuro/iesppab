@@ -27,7 +27,11 @@ from apps.analysis.models import (
     DocumentFingerprint,
     DocumentKnowledgeChunk,
 )
-from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
+from apps.analysis.services import (
+    MAX_ANALYSIS_DELIVERIES,
+    DocumentAnalysisError,
+    DocumentAnalysisService,
+)
 from apps.analysis.tasks import run_document_analysis
 from apps.core.models import Institution
 from apps.documents.models import (
@@ -1029,3 +1033,133 @@ class AnalysisTimeLimitTests(TestCase):
         self.assertEqual(job.status, AnalysisJobStatus.FAILED)
         self.assertIn("tiempo máximo", job.error_message)
         self.assertIsNotNone(job.finished_at)
+
+
+@override_settings(
+    OAI_HARVEST_ENABLED=False,
+    WEB_ANALYSIS_ENABLED=False,
+    PERPLEXITY_AI_DETECTION_ENABLED=False,
+)
+class AnalysisRedeliveryIdempotencyTests(TestCase):
+    """
+    Con acks_late, una tarea cuyo worker murió se reentrega y vuelve a
+    llamar a execute(): no debe duplicar jobs, reportes ni hallazgos.
+    """
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.document = make_test_document(self.institution, self.student)
+        self.document_text = DocumentText.objects.create(
+            document=self.document,
+            content=SAMPLE_TEXT * 5,
+            word_count=len(SAMPLE_TEXT.split()) * 5,
+            character_count=len(SAMPLE_TEXT) * 5,
+        )
+
+    def _execute(self, celery_task_id: str):
+        service = DocumentAnalysisService(requested_by=self.student)
+
+        with mock.patch.object(
+            service.extractor,
+            "extract_and_save",
+            return_value=self.document_text,
+        ), mock.patch.object(
+            service.web_candidate_collector,
+            "collect",
+            return_value=[],
+        ):
+            return service.execute(
+                document_id=self.document.id,
+                celery_task_id=celery_task_id,
+            )
+
+    def _make_open_job(self, celery_task_id: str, delivery_count: int = 1):
+        self.document.status = DocumentStatus.PROCESSING
+        self.document.save(update_fields=["status", "updated_at"])
+
+        return AnalysisJob.objects.create(
+            document=self.document,
+            requested_by=self.student,
+            status=AnalysisJobStatus.RUNNING,
+            celery_task_id=celery_task_id,
+            delivery_count=delivery_count,
+        )
+
+    def test_task_is_configured_for_late_ack(self) -> None:
+        self.assertTrue(run_document_analysis.acks_late)
+        self.assertTrue(run_document_analysis.reject_on_worker_lost)
+        self.assertGreater(
+            settings.CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"],
+            settings.ANALYSIS_TASK_TIME_LIMIT,
+        )
+
+    def test_redelivery_reuses_open_job(self) -> None:
+        job = self._make_open_job(celery_task_id="tarea-1")
+
+        self._execute(celery_task_id="tarea-1")
+
+        self.assertEqual(AnalysisJob.objects.filter(document=self.document).count(), 1)
+        job.refresh_from_db()
+        self.document.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJobStatus.SUCCESS)
+        self.assertEqual(job.delivery_count, 2)
+        self.assertEqual(self.document.status, DocumentStatus.COMPLETED)
+
+    def test_repeated_execution_does_not_duplicate_results(self) -> None:
+        first_report = self._execute(celery_task_id="tarea-1")
+        first_findings = first_report.findings.count()
+
+        second_report = self._execute(celery_task_id="tarea-2")
+
+        self.assertEqual(first_report.id, second_report.id)
+        self.assertEqual(
+            AnalysisReport.objects.filter(document=self.document).count(),
+            1,
+        )
+        self.assertEqual(second_report.findings.count(), first_findings)
+        self.assertEqual(
+            DocumentText.objects.filter(document=self.document).count(),
+            1,
+        )
+
+    def test_too_many_deliveries_marks_failed_without_rerunning(self) -> None:
+        job = self._make_open_job(
+            celery_task_id="tarea-1",
+            delivery_count=MAX_ANALYSIS_DELIVERIES,
+        )
+
+        with self.assertRaises(DocumentAnalysisError):
+            self._execute(celery_task_id="tarea-1")
+
+        job.refresh_from_db()
+        self.document.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJobStatus.FAILED)
+        self.assertEqual(self.document.status, DocumentStatus.FAILED)
+        self.assertIn("inesperada", self.document.error_message)
+        self.assertFalse(
+            AnalysisReport.objects.filter(document=self.document).exists()
+        )
+
+    def test_orphan_job_from_other_task_is_reused_with_fresh_count(self) -> None:
+        job = self._make_open_job(
+            celery_task_id="tarea-vieja",
+            delivery_count=MAX_ANALYSIS_DELIVERIES,
+        )
+
+        self._execute(celery_task_id="tarea-nueva")
+
+        job.refresh_from_db()
+        self.assertEqual(AnalysisJob.objects.filter(document=self.document).count(), 1)
+        self.assertEqual(job.status, AnalysisJobStatus.SUCCESS)
+        self.assertEqual(job.delivery_count, 1)
+        self.assertEqual(job.celery_task_id, "tarea-nueva")

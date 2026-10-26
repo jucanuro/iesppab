@@ -630,3 +630,16 @@ if ANALYSIS_TASK_SOFT_TIME_LIMIT >= ANALYSIS_TASK_TIME_LIMIT:
     raise RuntimeError(
         "ANALYSIS_TASK_SOFT_TIME_LIMIT debe ser menor que ANALYSIS_TASK_TIME_LIMIT."
     )
+
+# Con acks_late, Redis reentrega una tarea no confirmada tras visibility_timeout
+# (segundos). DEBE ser mayor que ANALYSIS_TASK_TIME_LIMIT: si no, Redis
+# reencolaría un análisis que todavía está corriendo y se ejecutaría dos veces.
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "visibility_timeout": 3600,
+}
+
+if CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] <= ANALYSIS_TASK_TIME_LIMIT:
+    raise RuntimeError(
+        "CELERY_BROKER_TRANSPORT_OPTIONS['visibility_timeout'] debe ser mayor "
+        "que ANALYSIS_TASK_TIME_LIMIT."
+    )

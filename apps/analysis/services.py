@@ -49,6 +49,11 @@ from apps.reports.models import (
 
 logger = logging.getLogger(__name__)
 
+# Entregas máximas de la tarea Celery para un mismo intento de análisis. La
+# segunda cubre un reinicio del worker; más allá suele ser un documento que
+# tumba el worker (p. ej. OOM) y reintentarlo solo repetiría el fallo.
+MAX_ANALYSIS_DELIVERIES = 2
+
 
 class DocumentAnalysisError(Exception):
     pass
@@ -101,9 +106,31 @@ class DocumentAnalysisService:
         self.ai_detector = SpanishAIDetector()
         self.perplexity_detector = SpanishPerplexityDetector()
 
-    def execute(self, document_id: UUID) -> AnalysisReport:
+    def execute(
+        self,
+        document_id: UUID,
+        celery_task_id: str = "",
+    ) -> AnalysisReport:
         document = self._get_allowed_document(document_id=document_id)
-        job = self._create_job(document=document)
+        job = self._get_or_create_job(
+            document=document,
+            celery_task_id=celery_task_id,
+        )
+
+        if job.delivery_count > MAX_ANALYSIS_DELIVERIES:
+            message = (
+                "El análisis se interrumpió repetidamente porque el proceso "
+                "de análisis terminó de forma inesperada. Vuelve a intentarlo "
+                "o contacta al administrador."
+            )
+            logger.error(
+                "Análisis abandonado tras %s entregas. document_id=%s job_id=%s",
+                job.delivery_count,
+                document.id,
+                job.id,
+            )
+            self._mark_as_failed(document=document, job=job, message=message)
+            raise DocumentAnalysisError(message)
 
         try:
             self._mark_as_processing(
@@ -387,7 +414,77 @@ class DocumentAnalysisService:
 
         return document
 
-    def _create_job(self, document: Document) -> AnalysisJob:
+    def _get_or_create_job(
+        self,
+        document: Document,
+        celery_task_id: str,
+    ) -> AnalysisJob:
+        """
+        Reutiliza el AnalysisJob abierto del documento en vez de crear otro.
+
+        Con acks_late, si el worker muere la tarea se reentrega y vuelve a
+        llamar a execute(): reutilizar el job evita dejar el anterior huérfano
+        en RUNNING. Si el job abierto es de la misma tarea, es una reentrega y
+        se cuenta; si es de otra tarea, es un huérfano previo y se reinicia.
+        """
+
+        open_job = (
+            AnalysisJob.objects.filter(
+                document=document,
+                analysis_type=AnalysisType.FULL,
+                status__in=[
+                    AnalysisJobStatus.PENDING,
+                    AnalysisJobStatus.QUEUED,
+                    AnalysisJobStatus.RUNNING,
+                ],
+            )
+            .order_by("-attempt_number")
+            .first()
+        )
+
+        if open_job is None:
+            return self._create_job(
+                document=document,
+                celery_task_id=celery_task_id,
+            )
+
+        is_redelivery = bool(celery_task_id) and (
+            open_job.celery_task_id == celery_task_id
+        )
+
+        logger.warning(
+            "Reutilizando AnalysisJob abierto. document_id=%s job_id=%s "
+            "reentrega=%s",
+            document.id,
+            open_job.id,
+            is_redelivery,
+        )
+
+        open_job.delivery_count = (
+            open_job.delivery_count + 1 if is_redelivery else 1
+        )
+        open_job.celery_task_id = celery_task_id
+        open_job.requested_by = self.requested_by
+        open_job.current_step = "Preparando análisis"
+        open_job.error_message = ""
+        open_job.save(
+            update_fields=[
+                "delivery_count",
+                "celery_task_id",
+                "requested_by",
+                "current_step",
+                "error_message",
+                "updated_at",
+            ]
+        )
+
+        return open_job
+
+    def _create_job(
+        self,
+        document: Document,
+        celery_task_id: str = "",
+    ) -> AnalysisJob:
         latest_attempt = (
             AnalysisJob.objects.filter(
                 document=document,
@@ -405,6 +502,7 @@ class DocumentAnalysisService:
             analysis_type=AnalysisType.FULL,
             status=AnalysisJobStatus.PENDING,
             attempt_number=latest_attempt + 1,
+            celery_task_id=celery_task_id,
             current_step="Preparando análisis",
         )
 

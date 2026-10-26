@@ -94,12 +94,15 @@ class ReportDetailView(LoginRequiredMixin, View):
 
             # "En progreso" cubre tanto el hueco entre encolar la tarea y que
             # el worker cree el AnalysisJob (ahí solo cambia Document.status a
-            # QUEUED) como el trabajo ya corriendo.
+            # QUEUED) como el trabajo ya corriendo. Un documento FAILED nunca
+            # está en progreso aunque su job haya quedado huérfano en RUNNING
+            # (worker muerto): así se muestra el botón para reanalizar.
             analysis_in_progress = document.status in {
                 DocumentStatus.QUEUED,
                 DocumentStatus.PROCESSING,
             } or (
-                analysis_job is not None
+                document.status != DocumentStatus.FAILED
+                and analysis_job is not None
                 and analysis_job.status
                 in {
                     AnalysisJobStatus.PENDING,

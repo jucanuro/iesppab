@@ -1166,9 +1166,7 @@ class AnalysisRedeliveryIdempotencyTests(TestCase):
         self.assertEqual(job.celery_task_id, "tarea-nueva")
 
 
-class AnalyzeEnqueueTests(TestCase):
-    """El encolado del análisis es atómico: un doble envío encola una sola vez."""
-
+class AnalyzeViewTestMixin:
     def setUp(self) -> None:
         self.institution = Institution.objects.create(
             name="Instituto de prueba",
@@ -1185,6 +1183,10 @@ class AnalyzeEnqueueTests(TestCase):
 
     def _post(self, document: Document):
         return self.client.post(reverse("analysis:analyze", args=[document.id]))
+
+
+class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
+    """El encolado del análisis es atómico: un doble envío encola una sola vez."""
 
     @mock.patch("apps.analysis.views.run_document_analysis.delay")
     def test_double_submit_enqueues_once(self, delay: mock.Mock) -> None:
@@ -1229,3 +1231,39 @@ class AnalyzeEnqueueTests(TestCase):
         document.refresh_from_db()
         self.assertEqual(document.status, DocumentStatus.FAILED)
         self.assertIn("No se pudo enviar", document.error_message)
+
+
+class FailedDocumentReanalysisTests(AnalyzeViewTestMixin, TestCase):
+    """Un documento FAILED se puede volver a analizar."""
+
+    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    def test_failed_document_can_be_enqueued_again(self, delay: mock.Mock) -> None:
+        document = make_test_document(
+            self.institution,
+            self.student,
+            status=DocumentStatus.FAILED,
+        )
+
+        self._post(document)
+
+        delay.assert_called_once()
+        document.refresh_from_db()
+        self.assertEqual(document.status, DocumentStatus.QUEUED)
+        self.assertEqual(document.error_message, "")
+
+    def test_failed_document_with_orphan_running_job_shows_reanalyze(self) -> None:
+        document = make_test_document(
+            self.institution,
+            self.student,
+            status=DocumentStatus.FAILED,
+        )
+        AnalysisJob.objects.create(
+            document=document,
+            requested_by=self.student,
+            status=AnalysisJobStatus.RUNNING,
+        )
+
+        response = self.client.get(reverse("reports:detail", args=[document.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["analysis_in_progress"])

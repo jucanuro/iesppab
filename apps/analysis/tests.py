@@ -8,7 +8,7 @@ from unittest import mock
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.files.base import ContentFile
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -1335,3 +1335,53 @@ class SweepStaleJobsTests(TestCase):
 
         old_job.refresh_from_db()
         self.assertEqual(old_job.status, AnalysisJobStatus.RUNNING)
+
+    def test_default_threshold_is_greater_than_time_limit(self) -> None:
+        self.assertGreater(
+            settings.ANALYSIS_STALE_JOB_MINUTES * 60,
+            settings.ANALYSIS_TASK_TIME_LIMIT,
+        )
+
+    def test_threshold_below_time_limit_is_rejected(self) -> None:
+        minutes = settings.ANALYSIS_TASK_TIME_LIMIT // 60
+
+        with self.assertRaises(CommandError):
+            call_command(
+                "sweep_stale_jobs",
+                f"--older-than-minutes={minutes}",
+                stdout=StringIO(),
+            )
+
+    def test_job_running_just_under_time_limit_is_untouched(self) -> None:
+        job = self._make_running_job(
+            "Casi al límite",
+            age=timedelta(seconds=settings.ANALYSIS_TASK_TIME_LIMIT - 60),
+        )
+
+        call_command("sweep_stale_jobs", stdout=StringIO())
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJobStatus.RUNNING)
+
+    def test_redelivered_job_with_old_created_at_is_untouched(self) -> None:
+        job = self._make_running_job("Reentregado", age=timedelta(hours=3))
+        AnalysisJob.objects.filter(pk=job.pk).update(updated_at=timezone.now())
+
+        call_command("sweep_stale_jobs", stdout=StringIO())
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJobStatus.RUNNING)
+
+    def test_requeued_document_is_not_failed_by_orphan_job(self) -> None:
+        job = self._make_running_job("Reencolado", age=timedelta(hours=3))
+        Document.objects.filter(pk=job.document_id).update(
+            status=DocumentStatus.QUEUED,
+            updated_at=timezone.now(),
+        )
+
+        call_command("sweep_stale_jobs", stdout=StringIO())
+
+        job.refresh_from_db()
+        job.document.refresh_from_db()
+        self.assertEqual(job.status, AnalysisJobStatus.FAILED)
+        self.assertEqual(job.document.status, DocumentStatus.QUEUED)

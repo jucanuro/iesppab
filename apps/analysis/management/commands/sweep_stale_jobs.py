@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
 from apps.analysis.models import AnalysisJob, AnalysisJobStatus
 from apps.documents.models import DocumentStatus
 
-DEFAULT_OLDER_THAN_MINUTES = 60
+# Debe ser mayor que ANALYSIS_TASK_TIME_LIMIT: un job que lleva menos que eso
+# sin actualizarse puede seguir corriendo legítimamente.
+DEFAULT_OLDER_THAN_MINUTES = settings.ANALYSIS_STALE_JOB_MINUTES
 
 STALE_JOB_ERROR_CODE = "STALE_WORKER_LOST"
 STALE_JOB_MESSAGE = (
@@ -19,11 +22,12 @@ STALE_JOB_MESSAGE = (
 
 # Un AnalysisJob solo existe en PENDING/QUEUED por microsegundos dentro de
 # `DocumentAnalysisService.execute` antes de pasar a RUNNING (no hay espera
-# real en cola a nivel de fila de BD, eso lo maneja el broker de Celery). Un
-# job normal tarda ~2 minutos en cualquiera de sus pasos, así que cualquier
-# fila en uno de estos tres estados con más de `older_than_minutes` de
-# antigüedad solo puede explicarse por un worker que murió a mitad de tarea
-# (OOM-kill, kill -9, caída del servidor) y nunca actualizó su propio estado.
+# real en cola a nivel de fila de BD, eso lo maneja el broker de Celery). La
+# tarea no puede pasar de ANALYSIS_TASK_TIME_LIMIT, y cada paso (y cada
+# reentrega que reutiliza el job) renueva `updated_at`, así que una fila en
+# uno de estos tres estados sin actualizarse en más de `older_than_minutes`
+# solo puede explicarse por un worker que murió a mitad de tarea (OOM-kill,
+# kill -9, caída del servidor) y nunca actualizó su propio estado.
 STALE_STATUSES = [
     AnalysisJobStatus.PENDING,
     AnalysisJobStatus.QUEUED,
@@ -69,12 +73,20 @@ class Command(BaseCommand):
         older_than_minutes: int = options["older_than_minutes"]
         dry_run: bool = options["dry_run"]
 
+        if older_than_minutes * 60 <= settings.ANALYSIS_TASK_TIME_LIMIT:
+            raise CommandError(
+                "--older-than-minutes debe ser mayor que "
+                "ANALYSIS_TASK_TIME_LIMIT "
+                f"({settings.ANALYSIS_TASK_TIME_LIMIT // 60} min) para no "
+                "marcar análisis que siguen corriendo."
+            )
+
         cutoff = timezone.now() - timedelta(minutes=older_than_minutes)
 
         stale_jobs = (
             AnalysisJob.objects.select_related("document")
-            .filter(status__in=STALE_STATUSES, created_at__lt=cutoff)
-            .order_by("created_at")
+            .filter(status__in=STALE_STATUSES, updated_at__lt=cutoff)
+            .order_by("updated_at")
         )
 
         if not stale_jobs.exists():
@@ -92,13 +104,16 @@ class Command(BaseCommand):
             document = job.document
             previous_job_status = job.status
             previous_document_status = document.status
-            will_update_document = previous_document_status in DOCUMENT_IN_PROGRESS_STATUSES
+            will_update_document = (
+                previous_document_status in DOCUMENT_IN_PROGRESS_STATUSES
+                and document.updated_at < cutoff
+            )
 
             self.stdout.write(
                 f"job={job.id} document={document.id} "
                 f"estado_previo={previous_job_status} "
                 f"paso={job.current_step!r} "
-                f"creado={job.created_at.isoformat()} "
+                f"actualizado={job.updated_at.isoformat()} "
                 f"documento_estado_previo={previous_document_status} "
                 f"documento_se_actualiza={will_update_document}"
             )
@@ -113,9 +128,13 @@ class Command(BaseCommand):
                     .get(pk=job.pk)
                 )
 
-                # Re-chequea bajo el lock: si un worker real terminó el job
-                # justo entre el SELECT de arriba y este UPDATE, no lo pisamos.
-                if locked_job.status not in STALE_STATUSES:
+                # Re-chequea bajo el lock: si un worker real terminó (o
+                # reanudó) el job justo entre el SELECT de arriba y este
+                # UPDATE, no lo pisamos.
+                if (
+                    locked_job.status not in STALE_STATUSES
+                    or locked_job.updated_at >= cutoff
+                ):
                     self.stdout.write(
                         f"  -> omitido, ya no está huérfano "
                         f"(estado actual={locked_job.status})"
@@ -140,7 +159,13 @@ class Command(BaseCommand):
 
                 locked_document = locked_job.document
 
-                if locked_document.status in DOCUMENT_IN_PROGRESS_STATUSES:
+                # Si el documento se tocó después del corte, un intento más
+                # nuevo lo reencoló (p. ej. reanalizar un FAILED cuyo job
+                # quedó huérfano): ese análisis sigue vivo y no lo pisamos.
+                if (
+                    locked_document.status in DOCUMENT_IN_PROGRESS_STATUSES
+                    and locked_document.updated_at < cutoff
+                ):
                     locked_document.status = DocumentStatus.FAILED
                     locked_document.error_message = STALE_JOB_MESSAGE
                     locked_document.save(

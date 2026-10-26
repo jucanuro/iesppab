@@ -643,3 +643,17 @@ if CELERY_BROKER_TRANSPORT_OPTIONS["visibility_timeout"] <= ANALYSIS_TASK_TIME_L
         "CELERY_BROKER_TRANSPORT_OPTIONS['visibility_timeout'] debe ser mayor "
         "que ANALYSIS_TASK_TIME_LIMIT."
     )
+
+
+# Antigüedad (minutos sin actualizarse) a partir de la cual sweep_stale_jobs
+# da por muerto un AnalysisJob en PENDING/QUEUED/RUNNING. Debe ser mayor que
+# ANALYSIS_TASK_TIME_LIMIT: antes de eso el análisis puede seguir corriendo.
+ANALYSIS_STALE_JOB_MINUTES = env_int(
+    "ANALYSIS_STALE_JOB_MINUTES",
+    ANALYSIS_TASK_TIME_LIMIT // 60 + 10,
+)
+
+if ANALYSIS_STALE_JOB_MINUTES * 60 <= ANALYSIS_TASK_TIME_LIMIT:
+    raise RuntimeError(
+        "ANALYSIS_STALE_JOB_MINUTES debe ser mayor que ANALYSIS_TASK_TIME_LIMIT."
+    )

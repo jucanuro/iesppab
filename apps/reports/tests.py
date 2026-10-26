@@ -3,7 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.files.base import ContentFile
-from django.test import TestCase
+from django.db import connection
+from django.db.migrations.executor import MigrationExecutor
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
 from apps.accounts.models import User, UserRole
@@ -445,3 +447,73 @@ class ResolveAnalyzedContentFallbackTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+
+
+class ExclusionFlagsMigrationTests(TransactionTestCase):
+    """
+    Los reportes existentes se calcularon sin excluir citas: tras la
+    migración deben quedar con exclude_quotes=False (para no mostrar
+    "Excluidas: citas"), y los nuevos con True por defecto.
+    """
+
+    migrate_from = ("reports", "0003_analysisreport_analyzed_content")
+    migrate_to = ("reports", "0004_analysisreport_exclusion_flags")
+
+    def test_existing_reports_get_exclude_quotes_false(self) -> None:
+        # El estado "antes" debe incluir el resto de las apps en su última
+        # migración (p. ej. Institution.email_domain); solo reports retrocede.
+        executor = MigrationExecutor(connection)
+        before = [
+            node
+            for node in executor.loader.graph.leaf_nodes()
+            if node[0] != "reports"
+        ] + [self.migrate_from]
+        executor.migrate(before)
+        old_apps = executor.loader.project_state(before).apps
+
+        Institution = old_apps.get_model("core", "Institution")
+        User = old_apps.get_model("accounts", "User")
+        Document = old_apps.get_model("documents", "Document")
+        OldReport = old_apps.get_model("reports", "AnalysisReport")
+
+        institution = Institution.objects.create(
+            name="Instituto",
+            slug="instituto",
+            email_domain="",
+        )
+        user = User.objects.create(
+            username="alumno-migracion",
+            email="alumno-migracion@example.com",
+            institution=institution,
+        )
+        document = Document.objects.create(
+            institution=institution,
+            owner=user,
+            uploaded_by=user,
+            title="Documento previo",
+            original_filename="previo.pdf",
+            original_file="private/previo.pdf",
+            mime_type="application/pdf",
+            file_size_bytes=10,
+            sha256_hash="hash-previo",
+        )
+        old_report = OldReport.objects.create(document=document)
+
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        after = [node for node in before if node != self.migrate_from] + [
+            self.migrate_to
+        ]
+        executor.migrate(after)
+        new_apps = executor.loader.project_state(after).apps
+        MigratedReport = new_apps.get_model("reports", "AnalysisReport")
+
+        migrated = MigratedReport.objects.get(pk=old_report.pk)
+        self.assertFalse(migrated.exclude_quotes)
+        self.assertTrue(migrated.exclude_bibliography)
+
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+        self.assertTrue(AnalysisReport._meta.get_field("exclude_quotes").default)

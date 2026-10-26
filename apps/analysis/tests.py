@@ -1393,6 +1393,90 @@ class AnalysisRedeliveryIdempotencyTests(TestCase):
         self.assertEqual(job.celery_task_id, "tarea-nueva")
 
 
+@override_settings(
+    OAI_HARVEST_ENABLED=False,
+    WEB_ANALYSIS_ENABLED=False,
+    PERPLEXITY_AI_DETECTION_ENABLED=False,
+)
+class AnalysisExclusionOptionsTests(TestCase):
+    """Las opciones de exclusión llegan al reporte y cambian lo analizado."""
+
+    BODY = AcademicTextFilterReferenceTailTests.BODY
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.document = make_test_document(self.institution, self.student)
+        content = (
+            f"{self.BODY} Segun el autor “la practica reflexiva transforma "
+            "la escuela” en contextos rurales.\n\nREFERENCIAS\n\n"
+            "Autor, A. (2020). Obra citada. Editorial Academica."
+        )
+        self.document_text = DocumentText.objects.create(
+            document=self.document,
+            content=content,
+            word_count=len(content.split()),
+            character_count=len(content),
+        )
+
+    def _execute(self, **options):
+        service = DocumentAnalysisService(requested_by=self.student)
+
+        with mock.patch.object(
+            service.extractor,
+            "extract_and_save",
+            return_value=self.document_text,
+        ), mock.patch.object(
+            service.web_candidate_collector,
+            "collect",
+            return_value=[],
+        ):
+            return service.execute(document_id=self.document.id, **options)
+
+    def test_defaults_exclude_quotes_and_bibliography(self) -> None:
+        report = self._execute()
+
+        self.assertTrue(report.exclude_quotes)
+        self.assertTrue(report.exclude_bibliography)
+        self.assertNotIn("Editorial Academica", report.analyzed_content)
+        # La cita se marca, no se borra del texto analizado.
+        self.assertIn("“la practica reflexiva", report.analyzed_content)
+        [[start, end]] = report.summary["excluded_quote_ranges"]
+        self.assertEqual(
+            report.analyzed_content[start:end],
+            "“la practica reflexiva transforma la escuela”",
+        )
+
+    def test_options_off_keep_bibliography_and_quotes(self) -> None:
+        report = self._execute(exclude_quotes=False, exclude_bibliography=False)
+
+        self.assertFalse(report.exclude_quotes)
+        self.assertFalse(report.exclude_bibliography)
+        self.assertIn("Editorial Academica", report.analyzed_content)
+        self.assertEqual(report.summary["excluded_quote_ranges"], [])
+
+    def test_knowledge_index_never_learns_bibliography(self) -> None:
+        self._execute(exclude_bibliography=False)
+
+        indexed = " ".join(
+            DocumentKnowledgeChunk.objects.filter(
+                document=self.document,
+            ).values_list("text_excerpt", flat=True)
+        )
+
+        self.assertIn("acompanamiento", indexed)
+        self.assertNotIn("Editorial Academica", indexed)
+
+
 class AnalyzeViewTestMixin:
     def setUp(self) -> None:
         self.institution = Institution.objects.create(
@@ -1422,9 +1506,33 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
         self._post(document)
         self._post(document)
 
-        delay.assert_called_once_with(str(document.id), str(self.student.id))
+        delay.assert_called_once_with(
+            str(document.id),
+            str(self.student.id),
+            exclude_quotes=True,
+            exclude_bibliography=True,
+        )
         document.refresh_from_db()
         self.assertEqual(document.status, DocumentStatus.QUEUED)
+
+    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    def test_unchecked_exclusion_options_are_sent_as_false(
+        self,
+        delay: mock.Mock,
+    ) -> None:
+        document = make_test_document(self.institution, self.student)
+
+        self.client.post(
+            reverse("analysis:analyze", args=[document.id]),
+            {"exclusion_options": "1", "exclude_bibliography": "on"},
+        )
+
+        delay.assert_called_once_with(
+            str(document.id),
+            str(self.student.id),
+            exclude_quotes=False,
+            exclude_bibliography=True,
+        )
 
     @mock.patch("apps.analysis.views.run_document_analysis.delay")
     def test_document_in_progress_is_not_enqueued(self, delay: mock.Mock) -> None:

@@ -93,6 +93,19 @@ class AnalysisReport(TimeStampedModel):
             "para que coincidan exactamente."
         ),
     )
+    exclude_quotes = models.BooleanField(
+        default=True,
+        verbose_name=_("Excluir citas textuales"),
+        help_text=_(
+            "Si las citas cortas entre comillas se descontaron del % de "
+            "similitud. Los reportes previos a esta opción quedan en False "
+            "porque se calcularon sin excluirlas."
+        ),
+    )
+    exclude_bibliography = models.BooleanField(
+        default=True,
+        verbose_name=_("Excluir bibliografía y anexos"),
+    )
     engine_version = models.CharField(
         max_length=80,
         default="vql-mvp-1.0.0",

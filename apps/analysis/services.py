@@ -111,7 +111,15 @@ class DocumentAnalysisService:
         self,
         document_id: UUID,
         celery_task_id: str = "",
+        exclude_quotes: bool = True,
+        exclude_bibliography: bool = True,
     ) -> AnalysisReport:
+        """
+        `exclude_quotes`/`exclude_bibliography` son las opciones del
+        análisis (como en Turnitin): las citas cortas entre comillas y la
+        bibliografía/anexos no cuentan para el % de similitud. Se guardan
+        en el reporte para mostrar qué se excluyó.
+        """
         document = self._get_allowed_document(document_id=document_id)
         job = self._get_or_create_job(
             document=document,
@@ -146,9 +154,31 @@ class DocumentAnalysisService:
 
             filtered_text = self.text_filter.filter_for_similarity(
                 content=document_text.content,
+                exclude_bibliography=exclude_bibliography,
             )
 
             analysis_content = filtered_text.content or document_text.content
+
+            # Las citas se MARCAN, no se borran: los offsets de los hallazgos
+            # se calculan sobre `analysis_content` y el visor los pinta ahí.
+            quoted_ranges = (
+                self.text_filter.find_quoted_ranges(analysis_content)
+                if exclude_quotes
+                else []
+            )
+
+            # La base de conocimiento nunca aprende bibliografía/anexos,
+            # aunque este análisis los incluya: son referencias que todos
+            # citan y ensuciarían las comparaciones de otros documentos.
+            if exclude_bibliography:
+                indexing_content = analysis_content
+            else:
+                indexing_content = (
+                    self.text_filter.filter_for_similarity(
+                        content=document_text.content,
+                    ).content
+                    or document_text.content
+                )
 
             self._mark_job_step(
                 job=job,
@@ -157,7 +187,7 @@ class DocumentAnalysisService:
 
             self.knowledge_indexer.index(
                 document_text=document_text,
-                content=analysis_content,
+                content=indexing_content,
             )
 
             self._mark_job_step(
@@ -175,6 +205,7 @@ class DocumentAnalysisService:
             internal_result = self.internal_similarity_engine.analyze(
                 content=analysis_content,
                 candidates=fingerprint_candidates,
+                excluded_ranges=quoted_ranges,
             )
 
             self._mark_job_step(
@@ -194,6 +225,7 @@ class DocumentAnalysisService:
             web_result = self.web_similarity_engine.analyze(
                 content=analysis_content,
                 web_pages=web_pages,
+                excluded_ranges=quoted_ranges,
             )
 
             self._mark_job_step(
@@ -217,6 +249,7 @@ class DocumentAnalysisService:
                 content_length=len(analysis_content),
                 internal_ranges=internal_result.all_matched_ranges,
                 web_ranges=web_result.all_matched_ranges,
+                excluded_ranges=quoted_ranges,
             )
 
             with transaction.atomic():
@@ -231,6 +264,9 @@ class DocumentAnalysisService:
                     excluded_sections=filtered_text.excluded_sections,
                     analyzed_content=analysis_content,
                     ai_score_breakdown=ai_score_breakdown,
+                    exclude_quotes=exclude_quotes,
+                    exclude_bibliography=exclude_bibliography,
+                    quoted_ranges=quoted_ranges,
                 )
 
                 self._replace_internal_similarity_findings(
@@ -747,6 +783,9 @@ class DocumentAnalysisService:
         excluded_sections: list[str],
         analyzed_content: str,
         ai_score_breakdown: dict | None = None,
+        exclude_quotes: bool = True,
+        exclude_bibliography: bool = True,
+        quoted_ranges: list[tuple[int, int]] | None = None,
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
             similarity_percent=total_similarity_percent,
@@ -764,12 +803,19 @@ class DocumentAnalysisService:
                 "ai_detector": ai_detector,
                 "risk_level": risk_level,
                 "analyzed_content": analyzed_content,
+                "exclude_quotes": exclude_quotes,
+                "exclude_bibliography": exclude_bibliography,
                 "summary": {
                     "engine": "internal-web-academic-v2",
                     "internal_similarity_algorithm": "knowledge-chunks-shingling",
                     "web_similarity_algorithm": "brave-search-html-pdf-shingling",
                     "ai_score_breakdown": ai_score_breakdown or {},
                     "excluded_sections": excluded_sections,
+                    # Rangos de `analyzed_content` descontados del %: el
+                    # visor y el PDF no pintan similitud dentro de ellos.
+                    "excluded_quote_ranges": [
+                        [start, end] for start, end in quoted_ranges or []
+                    ],
                     "note": "La similitud web depende de fuentes públicas encontradas y accesibles.",
                 },
                 "engine_version": "vql-web-academic-v2.1.0",

@@ -63,6 +63,7 @@ def resolve_analyzed_content(report: AnalysisReport) -> str:
 
     filtered = AcademicTextFilter().filter_for_similarity(
         content=extracted_text.content,
+        exclude_bibliography=report.exclude_bibliography,
     )
 
     return filtered.content or extracted_text.content

@@ -27,6 +27,19 @@ _ANALYZABLE_STATUSES = [
 logger = logging.getLogger(__name__)
 
 
+def _read_exclusion_flag(request: HttpRequest, name: str) -> bool:
+    """
+    Las opciones de exclusión llegan como checkbox junto a un campo oculto
+    `exclusion_options` que indica que el formulario las ofrecía. Un
+    formulario sin esas opciones (botón «Reanalizar» de la lista) usa el
+    default: excluir.
+    """
+    if "exclusion_options" not in request.POST:
+        return True
+
+    return request.POST.get(name) == "on"
+
+
 class DocumentAnalyzeView(LoginRequiredMixin, View):
     """
     Encola el análisis del documento para que corra en background (Celery),
@@ -72,7 +85,18 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
                 return redirect("reports:detail", pk=pk)
 
             try:
-                run_document_analysis.delay(str(pk), str(request.user.id))
+                run_document_analysis.delay(
+                    str(pk),
+                    str(request.user.id),
+                    exclude_quotes=_read_exclusion_flag(
+                        request,
+                        "exclude_quotes",
+                    ),
+                    exclude_bibliography=_read_exclusion_flag(
+                        request,
+                        "exclude_bibliography",
+                    ),
+                )
             except Exception:
                 # Sin esto el documento quedaría en QUEUED para siempre.
                 Document.objects.filter(

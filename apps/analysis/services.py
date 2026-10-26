@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
+from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
 from apps.analysis.engines.similarity import (
@@ -951,47 +952,22 @@ class DocumentAnalysisService:
         content_length: int,
         internal_ranges: Iterable[tuple[int, int]],
         web_ranges: Iterable[tuple[int, int]],
+        excluded_ranges: Iterable[tuple[int, int]] = (),
     ) -> Decimal:
         # Recibe el conjunto COMPLETO de rangos coincidentes (todos los que
         # superaron el umbral en cada motor), no la lista `.matches` ya
         # truncada a MAX_MATCHES. El truncado solo aplica a la persistencia
         # del detalle (ReportSource/ReportFinding), nunca a este número
-        # principal que define `risk_level`.
-        ranges: list[tuple[int, int]] = [
-            (start, end) for start, end in internal_ranges
-        ]
-        ranges.extend((start, end) for start, end in web_ranges)
+        # principal que define `risk_level`. Las citas excluidas no cuentan
+        # ni en el numerador ni en el denominador.
+        ranges: list[tuple[int, int]] = list(internal_ranges)
+        ranges.extend(web_ranges)
 
-        if content_length <= 0 or not ranges:
-            return Decimal("0.00")
-
-        merged_ranges = self._merge_ranges(ranges=ranges)
-        matched_chars = sum(end - start for start, end in merged_ranges)
-
-        percent = (
-            Decimal(matched_chars) / Decimal(content_length)
-        ) * Decimal("100")
-
-        return min(percent, Decimal("100.00")).quantize(Decimal("0.01"))
-
-    def _merge_ranges(
-        self,
-        ranges: list[tuple[int, int]],
-    ) -> list[tuple[int, int]]:
-        sorted_ranges = sorted(ranges)
-        merged: list[tuple[int, int]] = []
-
-        for start, end in sorted_ranges:
-            if not merged or start > merged[-1][1]:
-                merged.append((start, end))
-            else:
-                previous_start, previous_end = merged[-1]
-                merged[-1] = (
-                    previous_start,
-                    max(previous_end, end),
-                )
-
-        return merged
+        return calculate_similarity_percent(
+            content_length=content_length,
+            matched_ranges=ranges,
+            excluded_ranges=excluded_ranges,
+        )
 
     def _resolve_risk_level(
         self,

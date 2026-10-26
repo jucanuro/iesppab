@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
+
+from apps.analysis.engines.exclusions import (
+    build_chunks,
+    calculate_similarity_percent,
+    shingles_without_boundary,
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +67,7 @@ class InternalSimilarityEngine:
         self,
         content: str,
         candidates: list[CandidateKnowledgeChunk],
+        excluded_ranges: Sequence[tuple[int, int]] = (),
     ) -> SimilarityAnalysisResult:
         if not content.strip() or not candidates:
             return SimilarityAnalysisResult(
@@ -68,7 +76,10 @@ class InternalSimilarityEngine:
                 all_matched_ranges=[],
             )
 
-        current_chunks = self._build_current_chunks(content=content)
+        current_chunks = self._build_current_chunks(
+            content=content,
+            excluded_ranges=excluded_ranges,
+        )
 
         # Los shingles de cada candidato no cambian entre fragmentos del
         # documento actual, así que se construyen una sola vez aquí en vez
@@ -134,6 +145,7 @@ class InternalSimilarityEngine:
         similarity_percent = self._calculate_total_similarity(
             content_length=len(content),
             matched_ranges=all_matched_ranges,
+            excluded_ranges=excluded_ranges,
         )
 
         return SimilarityAnalysisResult(
@@ -197,38 +209,19 @@ class InternalSimilarityEngine:
     def _build_current_chunks(
         self,
         content: str,
+        excluded_ranges: Sequence[tuple[int, int]] = (),
     ) -> list[tuple[str, str, int, int]]:
-        words_with_offsets = self._words_with_offsets(content=content)
-
-        if len(words_with_offsets) < self.MIN_WORDS:
-            return []
-
-        chunks: list[tuple[str, str, int, int]] = []
-
-        for start_index in range(0, len(words_with_offsets), self.CHUNK_STEP):
-            selected_words = words_with_offsets[
-                start_index : start_index + self.CHUNK_WORD_SIZE
-            ]
-
-            if len(selected_words) < self.MIN_WORDS:
-                continue
-
-            start_offset = selected_words[0][1]
-            end_offset = selected_words[-1][2]
-            chunk_text = content[start_offset:end_offset].strip()
-            normalized_chunk = self._normalize(chunk_text)
-
-            if normalized_chunk:
-                chunks.append(
-                    (
-                        chunk_text,
-                        normalized_chunk,
-                        start_offset,
-                        end_offset,
-                    )
-                )
-
-        return chunks
+        # Las palabras de una cita excluida no participan de los shingles
+        # del fragmento (ver `exclusions.build_chunks`).
+        return build_chunks(
+            content=content,
+            words_with_offsets=self._words_with_offsets(content=content),
+            excluded_ranges=excluded_ranges,
+            chunk_word_size=self.CHUNK_WORD_SIZE,
+            chunk_step=self.CHUNK_STEP,
+            min_words=self.MIN_WORDS,
+            normalize=self._normalize,
+        )
 
     def _words_with_offsets(self, content: str) -> list[tuple[str, int, int]]:
         matches = re.finditer(
@@ -243,7 +236,8 @@ class InternalSimilarityEngine:
         ]
 
     def _build_shingles(self, text: str) -> set[str]:
-        return set(self._build_shingle_sequence(text))
+        # Ningún shingle cruza el borde de una cita excluida.
+        return shingles_without_boundary(text.split(), self.SHINGLE_SIZE)
 
     def _build_shingle_sequence(self, text: str) -> list[str]:
         """
@@ -298,31 +292,10 @@ class InternalSimilarityEngine:
         self,
         content_length: int,
         matched_ranges: list[tuple[int, int]],
+        excluded_ranges: Sequence[tuple[int, int]] = (),
     ) -> Decimal:
-        if content_length <= 0 or not matched_ranges:
-            return Decimal("0.00")
-
-        merged_ranges = self._merge_ranges(ranges=matched_ranges)
-        matched_chars = sum(end - start for start, end in merged_ranges)
-
-        percent = (
-            Decimal(matched_chars) / Decimal(content_length)
-        ) * Decimal("100")
-
-        return min(percent, Decimal("100.00")).quantize(Decimal("0.01"))
-
-    def _merge_ranges(
-        self,
-        ranges: list[tuple[int, int]],
-    ) -> list[tuple[int, int]]:
-        sorted_ranges = sorted(ranges)
-        merged: list[tuple[int, int]] = []
-
-        for start, end in sorted_ranges:
-            if not merged or start > merged[-1][1]:
-                merged.append((start, end))
-            else:
-                previous_start, previous_end = merged[-1]
-                merged[-1] = (previous_start, max(previous_end, end))
-
-        return merged
+        return calculate_similarity_percent(
+            content_length=content_length,
+            matched_ranges=matched_ranges,
+            excluded_ranges=excluded_ranges,
+        )

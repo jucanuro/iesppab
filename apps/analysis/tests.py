@@ -4,16 +4,18 @@ from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
+from uuid import uuid4
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management import CommandError, call_command
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
+from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
@@ -590,6 +592,121 @@ class SimilarityTotalCoverageTests(TestCase):
         self.assertGreater(
             result.similarity_percent - truncated_percent,
             Decimal("30.00"),
+        )
+
+
+class QuoteExclusionSimilarityTests(SimpleTestCase):
+    """
+    Las citas textuales marcadas como excluidas no suman al % de
+    similitud, pero el plagio fuera de comillas sí.
+    """
+
+    OWN_BEFORE = " ".join(f"propio{i}" for i in range(80))
+    OWN_AFTER = " ".join(f"redaccion{i}" for i in range(80))
+    QUOTE = " ".join(f"citado{i}" for i in range(40))
+    PLAGIARISM = " ".join(f"copiado{i}" for i in range(40))
+
+    def _candidate(self, text: str) -> CandidateKnowledgeChunk:
+        engine = InternalSimilarityEngine()
+        return CandidateKnowledgeChunk(
+            document_id=uuid4(),
+            title="Fuente",
+            owner_name="Repositorio",
+            text_excerpt=text,
+            normalized_text=engine._normalize(text),
+        )
+
+    def _analyze(self, content: str, exclude_quotes: bool):
+        excluded_ranges = (
+            AcademicTextFilter().find_quoted_ranges(content)
+            if exclude_quotes
+            else []
+        )
+        return InternalSimilarityEngine().analyze(
+            content=content,
+            candidates=[self._candidate(f"{self.QUOTE} {self.PLAGIARISM}")],
+            excluded_ranges=excluded_ranges,
+        )
+
+    def test_copied_quote_does_not_count(self) -> None:
+        thesis = f"{self.OWN_BEFORE} “{self.QUOTE}” {self.OWN_AFTER}"
+
+        self.assertGreater(
+            self._analyze(thesis, exclude_quotes=False).similarity_percent,
+            Decimal("0.00"),
+        )
+        self.assertEqual(
+            self._analyze(thesis, exclude_quotes=True).similarity_percent,
+            Decimal("0.00"),
+        )
+
+    def test_plagiarism_outside_quotes_still_counts(self) -> None:
+        thesis = (
+            f"{self.OWN_BEFORE} {self.PLAGIARISM} {self.OWN_AFTER} "
+            f"“{self.QUOTE}”."
+        )
+
+        result = self._analyze(thesis, exclude_quotes=True)
+
+        self.assertGreater(result.similarity_percent, Decimal("0.00"))
+        quote_start = thesis.index("“")
+        self.assertTrue(
+            all(start < quote_start for start, _ in result.all_matched_ranges)
+        )
+
+    def test_unclosed_quote_excludes_nothing(self) -> None:
+        thesis = f"{self.OWN_BEFORE} “{self.QUOTE} {self.OWN_AFTER}"
+
+        self.assertEqual(
+            self._analyze(thesis, exclude_quotes=True).similarity_percent,
+            self._analyze(thesis, exclude_quotes=False).similarity_percent,
+        )
+        self.assertGreater(
+            self._analyze(thesis, exclude_quotes=True).similarity_percent,
+            Decimal("0.00"),
+        )
+
+    def test_no_artificial_shingle_across_quote_boundary(self) -> None:
+        content = (
+            f"{self.OWN_BEFORE} uno dos “{self.QUOTE}” tres cuatro "
+            f"{self.OWN_AFTER}"
+        )
+        engine = InternalSimilarityEngine()
+        chunks = engine._build_current_chunks(
+            content=content,
+            excluded_ranges=AcademicTextFilter().find_quoted_ranges(content),
+        )
+
+        shingles = set().union(
+            *(engine._build_shingles(normalized) for _, normalized, _, _ in chunks)
+        )
+
+        # Las palabras a ambos lados de la cita existen, pero nunca juntas.
+        self.assertIn("propio78 propio79 uno dos", shingles)
+        self.assertIn("tres cuatro redaccion0 redaccion1", shingles)
+        self.assertFalse(
+            any("dos tres" in shingle for shingle in shingles),
+        )
+        self.assertFalse(any("citado" in shingle for shingle in shingles))
+
+    def test_without_exclusions_chunks_are_unchanged(self) -> None:
+        content = f"{self.OWN_BEFORE} “{self.QUOTE}” {self.OWN_AFTER}"
+        engine = InternalSimilarityEngine()
+
+        for chunk_text, normalized, _, _ in engine._build_current_chunks(
+            content=content,
+        ):
+            self.assertEqual(normalized, engine._normalize(chunk_text))
+
+    def test_excluded_chars_leave_numerator_and_denominator(self) -> None:
+        # 50 caracteres coinciden, 20 de ellos son cita: cuentan 40 de 80.
+        self.assertEqual(
+            calculate_similarity_percent(
+                content_length=100,
+                matched_ranges=[(0, 50)],
+                excluded_ranges=[(40, 60)],
+            ),
+            Decimal("50.00"),
         )
 
 

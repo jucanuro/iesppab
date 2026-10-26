@@ -186,7 +186,26 @@ class AcademicTextFilter:
     # ítems/tablas del documento.
     RUNNING_LINE_COMPANION_MIN_COUNT_RATIO = 0.8
 
-    def filter_for_similarity(self, content: str) -> FilteredText:
+    # Citas textuales entre comillas que no deben sumar al % de similitud
+    # (igual que la opción "excluir citas" de Turnitin). Solo pares con
+    # apertura y cierre inequívocos; las comillas simples ‘ ’ se ignoran
+    # porque se confunden con apóstrofos.
+    QUOTE_PAIRS = {"“": "”", "«": "»", '"': '"'}
+    # Una cita textual real es corta. Si entre la apertura y el cierre hay
+    # más palabras que esto, lo más probable es que la comilla de apertura
+    # no tenga cierre y el "cierre" encontrado sea de otra cita: no se
+    # excluye nada, para no comerse prosa propia del estudiante.
+    QUOTE_MAX_WORDS = 60
+    QUOTE_OPENING_PRECEDED_BY = ' \t\n([{—–-/“«"'
+    QUOTE_CLOSING_FOLLOWED_BY = ' \t\n.,;:!?)]}…—–-/”»"'
+    QUOTE_PARAGRAPH_BREAK = re.compile(r"\n[ \t]*\n")
+    QUOTE_WORD = re.compile(r"\w+", re.UNICODE)
+
+    def filter_for_similarity(
+        self,
+        content: str,
+        exclude_bibliography: bool = True,
+    ) -> FilteredText:
         if not content:
             return FilteredText(content="", excluded_sections=[])
 
@@ -198,8 +217,9 @@ class AcademicTextFilter:
         )
         excluded.extend(removed_running)
 
-        normalized, removed_tail = self._remove_reference_tail(normalized)
-        excluded.extend(removed_tail)
+        if exclude_bibliography:
+            normalized, removed_tail = self._remove_reference_tail(normalized)
+            excluded.extend(removed_tail)
 
         normalized, removed_index_runs = self._remove_index_like_line_runs(
             normalized,
@@ -229,6 +249,99 @@ class AcademicTextFilter:
             content="\n\n".join(kept).strip(),
             excluded_sections=excluded,
         )
+
+    def find_quoted_ranges(self, content: str) -> list[tuple[int, int]]:
+        """
+        Rangos (inicio, fin) de las citas textuales entre comillas de
+        `content`, comillas incluidas. NO modifica el texto: los offsets de
+        los hallazgos se calculan sobre `content`, así que las citas se
+        marcan y se descuentan después, nunca se borran.
+
+        Reglas para no comerse prosa propia ante una comilla huérfana:
+        - la apertura va precedida de inicio, espacio o signo de apertura,
+          y seguida de un carácter que no es espacio;
+        - el cierre es la PRIMERA comilla de cierre del mismo tipo, debe
+          ir pegada a la última palabra y seguida de espacio, puntuación
+          o fin de texto;
+        - la cita no cruza un salto de párrafo;
+        - en comillas tipográficas, otra apertura antes del cierre indica
+          que la primera no cierra;
+        - más de `QUOTE_MAX_WORDS` palabras: no se excluye nada.
+        Si alguna regla falla, esa apertura se ignora por completo.
+        """
+        ranges: list[tuple[int, int]] = []
+        position = 0
+        length = len(content)
+
+        while position < length:
+            closing_char = self.QUOTE_PAIRS.get(content[position])
+
+            if closing_char is None or not self._is_quote_opening(
+                content=content,
+                position=position,
+            ):
+                position += 1
+                continue
+
+            closing_position = self._find_quote_closing(
+                content=content,
+                opening_position=position,
+                closing_char=closing_char,
+            )
+
+            if closing_position is None:
+                position += 1
+                continue
+
+            ranges.append((position, closing_position + 1))
+            position = closing_position + 1
+
+        return ranges
+
+    def _is_quote_opening(self, content: str, position: int) -> bool:
+        if position > 0 and content[position - 1] not in self.QUOTE_OPENING_PRECEDED_BY:
+            return False
+
+        return position + 1 < len(content) and not content[position + 1].isspace()
+
+    def _find_quote_closing(
+        self,
+        content: str,
+        opening_position: int,
+        closing_char: str,
+    ) -> int | None:
+        opening_char = content[opening_position]
+        search_start = opening_position + 1
+
+        paragraph_break = self.QUOTE_PARAGRAPH_BREAK.search(content, search_start)
+        search_end = paragraph_break.start() if paragraph_break else len(content)
+
+        closing_position = content.find(closing_char, search_start, search_end)
+
+        if closing_position == -1:
+            return None
+
+        if opening_char != closing_char and (
+            content.find(opening_char, search_start, closing_position) != -1
+        ):
+            return None
+
+        if content[closing_position - 1].isspace():
+            return None
+
+        if (
+            closing_position + 1 < len(content)
+            and content[closing_position + 1] not in self.QUOTE_CLOSING_FOLLOWED_BY
+        ):
+            return None
+
+        quoted = content[search_start:closing_position]
+        word_count = len(self.QUOTE_WORD.findall(quoted))
+
+        if word_count == 0 or word_count > self.QUOTE_MAX_WORDS:
+            return None
+
+        return closing_position
 
     def _normalize_line_breaks(self, content: str) -> str:
         content = content.replace("\x00", " ")

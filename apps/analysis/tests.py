@@ -764,6 +764,112 @@ class AcademicTextFilterReferenceTailTests(TestCase):
         self.assertNotIn("bibliografía/anexos", result.excluded_sections)
 
 
+class AcademicTextFilterQuotedRangesTests(TestCase):
+    """
+    Exclusión de citas textuales: solo pares cortos y cerrados. Una
+    comilla sin cerrar no debe comerse la prosa que sigue (mismo tipo de
+    falla que tuvo "anexo" a mitad del cuerpo).
+    """
+
+    def _quoted(self, content: str) -> list[str]:
+        return [
+            content[start:end]
+            for start, end in AcademicTextFilter().find_quoted_ranges(content)
+        ]
+
+    def test_typographic_and_angle_quotes_are_detected(self) -> None:
+        content = (
+            "Segun Freire, “la educacion es un acto de amor”. Para Vygotsky "
+            "«el aprendizaje despierta procesos internos» en el nino."
+        )
+
+        self.assertEqual(
+            self._quoted(content),
+            [
+                "“la educacion es un acto de amor”",
+                "«el aprendizaje despierta procesos internos»",
+            ],
+        )
+
+    def test_straight_quotes_are_detected(self) -> None:
+        content = 'El autor sostiene que "la escuela forma ciudadanos" (p. 12).'
+
+        self.assertEqual(
+            self._quoted(content),
+            ['"la escuela forma ciudadanos"'],
+        )
+
+    def test_unclosed_typographic_quote_excludes_nothing(self) -> None:
+        content = (
+            "El autor afirma “la educacion transforma la sociedad y luego "
+            "el estudiante continua con su propia argumentacion sobre la "
+            "practica docente en el aula rural."
+        )
+
+        self.assertEqual(self._quoted(content), [])
+
+    def test_unclosed_quote_does_not_pair_with_next_quote(self) -> None:
+        content = (
+            "Una comilla “huerfana sigue con prosa propia del estudiante y "
+            "despues aparece “una cita real” mas adelante."
+        )
+
+        self.assertEqual(self._quoted(content), ["“una cita real”"])
+
+    def test_unbalanced_straight_quotes_do_not_swallow_prose(self) -> None:
+        # La primera comilla recta no cierra: la siguiente comilla recta es
+        # la APERTURA de otra cita (va precedida de espacio), no un cierre.
+        content = (
+            'Mide 15" de ancho. El estudiante escribe prosa propia y luego '
+            'cita "un texto breve" del autor.'
+        )
+
+        self.assertEqual(self._quoted(content), ['"un texto breve"'])
+
+    def test_quote_does_not_cross_paragraph_break(self) -> None:
+        content = "Inicio “sin cierre en este parrafo.\n\nOtro parrafo” sigue."
+
+        self.assertEqual(self._quoted(content), [])
+
+    def test_quote_with_exactly_max_words_is_excluded(self) -> None:
+        words = " ".join(["palabra"] * AcademicTextFilter.QUOTE_MAX_WORDS)
+        content = f"Cita: “{words}” fin."
+
+        self.assertEqual(self._quoted(content), [f"“{words}”"])
+
+    def test_quote_longer_than_max_words_excludes_nothing(self) -> None:
+        words = " ".join(["palabra"] * (AcademicTextFilter.QUOTE_MAX_WORDS + 1))
+        content = f"Cita: “{words}” fin."
+
+        self.assertEqual(self._quoted(content), [])
+
+
+class AcademicTextFilterBibliographyFlagTests(TestCase):
+    BODY = AcademicTextFilterReferenceTailTests.BODY
+
+    def test_bibliography_kept_when_flag_is_off(self) -> None:
+        doc = f"{self.BODY}\n\nREFERENCIAS\n\nAutor, A. (2020). Obra. Editorial Academica."
+
+        result = AcademicTextFilter().filter_for_similarity(
+            content=doc,
+            exclude_bibliography=False,
+        )
+
+        self.assertIn("Editorial Academica", result.content)
+        self.assertNotIn("bibliografía/anexos", result.excluded_sections)
+
+    def test_reference_word_mid_prose_near_end_does_not_cut(self) -> None:
+        doc = (
+            f"{self.BODY}\n\nEn las referencias consultadas se observa que el "
+            "acompanamiento mejora la practica docente en zonas rurales."
+        )
+
+        result = AcademicTextFilter().filter_for_similarity(content=doc)
+
+        self.assertIn("mejora la practica docente", result.content)
+        self.assertNotIn("bibliografía/anexos", result.excluded_sections)
+
+
 class AcademicTextFilterReferenceTailMultipleHeadingsTests(TestCase):
     """
     Bug A de la re-indexación: cuando la cola del documento tiene DOS

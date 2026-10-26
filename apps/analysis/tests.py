@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
+from io import StringIO
 from unittest import mock
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
 from apps.analysis.engines.fingerprint import compute_fingerprints
@@ -1267,3 +1271,67 @@ class FailedDocumentReanalysisTests(AnalyzeViewTestMixin, TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["analysis_in_progress"])
+
+
+class SweepStaleJobsTests(TestCase):
+    """sweep_stale_jobs cierra jobs huérfanos viejos y no toca los recientes."""
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+
+    def _make_running_job(self, title: str, age: timedelta) -> AnalysisJob:
+        document = make_test_document(
+            self.institution,
+            self.student,
+            title=title,
+            status=DocumentStatus.PROCESSING,
+        )
+        job = AnalysisJob.objects.create(
+            document=document,
+            requested_by=self.student,
+            status=AnalysisJobStatus.RUNNING,
+        )
+        past = timezone.now() - age
+        AnalysisJob.objects.filter(pk=job.pk).update(
+            created_at=past,
+            updated_at=past,
+        )
+        Document.objects.filter(pk=document.pk).update(updated_at=past)
+        return job
+
+    def test_old_job_is_failed_and_recent_job_is_untouched(self) -> None:
+        old_job = self._make_running_job("Viejo", age=timedelta(hours=3))
+        recent_job = self._make_running_job("Reciente", age=timedelta(minutes=5))
+
+        call_command("sweep_stale_jobs", stdout=StringIO())
+
+        old_job.refresh_from_db()
+        recent_job.refresh_from_db()
+        old_job.document.refresh_from_db()
+        recent_job.document.refresh_from_db()
+
+        self.assertEqual(old_job.status, AnalysisJobStatus.FAILED)
+        self.assertEqual(old_job.error_code, "STALE_WORKER_LOST")
+        self.assertIsNotNone(old_job.finished_at)
+        self.assertEqual(old_job.document.status, DocumentStatus.FAILED)
+
+        self.assertEqual(recent_job.status, AnalysisJobStatus.RUNNING)
+        self.assertEqual(recent_job.document.status, DocumentStatus.PROCESSING)
+
+    def test_dry_run_does_not_modify(self) -> None:
+        old_job = self._make_running_job("Viejo", age=timedelta(hours=3))
+
+        call_command("sweep_stale_jobs", "--dry-run", stdout=StringIO())
+
+        old_job.refresh_from_db()
+        self.assertEqual(old_job.status, AnalysisJobStatus.RUNNING)

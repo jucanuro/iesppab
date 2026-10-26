@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest import mock
 
+from celery.exceptions import SoftTimeLimitExceeded
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 
@@ -18,10 +21,21 @@ from apps.analysis.engines.web_similarity import (
     WebSimilarityMatch,
 )
 from apps.analysis.indexers import DocumentKnowledgeIndexer
-from apps.analysis.models import DocumentFingerprint, DocumentKnowledgeChunk
-from apps.analysis.services import DocumentAnalysisService
+from apps.analysis.models import (
+    AnalysisJob,
+    AnalysisJobStatus,
+    DocumentFingerprint,
+    DocumentKnowledgeChunk,
+)
+from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
+from apps.analysis.tasks import run_document_analysis
 from apps.core.models import Institution
-from apps.documents.models import Document, DocumentKind, DocumentText
+from apps.documents.models import (
+    Document,
+    DocumentKind,
+    DocumentStatus,
+    DocumentText,
+)
 from apps.reports.models import AnalysisReport, ReportSource
 
 
@@ -29,6 +43,33 @@ SAMPLE_TEXT = (
     "El presente trabajo de investigacion analiza la metodologia aplicada "
     "para el estudio de los factores academicos institucionales."
 )
+
+
+def make_test_document(
+    institution: Institution,
+    owner: User,
+    title: str = "Documento de prueba",
+    status: str = DocumentStatus.UPLOADED,
+) -> Document:
+    document = Document(
+        institution=institution,
+        owner=owner,
+        uploaded_by=owner,
+        title=title,
+        kind=DocumentKind.OTHER,
+        original_filename="documento.pdf",
+        mime_type="application/pdf",
+        file_size_bytes=len(SAMPLE_TEXT),
+        sha256_hash=f"hash-{title}",
+        status=status,
+    )
+    document.original_file.save(
+        "documento.pdf",
+        ContentFile(SAMPLE_TEXT.encode("utf-8")),
+        save=False,
+    )
+    document.save()
+    return document
 
 
 class SelfPlagiarismExclusionTests(TestCase):
@@ -934,3 +975,57 @@ class AcademicTextFilterRunningHeaderTests(TestCase):
         self.assertNotIn(self.HEADER_LINE_1, result.content)
         self.assertIn("Frecuencia Porcentaje %", result.content)
         self.assertIn("Total 60 100.0", result.content)
+
+
+class AnalysisTimeLimitTests(TestCase):
+    """
+    Un análisis que supera el soft time limit debe quedar FAILED con un
+    mensaje claro, no colgado en PROCESSING.
+    """
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.document = make_test_document(self.institution, self.student)
+
+    def test_task_has_configured_time_limits(self) -> None:
+        self.assertEqual(
+            run_document_analysis.soft_time_limit,
+            settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+        )
+        self.assertEqual(
+            run_document_analysis.time_limit,
+            settings.ANALYSIS_TASK_TIME_LIMIT,
+        )
+        self.assertLess(
+            settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+            settings.ANALYSIS_TASK_TIME_LIMIT,
+        )
+
+    def test_soft_time_limit_marks_document_and_job_failed(self) -> None:
+        service = DocumentAnalysisService(requested_by=self.student)
+
+        with mock.patch.object(
+            service.extractor,
+            "extract_and_save",
+            side_effect=SoftTimeLimitExceeded(),
+        ), self.assertRaises(DocumentAnalysisError):
+            service.execute(document_id=self.document.id)
+
+        self.document.refresh_from_db()
+        job = AnalysisJob.objects.get(document=self.document)
+
+        self.assertEqual(self.document.status, DocumentStatus.FAILED)
+        self.assertIn("tiempo máximo", self.document.error_message)
+        self.assertEqual(job.status, AnalysisJobStatus.FAILED)
+        self.assertIn("tiempo máximo", job.error_message)
+        self.assertIsNotNone(job.finished_at)

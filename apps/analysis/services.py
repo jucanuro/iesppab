@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
@@ -244,10 +245,19 @@ class DocumentAnalysisService:
                 job.id,
             )
 
+            if isinstance(exc, SoftTimeLimitExceeded):
+                message = (
+                    "El análisis superó el tiempo máximo permitido "
+                    f"({settings.ANALYSIS_TASK_SOFT_TIME_LIMIT // 60} min) "
+                    "y fue cancelado. Puedes volver a intentarlo."
+                )
+            else:
+                message = str(exc)
+
             self._mark_as_failed(
                 document=document,
                 job=job,
-                message=str(exc),
+                message=message,
             )
 
             raise DocumentAnalysisError(

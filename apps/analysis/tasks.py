@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from celery import shared_task
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 
 from apps.accounts.models import User
@@ -11,7 +12,11 @@ from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisServic
 logger = logging.getLogger(__name__)
 
 
-@shared_task(name="apps.analysis.tasks.run_document_analysis")
+@shared_task(
+    name="apps.analysis.tasks.run_document_analysis",
+    soft_time_limit=settings.ANALYSIS_TASK_SOFT_TIME_LIMIT,
+    time_limit=settings.ANALYSIS_TASK_TIME_LIMIT,
+)
 def run_document_analysis(document_id: str, requested_by_id: str) -> None:
     """
     Ejecuta el pipeline de análisis de un documento en background.

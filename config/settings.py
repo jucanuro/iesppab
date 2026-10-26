@@ -618,3 +618,15 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+# Límites de tiempo (segundos) de la tarea de análisis. La perplejidad sola
+# tarda ~6 min en documentos largos, así que 20 min de soft limit deja margen.
+# Al superar el soft limit, execute() marca el documento como FAILED con un
+# mensaje claro; el hard limit mata el proceso (lo recoge sweep_stale_jobs).
+ANALYSIS_TASK_SOFT_TIME_LIMIT = env_int("ANALYSIS_TASK_SOFT_TIME_LIMIT", 20 * 60)
+ANALYSIS_TASK_TIME_LIMIT = env_int("ANALYSIS_TASK_TIME_LIMIT", 25 * 60)
+
+if ANALYSIS_TASK_SOFT_TIME_LIMIT >= ANALYSIS_TASK_TIME_LIMIT:
+    raise RuntimeError(
+        "ANALYSIS_TASK_SOFT_TIME_LIMIT debe ser menor que ANALYSIS_TASK_TIME_LIMIT."
+    )

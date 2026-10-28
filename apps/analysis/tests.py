@@ -39,6 +39,9 @@ from apps.analysis.engines.web_similarity import (
     WebSimilarityMatch,
 )
 from apps.analysis.indexers import DocumentKnowledgeIndexer
+from apps.analysis.management.commands.benchmark_similarity import (
+    Command as BenchmarkCommand,
+)
 from apps.analysis.models import (
     AnalysisJob,
     AnalysisJobStatus,
@@ -2395,3 +2398,20 @@ class SpanEngineServiceTests(TestCase):
         self.assertEqual((result.engine, result.retrieval), ("chunk", "vieja"))
         self.assertEqual(result.internal_algorithm, "knowledge-chunks-shingling")
 
+
+class BenchmarkSimilarityCommandTests(TestCase):
+    def test_span_engine_meets_acceptance_criteria(self) -> None:
+        command = BenchmarkCommand(stdout=StringIO())
+        call_command(command, "--no-csv")
+
+        for case in command.cases:
+            result = command.results[(case.name, "span")]
+            verdict = command._passes(case, result)
+
+            self.assertIn(verdict, {"OK", "-"}, f"{case.name}: {result.percent}%")
+
+            if case.category == "sintetico":
+                self.assertEqual(result.detected_sources, case.expected_sources)
+
+        # Nada de lo indexado por el banco de pruebas queda en la base.
+        self.assertFalse(Institution.objects.filter(slug__startswith="benchmark-").exists())

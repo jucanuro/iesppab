@@ -27,10 +27,13 @@ from apps.analysis.engines.similarity import (
     SimilarityMatch,
 )
 from apps.analysis.engines.span_similarity import (
+    ALGORITHM_SPAN_INTERNAL,
+    ALGORITHM_SPAN_WEB,
     MATCH_TYPE_LABELS,
     SOURCE_KIND_INTERNAL,
     SOURCE_KIND_OAI,
     SOURCE_KIND_WEB,
+    SpanAlignment,
     SpanAnalysisResult,
     SpanSimilarityEngine,
     SpanSource,
@@ -58,10 +61,10 @@ from apps.reports.models import (
     AnalysisReport,
     FindingType,
     ReportFinding,
-    ReportRiskLevel,
     ReportSource,
     SourceType,
 )
+from apps.reports.services import SpanReportWriter, resolve_risk_level
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +80,6 @@ class DocumentAnalysisError(Exception):
 
 ALGORITHM_CHUNK_INTERNAL = "knowledge-chunks-shingling"
 ALGORITHM_CHUNK_WEB = "brave-search-html-pdf-shingling"
-ALGORITHM_SPAN_INTERNAL = "span-exact-words-v1"
-ALGORITHM_SPAN_WEB = "brave-search-span-exact-words-v1"
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,10 @@ class SimilarityRunResult:
     oai_records_by_id: dict[UUID, OaiRecord]
     engine: str
     retrieval: str
+    # Solo con el motor span: resultado completo y alineación serializada
+    # para `AnalysisReport.span_alignment` (permite excluir fuentes después).
+    span_result: SpanAnalysisResult | None = None
+    span_alignment: dict | None = None
 
     @property
     def internal_algorithm(self) -> str:
@@ -282,18 +287,25 @@ class DocumentAnalysisService:
                     similarity=similarity,
                 )
 
-                self._replace_internal_similarity_findings(
-                    report=report,
-                    matches=internal_result.matches,
-                    oai_records_by_id=similarity.oai_records_by_id,
-                    algorithm=similarity.internal_algorithm,
-                )
+                if similarity.span_result is not None:
+                    SpanReportWriter().write(
+                        report=report,
+                        result=similarity.span_result,
+                        reset=True,
+                    )
+                else:
+                    self._replace_internal_similarity_findings(
+                        report=report,
+                        matches=internal_result.matches,
+                        oai_records_by_id=similarity.oai_records_by_id,
+                        algorithm=similarity.internal_algorithm,
+                    )
 
-                self._replace_web_similarity_findings(
-                    report=report,
-                    web_result=web_result,
-                    algorithm=similarity.web_algorithm,
-                )
+                    self._replace_web_similarity_findings(
+                        report=report,
+                        web_result=web_result,
+                        algorithm=similarity.web_algorithm,
+                    )
 
                 self._replace_ai_findings(
                     report=report,
@@ -660,7 +672,7 @@ class DocumentAnalysisService:
 
     # Tope de tramos que se persisten como ReportFinding con el motor span
     # (el % se calcula siempre sobre todos).
-    SPAN_MAX_PERSISTED_MATCHES = 200
+    SPAN_MAX_PERSISTED_MATCHES = SpanReportWriter.MAX_PERSISTED_MATCHES
 
     def _run_similarity(
         self,
@@ -729,11 +741,15 @@ class DocumentAnalysisService:
         step("Comparando contra fuentes web encontradas")
 
         if engine == "span":
-            span_result = self.span_similarity_engine.analyze(
+            alignment = self.span_similarity_engine.align(
                 content=analysis_content,
                 sources=retrieved.to_span_sources()
                 + self._web_span_sources(web_pages),
                 excluded_ranges=quoted_ranges,
+            )
+            span_result = self.span_similarity_engine.attribute(
+                content=analysis_content,
+                alignment=alignment,
             )
             internal_result, web_result = self._split_span_result(span_result)
 
@@ -754,6 +770,15 @@ class DocumentAnalysisService:
                 oai_records_by_id=oai_records_by_id,
                 engine=engine,
                 retrieval=retrieval,
+                span_result=span_result,
+                span_alignment=self.span_similarity_engine.alignment_to_json(
+                    alignment,
+                    details=self._span_source_details(
+                        document=document,
+                        alignment=alignment,
+                        oai_records_by_id=oai_records_by_id,
+                    ),
+                ),
             )
 
         web_result = self.web_similarity_engine.analyze(
@@ -775,6 +800,63 @@ class DocumentAnalysisService:
             engine=engine,
             retrieval=retrieval,
         )
+
+    def _span_source_details(
+        self,
+        document: Document,
+        alignment: SpanAlignment,
+        oai_records_by_id: dict[UUID, OaiRecord],
+    ) -> dict[str, dict]:
+        """
+        Metadatos por fuente que se guardan con la alineación, para poder
+        rearmar las fuentes del reporte al excluir una sin consultar nada:
+        datos OAI, y para los documentos internos lo necesario para el aviso
+        de posible reenvío (mismo sha256, cobertura bruta, dueño y fecha del
+        original).
+        """
+        details: dict[str, dict] = {}
+        internal_ids = [
+            aligned.source.source_id
+            for aligned in alignment.sources
+            if aligned.source.kind == SOURCE_KIND_INTERNAL
+        ]
+        originals = Document.objects.select_related("owner").in_bulk(internal_ids)
+
+        for aligned in alignment.sources:
+            source = aligned.source
+
+            if source.kind == SOURCE_KIND_OAI:
+                record = oai_records_by_id.get(source.source_id)
+                details[source.key] = {
+                    "oai_identifier": record.oai_identifier if record else "",
+                    "repository_name": record.repository_name if record else "",
+                }
+                continue
+
+            if source.kind != SOURCE_KIND_INTERNAL:
+                continue
+
+            original = originals.get(source.source_id)
+            details[source.key] = {
+                "coverage_word_count": (
+                    self.span_similarity_engine.coverage_word_count(aligned)
+                ),
+                "same_hash": bool(
+                    original is not None
+                    and document.sha256_hash
+                    and original.sha256_hash == document.sha256_hash
+                ),
+                "original_owner": (
+                    (original.owner.get_full_name() or original.owner.username)
+                    if original is not None
+                    else source.owner_name
+                ),
+                "original_created_at": (
+                    original.created_at.isoformat() if original is not None else ""
+                ),
+            }
+
+        return details
 
     def _web_span_sources(self, web_pages: list[WebPageContent]) -> list[SpanSource]:
         return [
@@ -1015,6 +1097,16 @@ class DocumentAnalysisService:
                 "analyzed_content": analyzed_content,
                 "exclude_quotes": exclude_quotes,
                 "exclude_bibliography": exclude_bibliography,
+                "span_alignment": (
+                    similarity.span_alignment
+                    if similarity and similarity.span_alignment
+                    else {}
+                ),
+                "original_similarity_percent": (
+                    total_similarity_percent
+                    if similarity and similarity.span_alignment
+                    else None
+                ),
                 "summary": {
                     "engine": "internal-web-academic-v2",
                     "similarity_engine": similarity.engine if similarity else "chunk",
@@ -1256,13 +1348,7 @@ class DocumentAnalysisService:
         similarity_percent: Decimal,
         ai_probability_percent: Decimal,
     ) -> str:
-        if similarity_percent >= Decimal("50.00") or ai_probability_percent >= Decimal("80.00"):
-            return ReportRiskLevel.CRITICAL
-
-        if similarity_percent >= Decimal("30.00") or ai_probability_percent >= Decimal("60.00"):
-            return ReportRiskLevel.HIGH
-
-        if similarity_percent >= Decimal("15.00") or ai_probability_percent >= Decimal("35.00"):
-            return ReportRiskLevel.MEDIUM
-
-        return ReportRiskLevel.LOW
+        return resolve_risk_level(
+            similarity_percent=similarity_percent,
+            ai_probability_percent=ai_probability_percent,
+        )

@@ -1,0 +1,32 @@
+{% comment %}
+Badge de posible reenvío y botón "Excluir fuente" de una fuente del reporte.
+Espera `source`, `report`, `document` y `can_manage_sources`.
+{% endcomment %}
+{% if source.is_possible_resubmission %}
+    <p class="mt-2 inline-flex items-center gap-1 rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700"
+       title="{% if source.resubmission.same_hash %}Archivo idéntico (mismo hash){% else %}Cubre el {{ source.resubmission.coverage_percent }}% del documento{% endif %}">
+        Posible reenvío del mismo trabajo
+    </p>
+{% endif %}
+{% if can_manage_sources and report.allows_source_exclusion %}
+    <details class="mt-2">
+        <summary class="cursor-pointer text-[11px] font-bold text-slate-600 hover:text-[#123f9e]">Excluir fuente</summary>
+        <form method="post"
+              action="{% url 'reports:exclude_source' document.id source.id %}"
+              class="mt-2 flex gap-2"
+              data-submit-spinner>
+            {% csrf_token %}
+            <input type="text"
+                   name="reason"
+                   required
+                   maxlength="255"
+                   placeholder="Motivo (p. ej. coautoría, documento de prueba)"
+                   class="h-8 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 text-[12px] text-slate-700 focus:border-[#236bfd] focus:outline-none">
+            <button type="submit"
+                    data-loading-label="Recalculando…"
+                    class="inline-flex h-8 shrink-0 items-center rounded-lg border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
+                Excluir
+            </button>
+        </form>
+    </details>
+{% endif %}

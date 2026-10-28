@@ -89,6 +89,18 @@ class CertificateRiskGateTests(TestCase):
             Certificate.objects.filter(report=self.report).exists()
         )
 
+    def test_critical_risk_report_cannot_be_certified(self) -> None:
+        self.report.risk_level = ReportRiskLevel.CRITICAL
+        self.report.save(update_fields=["risk_level"])
+
+        with self.assertRaises(ValidationError) as exc:
+            self.service.execute(document_id=self.document.id)
+
+        self.assertIn("crítico", exc.exception.messages[0].lower())
+        self.assertFalse(
+            Certificate.objects.filter(report=self.report).exists()
+        )
+
     def test_low_risk_report_is_certified(self) -> None:
         certificate = self.service.execute(document_id=self.document.id)
 

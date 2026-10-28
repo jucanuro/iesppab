@@ -32,8 +32,12 @@ from apps.reports.models import (
 )
 from apps.reports.services import (
     HighlightedDocumentPdfError,
+    ReportSourceExclusionError,
+    ReportSourceExclusionPermissionError,
+    ReportSourceExclusionService,
     build_highlighted_document_pdf,
     resolve_analyzed_content,
+    resubmission_warning_sources,
     split_similarity_around_exclusions,
 )
 from apps.reports.suggestions import build_improvement_suggestions
@@ -113,6 +117,8 @@ class ReportDetailView(LoginRequiredMixin, View):
                 }
             )
 
+            all_sources = list(report.sources.all()) if report else []
+
             context = {
                 "document": document,
                 "report": report,
@@ -120,7 +126,15 @@ class ReportDetailView(LoginRequiredMixin, View):
                 "highlighted_segments": highlighted_segments,
                 "analysis_job": analysis_job,
                 "analysis_in_progress": analysis_in_progress,
-                "sources": report.sources.all() if report else [],
+                "sources": [source for source in all_sources if not source.is_excluded],
+                "excluded_sources": [
+                    source for source in all_sources if source.is_excluded
+                ],
+                "resubmission_sources": resubmission_warning_sources(all_sources),
+                "can_manage_sources": (
+                    report is not None
+                    and ReportSourceExclusionService.can_manage(user, document)
+                ),
                 "similarity_findings": report.findings.filter(
                     finding_type=FindingType.SIMILARITY,
                 ) if report else [],
@@ -189,7 +203,9 @@ class ReportDetailView(LoginRequiredMixin, View):
             .prefetch_related(
                 Prefetch(
                     "sources",
-                    queryset=ReportSource.objects.order_by(
+                    queryset=ReportSource.objects.select_related(
+                        "excluded_by",
+                    ).order_by(
                         "-matched_percent",
                     ),
                 ),
@@ -307,6 +323,102 @@ class ReportDetailView(LoginRequiredMixin, View):
             )
 
         return segments
+
+
+class _ReportSourceExclusionView(LoginRequiredMixin, View):
+    """
+    Base de excluir/restaurar fuente: la lógica y los permisos viven en
+    `ReportSourceExclusionService`; aquí solo se traducen sus errores a un
+    mensaje y se vuelve al reporte.
+    """
+
+    http_method_names = ["post"]
+
+    def post(
+        self,
+        request: HttpRequest,
+        pk: UUID,
+        source_pk: UUID,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponse:
+        service = ReportSourceExclusionService(requested_by=request.user)
+
+        try:
+            message = self.apply(service=service, document_id=pk, source_id=source_pk)
+
+        except ReportSourceExclusionPermissionError as exc:
+            logger.warning(
+                "Permiso denegado al cambiar exclusión de fuente. user_id=%s "
+                "document_id=%s source_id=%s",
+                request.user.id,
+                pk,
+                source_pk,
+            )
+            raise PermissionDenied(str(exc)) from exc
+
+        except ReportSourceExclusionError as exc:
+            messages.error(request, str(exc))
+
+        except Exception:
+            logger.exception(
+                "Error inesperado al cambiar exclusión de fuente. user_id=%s "
+                "document_id=%s source_id=%s",
+                request.user.id,
+                pk,
+                source_pk,
+            )
+            messages.error(
+                request,
+                "No se pudo recalcular el reporte. Inténtalo nuevamente.",
+            )
+
+        else:
+            messages.success(request, message)
+
+        return redirect("reports:detail", pk=pk)
+
+    def apply(
+        self,
+        service: ReportSourceExclusionService,
+        document_id: UUID,
+        source_id: UUID,
+    ) -> str:
+        raise NotImplementedError
+
+
+class ExcludeReportSourceView(_ReportSourceExclusionView):
+    def apply(
+        self,
+        service: ReportSourceExclusionService,
+        document_id: UUID,
+        source_id: UUID,
+    ) -> str:
+        source = service.exclude(
+            document_id=document_id,
+            source_id=source_id,
+            reason=self.request.POST.get("reason", ""),
+        )
+
+        return (
+            f"Fuente «{source.title}» excluida. Similitud recalculada: "
+            f"{source.report.similarity_percent}%."
+        )
+
+
+class RestoreReportSourceView(_ReportSourceExclusionView):
+    def apply(
+        self,
+        service: ReportSourceExclusionService,
+        document_id: UUID,
+        source_id: UUID,
+    ) -> str:
+        source = service.restore(document_id=document_id, source_id=source_id)
+
+        return (
+            f"Fuente «{source.title}» restaurada. Similitud recalculada: "
+            f"{source.report.similarity_percent}%."
+        )
 
 
 class ReportStatusView(LoginRequiredMixin, View):
@@ -444,7 +556,9 @@ class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
             .prefetch_related(
                 Prefetch(
                     "sources",
-                    queryset=ReportSource.objects.order_by(
+                    queryset=ReportSource.objects.select_related(
+                        "excluded_by",
+                    ).order_by(
                         "-matched_percent",
                     ),
                 ),

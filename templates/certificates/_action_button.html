@@ -2,8 +2,8 @@
 Botón de certificado (icono) para un documento en la bandeja. Espera `document`.
 
   - certificado ya emitido        -> enlace "Descargar certificado"
-  - análisis COMPLETED, riesgo ≠ alto -> botón "Generar certificado"
-  - análisis COMPLETED, riesgo alto   -> deshabilitado (no se certifica riesgo alto)
+  - análisis COMPLETED, riesgo bajo/medio  -> botón "Generar certificado"
+  - análisis COMPLETED, riesgo alto/crítico -> deshabilitado (no se certifica)
   - análisis sin terminar             -> deshabilitado (aún no hay reporte)
 {% endcomment %}
 {% if document.report.certificate.is_active %}
@@ -13,7 +13,7 @@ Botón de certificado (icono) para un documento en la bandeja. Espera `document`
        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-600">
         {% include "certificates/_seal_download_icon.html" %}
     </a>
-{% elif document.status == "COMPLETED" and document.report and document.report.risk_level != "HIGH" %}
+{% elif document.status == "COMPLETED" and document.report and document.report.risk_level != "HIGH" and document.report.risk_level != "CRITICAL" %}
     <form method="post"
           action="{% url 'certificates:generate' document.id %}"
           class="inline-flex"
@@ -29,7 +29,7 @@ Botón de certificado (icono) para un documento en la bandeja. Espera `document`
 {% else %}
     <span class="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-300"
           aria-label="Certificado no disponible"
-          title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' %}No se puede emitir un certificado para un documento con riesgo alto. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+          title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' or document.status == 'COMPLETED' and document.report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un documento con riesgo alto o crítico. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
         {% include "certificates/_seal_icon.html" %}
     </span>
 {% endif %}

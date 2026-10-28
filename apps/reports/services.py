@@ -8,6 +8,8 @@ from io import BytesIO
 from typing import Any
 from uuid import UUID
 
+from django.db import transaction
+from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib.pagesizes import A4
@@ -22,16 +24,498 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from apps.accounts.models import User
+from apps.analysis.engines.span_similarity import (
+    ALGORITHM_SPAN_INTERNAL,
+    ALGORITHM_SPAN_WEB,
+    MATCH_TYPE_LABELS,
+    SOURCE_KIND_INTERNAL,
+    SOURCE_KIND_OAI,
+    SOURCE_KIND_WEB,
+    SpanAlignmentError,
+    SpanAnalysisResult,
+    SpanMatch,
+    SpanSimilarityEngine,
+)
 from apps.analysis.engines.text_filters import AcademicTextFilter
+from apps.certificates.models import Certificate
+from apps.documents.models import Document
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
     ReportFinding,
+    ReportRiskLevel,
     ReportSource,
     SourceType,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_risk_level(
+    similarity_percent: Decimal,
+    ai_probability_percent: Decimal,
+) -> str:
+    if similarity_percent >= Decimal("50.00") or ai_probability_percent >= Decimal("80.00"):
+        return ReportRiskLevel.CRITICAL
+
+    if similarity_percent >= Decimal("30.00") or ai_probability_percent >= Decimal("60.00"):
+        return ReportRiskLevel.HIGH
+
+    if similarity_percent >= Decimal("15.00") or ai_probability_percent >= Decimal("35.00"):
+        return ReportRiskLevel.MEDIUM
+
+    return ReportRiskLevel.LOW
+
+
+INTERNAL_SOURCE_KINDS = (SOURCE_KIND_INTERNAL, SOURCE_KIND_OAI)
+
+# Una fuente interna que cubre al menos este % del documento (o que tiene el
+# mismo sha256) se marca como posible reenvío del mismo trabajo.
+RESUBMISSION_COVERAGE_PERCENT = Decimal("95.00")
+
+
+def resubmission_warning_sources(sources: list[ReportSource]) -> list[ReportSource]:
+    """
+    Fuentes que disparan el aviso de reenvío arriba del reporte: las no
+    excluidas marcadas como posible reenvío y, siempre, las que tienen el
+    mismo sha256 que el documento (aunque el docente las haya excluido).
+    """
+    return [
+        source
+        for source in sources
+        if source.is_possible_resubmission
+        and (not source.is_excluded or source.resubmission.get("same_hash"))
+    ]
+
+
+class SpanReportWriter:
+    """
+    Persiste las fuentes y hallazgos de similitud de un resultado del motor
+    span. Lo usan el análisis (`reset=True`: reemplaza todo, incluidas las
+    exclusiones de un análisis anterior) y el recálculo tras excluir o
+    restaurar una fuente (`reset=False`: conserva las filas excluidas y la
+    identidad de las demás por `source_key`).
+    """
+
+    # Tope de tramos que se persisten como ReportFinding por tipo (interno /
+    # web); el % se calcula siempre sobre todos.
+    MAX_PERSISTED_MATCHES = 200
+
+    def write(
+        self,
+        report: AnalysisReport,
+        result: SpanAnalysisResult,
+        reset: bool,
+    ) -> None:
+        alignment = report.span_alignment or {}
+        details_by_key = {
+            item["key"]: item.get("details", {})
+            for item in alignment.get("sources", [])
+        }
+        countable_word_count = alignment.get("countable_word_count", 0)
+
+        report.findings.filter(finding_type=FindingType.SIMILARITY).delete()
+
+        if reset:
+            report.sources.all().delete()
+            existing: dict[str, ReportSource] = {}
+        else:
+            existing = {source.source_key: source for source in report.sources.all()}
+
+        rows: dict[str, ReportSource] = {}
+
+        for item in result.sources:
+            source = item.source
+            row = existing.get(source.key) or ReportSource(
+                report=report,
+                source_key=source.key,
+            )
+            details = details_by_key.get(source.key, {})
+
+            row.source_type = (
+                SourceType.WEB if source.kind == SOURCE_KIND_WEB else SourceType.INTERNAL
+            )
+            row.title = (source.title or source.domain or "Fuente")[:300]
+            row.url = source.url[:1000]
+            row.domain = source.domain[:180]
+            row.matched_percent = item.percent
+            row.word_count = item.word_count
+            row.metadata = self._source_metadata(
+                kind=source.kind,
+                source_id=source.source_id,
+                owner_name=source.owner_name,
+                url=source.url,
+                details=details,
+                countable_word_count=countable_word_count,
+            )
+            row.save()
+            rows[source.key] = row
+
+        for key, row in existing.items():
+            if key not in rows and not row.is_excluded:
+                row.delete()
+
+        snippets: dict[str, str] = {}
+
+        for kinds, algorithm in (
+            (INTERNAL_SOURCE_KINDS, ALGORITHM_SPAN_INTERNAL),
+            ((SOURCE_KIND_WEB,), ALGORITHM_SPAN_WEB),
+        ):
+            matches = result.matches_for(kinds)
+
+            # El extracto de la fuente es el de su primer tramo en el texto.
+            for match in matches:
+                snippets.setdefault(match.source.key, match.source_excerpt)
+
+            ranked = sorted(
+                matches,
+                key=lambda match: (-match.source_percent, match.start_offset),
+            )[: self.MAX_PERSISTED_MATCHES]
+
+            ReportFinding.objects.bulk_create(
+                [
+                    self._finding(
+                        report=report,
+                        row=rows[match.source.key],
+                        match=match,
+                        algorithm=algorithm,
+                    )
+                    for match in ranked
+                ]
+            )
+
+        for key, row in rows.items():
+            snippet = snippets.get(key, "")
+
+            if row.snippet != snippet:
+                row.snippet = snippet
+                row.save(update_fields=["snippet", "updated_at"])
+
+        report.similarity_percent = result.similarity_percent
+        report.internal_similarity_percent = result.percent_for(INTERNAL_SOURCE_KINDS)
+        report.web_similarity_percent = result.percent_for((SOURCE_KIND_WEB,))
+        report.risk_level = resolve_risk_level(
+            similarity_percent=report.similarity_percent,
+            ai_probability_percent=report.ai_probability_percent,
+        )
+        report.save(
+            update_fields=[
+                "similarity_percent",
+                "internal_similarity_percent",
+                "web_similarity_percent",
+                "risk_level",
+                "updated_at",
+            ]
+        )
+
+    def _source_metadata(
+        self,
+        kind: str,
+        source_id: UUID | None,
+        owner_name: str,
+        url: str,
+        details: dict,
+        countable_word_count: int,
+    ) -> dict:
+        if kind == SOURCE_KIND_WEB:
+            return {"source": "web", "url": url}
+
+        if kind == SOURCE_KIND_OAI:
+            return {
+                "source": "oai",
+                "oai_identifier": details.get("oai_identifier", ""),
+                "repository_name": details.get("repository_name", ""),
+            }
+
+        metadata: dict[str, Any] = {
+            "source_document_id": str(source_id) if source_id else "",
+            "source_owner": owner_name,
+        }
+        resubmission = self._resubmission(
+            details=details,
+            countable_word_count=countable_word_count,
+        )
+
+        if resubmission:
+            metadata["resubmission"] = resubmission
+
+        return metadata
+
+    def _resubmission(self, details: dict, countable_word_count: int) -> dict:
+        coverage_percent = (
+            (
+                Decimal(details.get("coverage_word_count", 0))
+                / Decimal(countable_word_count)
+                * Decimal("100")
+            ).quantize(Decimal("0.01"))
+            if countable_word_count
+            else Decimal("0.00")
+        )
+        same_hash = bool(details.get("same_hash"))
+
+        if not same_hash and coverage_percent < RESUBMISSION_COVERAGE_PERCENT:
+            return {}
+
+        return {
+            "same_hash": same_hash,
+            "coverage_percent": str(min(coverage_percent, Decimal("100.00"))),
+            "original_owner": details.get("original_owner", ""),
+            "original_created_at": details.get("original_created_at", ""),
+        }
+
+    def _finding(
+        self,
+        report: AnalysisReport,
+        row: ReportSource,
+        match: SpanMatch,
+        algorithm: str,
+    ) -> ReportFinding:
+        source = match.source
+
+        if source.kind == SOURCE_KIND_WEB:
+            origin = {"source": "web", "url": source.url}
+        else:
+            origin = {
+                "source": source.kind,
+                "source_document_id": str(source.source_id or ""),
+            }
+
+        return ReportFinding(
+            report=report,
+            source=row,
+            finding_type=FindingType.SIMILARITY,
+            start_offset=match.start_offset,
+            end_offset=match.end_offset,
+            text_excerpt=match.text_excerpt,
+            confidence_percent=match.source_percent,
+            metadata={
+                "algorithm": algorithm,
+                **origin,
+                "word_count": match.word_count,
+                "match_type": match.match_type,
+                "match_type_label": MATCH_TYPE_LABELS.get(
+                    match.match_type,
+                    match.match_type,
+                ),
+            },
+        )
+
+
+class ReportSourceExclusionError(Exception):
+    """
+    Error controlado al excluir o restaurar una fuente del reporte.
+    """
+
+
+class ReportSourceExclusionPermissionError(ReportSourceExclusionError):
+    pass
+
+
+CERTIFICATE_REVOKE_REASON = "Reporte recalculado por exclusión de fuentes"
+
+
+class ReportSourceExclusionService:
+    """
+    Excluye o restaura una fuente del reporte (como "excluir fuente" de
+    Turnitin) y recalcula el % total, interno y web con la misma regla del
+    motor span: se vuelve a repartir cada palabra entre las fuentes no
+    excluidas a partir de la alineación guardada en el reporte, así que las
+    palabras de la fuente excluida pasan a la siguiente fuente que las
+    cubría. No se re-extrae el texto ni se consulta internet.
+
+    Al cambiar el %, el certificado emitido queda revocado y el docente
+    debe volver a emitirlo.
+    """
+
+    REASON_MAX_LENGTH = 255
+
+    def __init__(self, requested_by: User) -> None:
+        self.requested_by = requested_by
+
+    @staticmethod
+    def can_manage(user: User, document: Document) -> bool:
+        if not user.is_authenticated or user.is_student_role:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        if not (user.is_admin_role or user.is_director_role or user.is_teacher_role):
+            return False
+
+        return (
+            user.institution_id is not None
+            and user.institution_id == document.institution_id
+        )
+
+    def exclude(
+        self,
+        document_id: UUID,
+        source_id: UUID,
+        reason: str,
+    ) -> ReportSource:
+        reason = (reason or "").strip()
+
+        if not reason:
+            raise ReportSourceExclusionError(
+                "Indica el motivo para excluir la fuente."
+            )
+
+        if len(reason) > self.REASON_MAX_LENGTH:
+            raise ReportSourceExclusionError(
+                f"El motivo no puede superar los {self.REASON_MAX_LENGTH} caracteres."
+            )
+
+        with transaction.atomic():
+            source = self._get_source(document_id=document_id, source_id=source_id)
+
+            if source.is_excluded:
+                raise ReportSourceExclusionError("La fuente ya está excluida.")
+
+            source.is_excluded = True
+            source.excluded_by = self.requested_by
+            source.excluded_at = timezone.now()
+            source.exclusion_reason = reason
+            source.save(
+                update_fields=[
+                    "is_excluded",
+                    "excluded_by",
+                    "excluded_at",
+                    "exclusion_reason",
+                    "updated_at",
+                ]
+            )
+
+            self._recalculate(report=source.report)
+
+        logger.info(
+            "Fuente excluida del reporte. report_id=%s source_id=%s user_id=%s "
+            "total=%s internal=%s web=%s motivo=%r",
+            source.report.id,
+            source.id,
+            self.requested_by.id,
+            source.report.similarity_percent,
+            source.report.internal_similarity_percent,
+            source.report.web_similarity_percent,
+            reason,
+        )
+
+        return source
+
+    def restore(self, document_id: UUID, source_id: UUID) -> ReportSource:
+        with transaction.atomic():
+            source = self._get_source(document_id=document_id, source_id=source_id)
+
+            if not source.is_excluded:
+                raise ReportSourceExclusionError("La fuente no está excluida.")
+
+            source.is_excluded = False
+            source.excluded_by = None
+            source.excluded_at = None
+            source.exclusion_reason = ""
+            source.save(
+                update_fields=[
+                    "is_excluded",
+                    "excluded_by",
+                    "excluded_at",
+                    "exclusion_reason",
+                    "updated_at",
+                ]
+            )
+
+            self._recalculate(report=source.report)
+
+        logger.info(
+            "Fuente restaurada en el reporte. report_id=%s source_id=%s "
+            "user_id=%s total=%s internal=%s web=%s",
+            source.report.id,
+            source.id,
+            self.requested_by.id,
+            source.report.similarity_percent,
+            source.report.internal_similarity_percent,
+            source.report.web_similarity_percent,
+        )
+
+        return source
+
+    def _get_source(self, document_id: UUID, source_id: UUID) -> ReportSource:
+        report = (
+            AnalysisReport.objects.select_for_update()
+            .select_related("document")
+            .filter(document_id=document_id)
+            .first()
+        )
+
+        if report is None:
+            raise ReportSourceExclusionError("Este documento aún no tiene reporte.")
+
+        if not self.can_manage(self.requested_by, report.document):
+            raise ReportSourceExclusionPermissionError(
+                "No tienes permiso para excluir fuentes de este reporte."
+            )
+
+        if not report.allows_source_exclusion:
+            raise ReportSourceExclusionError(
+                "Vuelve a analizar el documento para poder excluir fuentes."
+            )
+
+        source = report.sources.filter(id=source_id).first()
+
+        if source is None:
+            raise ReportSourceExclusionError("La fuente no pertenece a este reporte.")
+
+        source.report = report
+
+        return source
+
+    def _recalculate(self, report: AnalysisReport) -> None:
+        engine = SpanSimilarityEngine()
+
+        try:
+            alignment = engine.alignment_from_json(
+                report.span_alignment,
+                content=report.analyzed_content,
+                excluded_ranges=report.excluded_quote_ranges,
+            )
+        except SpanAlignmentError as exc:
+            logger.warning(
+                "Alineación del reporte inválida al recalcular. report_id=%s",
+                report.id,
+                exc_info=True,
+            )
+            raise ReportSourceExclusionError(
+                "Vuelve a analizar el documento para poder excluir fuentes."
+            ) from exc
+
+        excluded_keys = set(
+            report.sources.filter(is_excluded=True).values_list(
+                "source_key",
+                flat=True,
+            )
+        )
+        result = engine.attribute(
+            content=report.analyzed_content,
+            alignment=alignment,
+            excluded_keys=excluded_keys,
+        )
+
+        SpanReportWriter().write(report=report, result=result, reset=False)
+        self._revoke_certificate(report=report)
+
+    def _revoke_certificate(self, report: AnalysisReport) -> None:
+        revoked = Certificate.objects.filter(report=report, is_active=True).update(
+            is_active=False,
+            revoked_at=timezone.now(),
+            revoke_reason=CERTIFICATE_REVOKE_REASON,
+            updated_at=timezone.now(),
+        )
+
+        if revoked:
+            logger.info(
+                "Certificado revocado por recálculo del reporte. report_id=%s",
+                report.id,
+            )
 
 
 def resolve_analyzed_content(report: AnalysisReport) -> str:
@@ -212,6 +696,13 @@ class _HighlightedDocumentPdfBuilder:
             sources_by_id=sources_by_id,
         )
 
+        all_sources = list(sources_by_id.values())
+        resubmissions = resubmission_warning_sources(all_sources)
+
+        if resubmissions:
+            story.extend(self._build_resubmission_warning(resubmissions, styles))
+            story.append(Spacer(1, 0.4 * cm))
+
         if cited_sources:
             story.extend(
                 self._build_primary_sources(
@@ -220,6 +711,12 @@ class _HighlightedDocumentPdfBuilder:
                     styles=styles,
                 )
             )
+            story.append(Spacer(1, 0.5 * cm))
+
+        excluded_sources = [source for source in all_sources if source.is_excluded]
+
+        if excluded_sources:
+            story.extend(self._build_excluded_sources(excluded_sources, styles))
             story.append(Spacer(1, 0.5 * cm))
 
         story.append(self._build_legend(styles=styles))
@@ -502,15 +999,24 @@ class _HighlightedDocumentPdfBuilder:
                 ("BACKGROUND", (0, index), (0, index), colors.HexColor(color))
             )
 
-            words = word_counts.get(source.id, 0)
+            # Con el motor span la fuente guarda sus palabras exactas; en
+            # reportes anteriores se aproximan contando las resaltadas.
+            words = source.word_count or word_counts.get(source.id, 0)
             label = source.domain or self._truncate(source.title, 60) or "Fuente"
+            badge = (
+                '<br/><font size="7" color="#B91C1C"><b>Posible reenvío del mismo '
+                "trabajo</b></font>"
+                if source.is_possible_resubmission
+                else ""
+            )
 
             rows.append(
                 [
                     Paragraph(f'<font color="#FFFFFF"><b>{number}</b></font>', styles["source_num"]),
                     Paragraph(
                         f'<font color="{color}"><b>{self._escape(label)}</b></font><br/>'
-                        f'<font size="7" color="#64748B">{self._source_type_label(source)}</font>',
+                        f'<font size="7" color="#64748B">{self._source_type_label(source)}</font>'
+                        f"{badge}",
                         styles["source_name"],
                     ),
                     Paragraph(
@@ -524,6 +1030,100 @@ class _HighlightedDocumentPdfBuilder:
         table = Table(rows, colWidths=[0.8 * cm, 11.3 * cm, 4.5 * cm])
         table.setStyle(TableStyle(row_styles))
         section.append(table)
+
+        return section
+
+    def _build_resubmission_warning(
+        self,
+        sources: list[ReportSource],
+        styles: dict[str, ParagraphStyle],
+    ) -> list[Any]:
+        lines = []
+
+        for source in sources:
+            data = source.resubmission
+            reason = (
+                "archivo idéntico"
+                if data.get("same_hash")
+                else f"cubre el {data.get('coverage_percent', '')}% del documento"
+            )
+            uploaded = (
+                f", subido el {data['original_created_at'][:10]}"
+                if data.get("original_created_at")
+                else ""
+            )
+            excluded = "; fuente excluida" if source.is_excluded else ""
+            lines.append(
+                f"• «{self._escape(self._truncate(source.title, 80))}» de "
+                f"<b>{self._escape(data.get('original_owner') or 'otro usuario')}</b>"
+                f"{uploaded} ({reason}{excluded})."
+            )
+
+        table = Table(
+            [
+                [
+                    Paragraph(
+                        '<font color="#B91C1C"><b>POSIBLE REENVÍO DEL MISMO TRABAJO</b></font><br/>'
+                        + "<br/>".join(lines)
+                        + '<br/><font color="#64748B">La fuente no se excluye '
+                        "automáticamente: decide el docente.</font>",
+                        styles["small"],
+                    )
+                ]
+            ],
+            colWidths=[16.6 * cm],
+        )
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FEF2F2")),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#FCA5A5")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 6),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+
+        return [table]
+
+    def _build_excluded_sources(
+        self,
+        sources: list[ReportSource],
+        styles: dict[str, ParagraphStyle],
+    ) -> list[Any]:
+        section: list[Any] = [
+            Paragraph(f"FUENTES EXCLUIDAS: {len(sources)}", styles["kicker"]),
+            Spacer(1, 0.2 * cm),
+        ]
+
+        for source in sources:
+            badge = (
+                ' &nbsp;<font color="#B91C1C"><b>Posible reenvío del mismo trabajo</b></font>'
+                if source.is_possible_resubmission
+                else ""
+            )
+            section.append(
+                Paragraph(
+                    f"<b>{self._escape(self._truncate(source.title, 90))}</b>"
+                    f" ({self._format_percent(source.matched_percent)}% antes de "
+                    f"excluir){badge}<br/>"
+                    f'<font color="#64748B">Motivo: '
+                    f"{self._escape(source.exclusion_reason or '—')}</font>",
+                    styles["small"],
+                )
+            )
+            section.append(Spacer(1, 0.12 * cm))
+
+        if self.report.original_similarity_percent is not None:
+            section.append(
+                Paragraph(
+                    f'<font color="#64748B">Similitud original antes de excluir: '
+                    f"{self._format_percent(self.report.original_similarity_percent)}%."
+                    "</font>",
+                    styles["small"],
+                )
+            )
 
         return section
 

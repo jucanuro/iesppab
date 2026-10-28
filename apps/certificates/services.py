@@ -157,10 +157,10 @@ class CertificateGenerationService:
                 "El documento debe estar completado antes de generar certificado."
             )
 
-        if report.risk_level == ReportRiskLevel.HIGH:
+        if report.risk_level in {ReportRiskLevel.HIGH, ReportRiskLevel.CRITICAL}:
             raise ValidationError(
                 "No se puede emitir un certificado para un reporte con nivel "
-                "de riesgo alto. Revisa el documento y vuelve a analizarlo."
+                "de riesgo alto o crítico. Revisa el documento y vuelve a analizarlo."
             )
 
     def _get_or_create_certificate(
@@ -737,10 +737,11 @@ class CertificateGenerationService:
         styles: dict[str, ParagraphStyle],
     ) -> list[Any]:
         sources = list(
-            report.sources.order_by("-matched_percent")[:10]
+            report.sources.filter(is_excluded=False).order_by("-matched_percent")[:10]
         )
+        excluded_count = report.sources.filter(is_excluded=True).count()
 
-        if not sources:
+        if not sources and not excluded_count:
             return []
 
         section: list[Any] = []
@@ -792,6 +793,16 @@ class CertificateGenerationService:
         )
         sources_table.setStyle(self._sources_table_style())
         section.append(sources_table)
+
+        if excluded_count:
+            section.append(Spacer(1, 0.2 * cm))
+            section.append(
+                Paragraph(
+                    f"Fuentes excluidas por el docente: {excluded_count}. "
+                    "Los porcentajes ya están recalculados sin ellas.",
+                    styles["sources_cell"],
+                )
+            )
 
         return section
 

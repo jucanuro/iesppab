@@ -111,7 +111,7 @@
                             {% include "certificates/_seal_download_icon.html" %}
                             Descargar certificado
                         </a>
-                    {% elif report and report.risk_level != "HIGH" %}
+                    {% elif report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
                         <form method="post"
                               action="{% url 'certificates:generate' document.id %}"
                               class="inline-flex"
@@ -128,7 +128,7 @@
                         </form>
                     {% else %}
                         <span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-400"
-                              title="{% if report and report.risk_level == 'HIGH' %}No se puede emitir un certificado para un reporte con riesgo alto. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+                              title="{% if report.risk_level == 'HIGH' or report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un reporte con riesgo alto o crítico. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
                             {% include "certificates/_seal_icon.html" %}
                             Certificado no disponible
                         </span>
@@ -195,6 +195,30 @@
         {% endif %}
 
     {% else %}
+
+        {% if resubmission_sources %}
+            <!-- AVISO DE REENVÍO -->
+            <section class="rounded-xl border border-red-200 bg-red-50 p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
+                <h3 class="text-[16px] font-bold text-red-700">
+                    Posible reenvío del mismo trabajo
+                </h3>
+
+                <ul class="mt-2 space-y-1 text-[13px] text-red-700">
+                    {% for source in resubmission_sources %}
+                        <li>
+                            «{{ source.title }}» de
+                            <span class="font-semibold">{{ source.resubmission.original_owner|default:"otro usuario" }}</span>{% if source.resubmission.original_created_at %},
+                            subido el {{ source.resubmission.original_created_at|slice:":10" }}{% endif %}
+                            ({% if source.resubmission.same_hash %}archivo idéntico{% else %}cubre el {{ source.resubmission.coverage_percent }}% del documento{% endif %}{% if source.is_excluded %}; fuente excluida{% endif %}).
+                        </li>
+                    {% endfor %}
+                </ul>
+
+                <p class="mt-2 text-[12px] text-red-600">
+                    La fuente no se excluye automáticamente: el docente decide si corresponde excluirla.
+                </p>
+            </section>
+        {% endif %}
 
         <!-- MÉTRICAS -->
         <section class="grid gap-4 md:grid-cols-4">
@@ -383,6 +407,17 @@
                             </span>
                         </div>
 
+                        {% if excluded_sources %}
+                            <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                <span class="text-[12px] font-semibold text-slate-500">
+                                    Similitud original
+                                </span>
+                                <span class="text-[12px] font-bold text-slate-700">
+                                    {{ report.original_similarity_percent }}% · {{ excluded_sources|length }} fuente{{ excluded_sources|length|pluralize }} excluida{{ excluded_sources|length|pluralize }}
+                                </span>
+                            </div>
+                        {% endif %}
+
                         <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                             <span class="text-[12px] font-semibold text-slate-500">
                                 Motor
@@ -468,6 +503,7 @@
                                     {% if source.snippet %}
                                         <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-red-800/80">{{ source.snippet }}</p>
                                     {% endif %}
+                                    {% include "reports/_source_actions.html" %}
                                 </article>
                             {% elif report.similarity_level == "moderado" %}
                                 <article class="rounded-lg border border-[#f5b400]/40 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]" style="background-color:#fff8e6;">
@@ -483,6 +519,7 @@
                                     {% if source.snippet %}
                                         <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-[#8a6100]/80">{{ source.snippet }}</p>
                                     {% endif %}
+                                    {% include "reports/_source_actions.html" %}
                                 </article>
                             {% else %}
                                 <article class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]">
@@ -498,6 +535,7 @@
                                     {% if source.snippet %}
                                         <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-emerald-800/80">{{ source.snippet }}</p>
                                     {% endif %}
+                                    {% include "reports/_source_actions.html" %}
                                 </article>
                             {% endif %}
                         {% empty %}
@@ -505,7 +543,62 @@
                                 No se detectaron fuentes internas relevantes.
                             </p>
                         {% endfor %}
+
+                        {% if can_manage_sources and sources and not report.allows_source_exclusion %}
+                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-500">
+                                Vuelve a analizar el documento para poder excluir fuentes.
+                            </p>
+                        {% endif %}
                     </div>
+
+                    {% if excluded_sources %}
+                        <div class="border-t border-slate-200 p-4">
+                            <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                                Fuentes excluidas: {{ excluded_sources|length }}
+                            </p>
+
+                            <div class="mt-3 space-y-3">
+                                {% for source in excluded_sources %}
+                                    <article class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-[13px] font-bold text-slate-500 line-through">{{ source.title }}</p>
+                                                <p class="mt-1 truncate text-[11px] font-semibold text-slate-400">{{ source.domain }}</p>
+                                            </div>
+                                            <span class="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500">
+                                                {{ source.matched_percent }}%
+                                            </span>
+                                        </div>
+                                        <p class="mt-2 text-[12px] leading-5 text-slate-600">
+                                            <span class="font-semibold">Motivo:</span> {{ source.exclusion_reason }}
+                                        </p>
+                                        <p class="mt-1 text-[11px] text-slate-400">
+                                            {{ source.excluded_by.get_full_name|default:source.excluded_by.username|default:"—" }}
+                                            · {{ source.excluded_at|date:"d/m/Y H:i" }}
+                                        </p>
+                                        {% if source.is_possible_resubmission %}
+                                            <p class="mt-2 inline-flex items-center rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700">
+                                                Posible reenvío del mismo trabajo
+                                            </p>
+                                        {% endif %}
+                                        {% if can_manage_sources %}
+                                            <form method="post"
+                                                  action="{% url 'reports:restore_source' document.id source.id %}"
+                                                  class="mt-2"
+                                                  data-submit-spinner>
+                                                {% csrf_token %}
+                                                <button type="submit"
+                                                        data-loading-label="Recalculando…"
+                                                        class="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
+                                                    Restaurar
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </article>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    {% endif %}
                 </section>
 
                 <!-- IA -->

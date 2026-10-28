@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import random
 from decimal import Decimal
 from io import StringIO
 
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import connection
@@ -12,8 +14,18 @@ from django.urls import reverse
 
 from apps.accounts.models import User, UserRole
 from apps.analysis.engines.text_filters import AcademicTextFilter
+from apps.analysis.engines.web_search import WebPageContent
+from apps.analysis.indexers import DocumentKnowledgeIndexer
+from apps.analysis.services import DocumentAnalysisService
+from apps.certificates.models import Certificate
+from apps.certificates.services import CertificateGenerationService
 from apps.core.models import Institution
-from apps.documents.models import Document, DocumentKind, DocumentText
+from apps.documents.models import (
+    Document,
+    DocumentKind,
+    DocumentStatus,
+    DocumentText,
+)
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
@@ -22,9 +34,13 @@ from apps.reports.models import (
     SourceType,
 )
 from apps.reports.services import (
+    ReportSourceExclusionError,
+    ReportSourceExclusionService,
+    SpanReportWriter,
     _HighlightedDocumentPdfBuilder,
     build_highlighted_document_pdf,
     resolve_analyzed_content,
+    resubmission_warning_sources,
 )
 
 SAMPLE_TEXT = (
@@ -721,3 +737,620 @@ class BackfillAnalyzedContentCommandTests(TestCase):
 
         report = AnalysisReport.objects.get(pk=self.legacy_report.pk)
         self.assertEqual(resolve_analyzed_content(report), frozen)
+
+
+def _synthetic_words(seed: int, count: int) -> list[str]:
+    """
+    Vocabulario propio por semilla: ningún tramo de 8 palabras se repite
+    entre semillas, así los % esperados son exactos.
+    """
+    rng = random.Random(seed)
+    vocabulary = [f"s{seed}w{index}" for index in range(400)]
+    return [rng.choice(vocabulary) for _ in range(count)]
+
+
+class SourceExclusionTestMixin:
+    """
+    Reporte real del motor span: el documento tiene 200 palabras contables;
+    las fuentes se arman con tramos de `self.copied` para controlar el
+    solapamiento.
+    """
+
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.other_institution = Institution.objects.create(
+            name="Otro instituto",
+            slug="otro-instituto",
+        )
+        self.student = self._user("alumno1", UserRole.STUDENT, self.institution)
+        self.source_author = self._user("alumno2", UserRole.STUDENT, self.institution)
+        self.teacher = self._user("docente1", UserRole.TEACHER, self.institution)
+        self.director = self._user("director1", UserRole.DIRECTOR, self.institution)
+        self.foreign_teacher = self._user(
+            "docente2", UserRole.TEACHER, self.other_institution
+        )
+
+        self.document = self._document(
+            owner=self.student,
+            title="Proyecto analizado",
+            sha256_hash="hash-proyecto-analizado",
+        )
+        self.document.uploaded_by = self.teacher
+        self.document.save(update_fields=["uploaded_by"])
+
+        self.copied = _synthetic_words(21, 200)
+        self.original = _synthetic_words(22, 200)
+
+    def _user(self, username: str, role: str, institution: Institution) -> User:
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="clave-segura-123",
+            role=role,
+            institution=institution,
+        )
+
+    def _document(
+        self,
+        owner: User,
+        title: str,
+        sha256_hash: str,
+    ) -> Document:
+        document = Document(
+            institution=self.institution,
+            owner=owner,
+            uploaded_by=owner,
+            title=title,
+            kind=DocumentKind.OTHER,
+            original_filename="documento.pdf",
+            mime_type="application/pdf",
+            file_size_bytes=len(SAMPLE_TEXT),
+            sha256_hash=sha256_hash,
+            status=DocumentStatus.COMPLETED,
+        )
+        document.original_file.save(
+            "documento.pdf",
+            ContentFile(SAMPLE_TEXT.encode("utf-8")),
+            save=False,
+        )
+        document.save()
+        return document
+
+    def _internal_source(
+        self,
+        words: list[str],
+        title: str,
+        sha256_hash: str | None = None,
+    ) -> Document:
+        source = self._document(
+            owner=self.source_author,
+            title=title,
+            sha256_hash=sha256_hash or f"hash-{title}",
+        )
+        DocumentKnowledgeIndexer().index(
+            DocumentText(document=source),
+            content=" ".join(words),
+        )
+        return source
+
+    def _web_page(self, words: list[str], title: str = "Página web") -> WebPageContent:
+        return WebPageContent(
+            title=title,
+            url=f"https://example.com/{title.lower().replace(' ', '-')}",
+            domain="example.com",
+            text=" ".join(words),
+            source_format="html",
+        )
+
+    def _analyze(
+        self,
+        copied_words: int,
+        web_pages: list[WebPageContent] = (),
+    ) -> AnalysisReport:
+        """
+        Misma persistencia que `DocumentAnalysisService.execute` con el
+        motor span, sin extraer el archivo ni consultar Brave.
+        """
+        content = " ".join(
+            self.copied[:copied_words] + self.original[: 200 - copied_words]
+        )
+        service = DocumentAnalysisService(requested_by=self.teacher)
+        similarity = service._run_similarity(
+            document=self.document,
+            analysis_content=content,
+            quoted_ranges=[],
+            collect_web_pages=lambda: list(web_pages),
+            engine="span",
+        )
+        report = service._save_report(
+            document=self.document,
+            job=None,
+            total_similarity_percent=similarity.total_similarity_percent,
+            internal_similarity_percent=similarity.internal_result.similarity_percent,
+            web_similarity_percent=similarity.web_result.web_similarity_percent,
+            ai_probability_percent=Decimal("0.00"),
+            ai_detector="spanish-heuristic-v1",
+            excluded_sections=[],
+            analyzed_content=content,
+            exclude_quotes=False,
+            similarity=similarity,
+        )
+        SpanReportWriter().write(
+            report=report,
+            result=similarity.span_result,
+            reset=True,
+        )
+        report.refresh_from_db()
+        return report
+
+    def _source(self, report: AnalysisReport, title: str) -> ReportSource:
+        return report.sources.get(title=title)
+
+    def _percents(self, report: AnalysisReport) -> tuple[Decimal, Decimal, Decimal]:
+        report.refresh_from_db()
+        return (
+            report.similarity_percent,
+            report.internal_similarity_percent,
+            report.web_similarity_percent,
+        )
+
+
+class SourceExclusionRecalculationTests(SourceExclusionTestMixin, TestCase):
+    def test_single_source_exclusion_drops_its_words(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("50.00"), Decimal("0.00"), Decimal("50.00")),
+        )
+        self.assertEqual(report.risk_level, ReportRiskLevel.CRITICAL)
+        self.assertEqual(report.original_similarity_percent, Decimal("50.00"))
+
+        source = self._source(report, "Página web")
+        self.assertEqual(source.word_count, 100)
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=source.id,
+            reason="Documento de prueba",
+        )
+
+        report.refresh_from_db()
+        source.refresh_from_db()
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("0.00"), Decimal("0.00"), Decimal("0.00")),
+        )
+        self.assertEqual(report.risk_level, ReportRiskLevel.LOW)
+        self.assertEqual(report.original_similarity_percent, Decimal("50.00"))
+        self.assertTrue(source.is_excluded)
+        self.assertEqual(source.excluded_by, self.teacher)
+        self.assertIsNotNone(source.excluded_at)
+        self.assertEqual(source.exclusion_reason, "Documento de prueba")
+        # Conserva el % que tenía para mostrarlo en "Fuentes excluidas".
+        self.assertEqual(source.matched_percent, Decimal("50.00"))
+        self.assertFalse(
+            report.findings.filter(finding_type=FindingType.SIMILARITY).exists()
+        )
+
+    def test_overlapping_sources_reassign_words_to_the_next_source(self) -> None:
+        # Interna: palabras 0-99. Web: palabras 50-149 (se pisan en 50-99).
+        self._internal_source(self.copied[:100], title="Coautoría")
+        report = self._analyze(
+            copied_words=150,
+            web_pages=[self._web_page(self.copied[50:150])],
+        )
+        internal = self._source(report, "Coautoría")
+        web = self._source(report, "Página web")
+
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("75.00"), Decimal("50.00"), Decimal("25.00")),
+        )
+        self.assertEqual((internal.word_count, web.word_count), (100, 50))
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=internal.id,
+            reason="Coautoría declarada",
+        )
+
+        web.refresh_from_db()
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("50.00"), Decimal("0.00"), Decimal("50.00")),
+        )
+        self.assertEqual(web.word_count, 100)
+        self.assertEqual(web.matched_percent, Decimal("50.00"))
+
+        findings = list(
+            report.findings.filter(finding_type=FindingType.SIMILARITY).order_by(
+                "start_offset"
+            )
+        )
+        self.assertEqual({finding.source_id for finding in findings}, {web.id})
+        self.assertEqual(
+            findings[0].start_offset,
+            report.analyzed_content.index(self.copied[50]),
+        )
+
+    def test_excluded_winner_hands_words_to_a_source_that_had_none(self) -> None:
+        # La interna cubre todo lo que cubre la web: la web no gana palabras
+        # y no aparece hasta que se excluye la interna.
+        self._internal_source(self.copied[:100], title="Documento de prueba")
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:60])],
+        )
+        self.assertFalse(report.sources.filter(title="Página web").exists())
+
+        service = ReportSourceExclusionService(requested_by=self.teacher)
+        internal = self._source(report, "Documento de prueba")
+        service.exclude(
+            document_id=self.document.id,
+            source_id=internal.id,
+            reason="Documento de prueba",
+        )
+
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("30.00"), Decimal("0.00"), Decimal("30.00")),
+        )
+        self.assertEqual(self._source(report, "Página web").word_count, 60)
+
+        service.restore(document_id=self.document.id, source_id=internal.id)
+
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("50.00"), Decimal("50.00"), Decimal("0.00")),
+        )
+        self.assertFalse(report.sources.filter(title="Página web").exists())
+
+    def test_restore_returns_the_original_percentages(self) -> None:
+        self._internal_source(self.copied[:100], title="Coautoría")
+        report = self._analyze(
+            copied_words=150,
+            web_pages=[self._web_page(self.copied[50:150])],
+        )
+        original = self._percents(report)
+        original_findings = sorted(
+            report.findings.filter(finding_type=FindingType.SIMILARITY).values_list(
+                "source__title", "start_offset", "end_offset"
+            )
+        )
+        service = ReportSourceExclusionService(requested_by=self.teacher)
+        internal = self._source(report, "Coautoría")
+        web = self._source(report, "Página web")
+
+        service.exclude(
+            document_id=self.document.id,
+            source_id=internal.id,
+            reason="Coautoría declarada",
+        )
+        service.exclude(
+            document_id=self.document.id,
+            source_id=web.id,
+            reason="Página del propio autor",
+        )
+        self.assertEqual(
+            self._percents(report),
+            (Decimal("0.00"), Decimal("0.00"), Decimal("0.00")),
+        )
+
+        service.restore(document_id=self.document.id, source_id=web.id)
+        service.restore(document_id=self.document.id, source_id=internal.id)
+
+        internal.refresh_from_db()
+        self.assertEqual(self._percents(report), original)
+        self.assertEqual(report.risk_level, ReportRiskLevel.CRITICAL)
+        self.assertFalse(internal.is_excluded)
+        self.assertIsNone(internal.excluded_by)
+        self.assertEqual(internal.exclusion_reason, "")
+        self.assertEqual(
+            sorted(
+                report.findings.filter(
+                    finding_type=FindingType.SIMILARITY
+                ).values_list("source__title", "start_offset", "end_offset")
+            ),
+            original_findings,
+        )
+
+    def test_reason_is_required(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        source = self._source(report, "Página web")
+
+        with self.assertRaisesMessage(
+            ReportSourceExclusionError, "Indica el motivo para excluir la fuente."
+        ):
+            ReportSourceExclusionService(requested_by=self.teacher).exclude(
+                document_id=self.document.id,
+                source_id=source.id,
+                reason="   ",
+            )
+
+        source.refresh_from_db()
+        self.assertFalse(source.is_excluded)
+
+    def test_report_without_alignment_cannot_exclude(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        report.span_alignment = {}
+        report.save(update_fields=["span_alignment"])
+
+        with self.assertRaisesMessage(
+            ReportSourceExclusionError,
+            "Vuelve a analizar el documento para poder excluir fuentes.",
+        ):
+            ReportSourceExclusionService(requested_by=self.teacher).exclude(
+                document_id=self.document.id,
+                source_id=self._source(report, "Página web").id,
+                reason="Documento de prueba",
+            )
+
+    def test_exclusion_revokes_the_issued_certificate(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        certificate = Certificate.objects.create(
+            report=report,
+            code="IPT-2026-ABCD1234",
+            verification_hash="a" * 64,
+            issued_by=self.teacher,
+            is_active=True,
+        )
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=self._source(report, "Página web").id,
+            reason="Documento de prueba",
+        )
+
+        certificate.refresh_from_db()
+        self.assertFalse(certificate.is_active)
+        self.assertIsNotNone(certificate.revoked_at)
+        self.assertEqual(
+            certificate.revoke_reason,
+            "Reporte recalculado por exclusión de fuentes",
+        )
+
+    def test_recalculated_risk_unlocks_the_certificate(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        certificates = CertificateGenerationService(
+            issued_by=self.teacher,
+            absolute_base_url="http://testserver/",
+        )
+
+        with self.assertRaises(ValidationError):
+            certificates.execute(document_id=self.document.id)
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=self._source(report, "Página web").id,
+            reason="Documento de prueba",
+        )
+
+        certificate = certificates.execute(document_id=self.document.id)
+        self.assertTrue(certificate.is_active)
+
+    def test_pdf_lists_excluded_sources_with_their_reason(self) -> None:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=self._source(report, "Página web").id,
+            reason="Documento de prueba",
+        )
+
+        report.refresh_from_db()
+        reader = PdfReader(BytesIO(build_highlighted_document_pdf(report=report)))
+        text = " ".join(page.extract_text() for page in reader.pages)
+
+        self.assertIn("FUENTES EXCLUIDAS: 1", text)
+        self.assertIn("Motivo: Documento de prueba", text)
+
+
+class SourceExclusionPermissionTests(SourceExclusionTestMixin, TestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+        )
+        self.source = self._source(self.report, "Página web")
+        self.url = reverse(
+            "reports:exclude_source",
+            kwargs={"pk": self.document.id, "source_pk": self.source.id},
+        )
+
+    def _post_as(self, user: User):
+        self.client.force_login(user)
+        return self.client.post(self.url, {"reason": "Documento de prueba"})
+
+    def test_student_cannot_exclude(self) -> None:
+        response = self._post_as(self.student)
+
+        self.assertEqual(response.status_code, 403)
+        self.source.refresh_from_db()
+        self.assertFalse(self.source.is_excluded)
+        self.assertEqual(self._percents(self.report)[0], Decimal("50.00"))
+
+    def test_teacher_from_another_institution_cannot_exclude(self) -> None:
+        response = self._post_as(self.foreign_teacher)
+
+        self.assertEqual(response.status_code, 403)
+        self.source.refresh_from_db()
+        self.assertFalse(self.source.is_excluded)
+
+    def test_teacher_of_the_same_institution_excludes(self) -> None:
+        response = self._post_as(self.teacher)
+
+        self.assertRedirects(
+            response,
+            reverse("reports:detail", kwargs={"pk": self.document.id}),
+            fetch_redirect_response=False,
+        )
+        self.source.refresh_from_db()
+        self.assertTrue(self.source.is_excluded)
+        self.assertEqual(self._percents(self.report)[0], Decimal("0.00"))
+
+    def test_director_of_the_same_institution_excludes(self) -> None:
+        ReportSourceExclusionService(requested_by=self.director).exclude(
+            document_id=self.document.id,
+            source_id=self.source.id,
+            reason="Documento de prueba",
+        )
+
+        self.source.refresh_from_db()
+        self.assertTrue(self.source.is_excluded)
+
+    def test_student_restore_is_also_forbidden(self) -> None:
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=self.source.id,
+            reason="Documento de prueba",
+        )
+        self.client.force_login(self.student)
+
+        response = self.client.post(
+            reverse(
+                "reports:restore_source",
+                kwargs={"pk": self.document.id, "source_pk": self.source.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.source.refresh_from_db()
+        self.assertTrue(self.source.is_excluded)
+
+    def test_empty_reason_shows_a_message(self) -> None:
+        self.client.force_login(self.teacher)
+
+        response = self.client.post(self.url, {"reason": ""}, follow=True)
+
+        self.assertContains(response, "Indica el motivo para excluir la fuente.")
+        self.source.refresh_from_db()
+        self.assertFalse(self.source.is_excluded)
+
+    def test_button_is_hidden_from_the_student(self) -> None:
+        detail = reverse("reports:detail", kwargs={"pk": self.document.id})
+
+        self.client.force_login(self.student)
+        self.assertNotContains(self.client.get(detail), "Excluir fuente")
+
+        self.client.force_login(self.teacher)
+        self.assertContains(self.client.get(detail), "Excluir fuente")
+
+
+class ResubmissionWarningTests(SourceExclusionTestMixin, TestCase):
+    def _detail_as_teacher(self):
+        self.client.force_login(self.teacher)
+        return self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+    def test_same_hash_source_is_flagged_even_with_low_coverage(self) -> None:
+        self._internal_source(
+            self.copied[:40],
+            title="Original con mismo archivo",
+            sha256_hash=self.document.sha256_hash,
+        )
+        report = self._analyze(copied_words=40)
+        source = self._source(report, "Original con mismo archivo")
+
+        self.assertTrue(source.is_possible_resubmission)
+        self.assertTrue(source.resubmission["same_hash"])
+        self.assertEqual(source.resubmission["coverage_percent"], "20.00")
+        self.assertEqual(source.resubmission["original_owner"], "alumno2")
+        self.assertEqual(resubmission_warning_sources([source]), [source])
+
+        response = self._detail_as_teacher()
+        self.assertContains(response, "Posible reenvío del mismo trabajo")
+        self.assertContains(response, "archivo idéntico")
+
+        # No se excluye sola; y si el docente la excluye, el hash sigue
+        # avisando arriba.
+        self.assertFalse(source.is_excluded)
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=source.id,
+            reason="Reenvío revisado",
+        )
+        source.refresh_from_db()
+        self.assertEqual(resubmission_warning_sources([source]), [source])
+        self.assertContains(self._detail_as_teacher(), "fuente excluida")
+
+    def test_source_covering_95_percent_is_flagged(self) -> None:
+        self._internal_source(self.copied[:192], title="Trabajo de otra cuenta")
+        report = self._analyze(copied_words=192)
+        source = self._source(report, "Trabajo de otra cuenta")
+
+        self.assertTrue(source.is_possible_resubmission)
+        self.assertFalse(source.resubmission["same_hash"])
+        self.assertEqual(source.resubmission["coverage_percent"], "96.00")
+        self.assertFalse(source.is_excluded)
+        self.assertContains(
+            self._detail_as_teacher(), "cubre el 96.00% del documento"
+        )
+
+        # Excluida por cobertura (sin mismo hash): deja de avisar arriba.
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=source.id,
+            reason="Coautoría",
+        )
+        source.refresh_from_db()
+        self.assertTrue(source.is_possible_resubmission)
+        self.assertEqual(resubmission_warning_sources([source]), [])
+
+    def test_source_below_95_percent_is_not_flagged(self) -> None:
+        self._internal_source(self.copied[:180], title="Trabajo parecido")
+        report = self._analyze(copied_words=180)
+        source = self._source(report, "Trabajo parecido")
+
+        self.assertEqual(source.word_count, 180)
+        self.assertFalse(source.is_possible_resubmission)
+        self.assertNotContains(
+            self._detail_as_teacher(), "Posible reenvío del mismo trabajo"
+        )
+
+    def test_coverage_counts_words_lost_to_another_source(self) -> None:
+        # La web (192 palabras) gana casi todo; a la interna solo le quedan
+        # 8 palabras, pero cubre el 95.5%: se marca por su cobertura bruta,
+        # no por las palabras atribuidas.
+        self._internal_source(self.copied[:191], title="Trabajo completo")
+        report = self._analyze(
+            copied_words=200,
+            web_pages=[self._web_page(self.copied[8:200], title="Copia web")],
+        )
+        internal = self._source(report, "Trabajo completo")
+
+        self.assertEqual(internal.word_count, 8)
+        self.assertEqual(internal.resubmission["coverage_percent"], "95.50")
+        self.assertEqual(
+            [
+                source.title
+                for source in report.sources.all()
+                if source.is_possible_resubmission
+            ],
+            ["Trabajo completo"],
+        )

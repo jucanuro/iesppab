@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
@@ -93,6 +94,26 @@ class AnalysisReport(TimeStampedModel):
             "para que coincidan exactamente."
         ),
     )
+    span_alignment = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("Alineación del motor span"),
+        help_text=_(
+            "Cobertura de cada fuente sobre las palabras del texto analizado, "
+            "antes de repartirlas. Permite excluir una fuente y recalcular "
+            "sin releer las fuentes ni volver a consultar internet. Vacío en "
+            "reportes del motor chunk o anteriores a esta función."
+        ),
+    )
+    original_similarity_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=PERCENTAGE_VALIDATORS,
+        verbose_name=_("Similitud original"),
+        help_text=_("Porcentaje de similitud antes de excluir fuentes."),
+    )
     exclude_quotes = models.BooleanField(
         default=True,
         verbose_name=_("Excluir citas textuales"),
@@ -140,6 +161,10 @@ class AnalysisReport(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"Reporte - {self.document.title}"
+
+    @property
+    def allows_source_exclusion(self) -> bool:
+        return bool(self.span_alignment)
 
     @property
     def excluded_options_label(self) -> str:
@@ -246,6 +271,44 @@ class ReportSource(TimeStampedModel):
         blank=True,
         verbose_name=_("Metadatos"),
     )
+    source_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name=_("Clave de la fuente"),
+        help_text=_(
+            "Identifica la fuente en la alineación del motor span "
+            "(\"internal:<uuid>\", \"oai:<uuid>\", \"web:<url>\")."
+        ),
+    )
+    word_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("Palabras atribuidas"),
+    )
+    is_excluded = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name=_("Excluida"),
+    )
+    excluded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="excluded_report_sources",
+        null=True,
+        blank=True,
+        verbose_name=_("Excluida por"),
+    )
+    excluded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Excluida el"),
+    )
+    exclusion_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name=_("Motivo de exclusión"),
+    )
 
     class Meta:
         verbose_name = _("Fuente del reporte")
@@ -258,6 +321,18 @@ class ReportSource(TimeStampedModel):
 
     def __str__(self) -> str:
         return self.title
+
+    @property
+    def resubmission(self) -> dict:
+        """
+        Datos del posible reenvío del mismo trabajo (dueño y fecha del
+        original), o vacío si la fuente no lo es.
+        """
+        return (self.metadata or {}).get("resubmission") or {}
+
+    @property
+    def is_possible_resubmission(self) -> bool:
+        return bool(self.resubmission)
 
 
 class FindingType(models.TextChoices):

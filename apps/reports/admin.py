@@ -7,6 +7,18 @@ from apps.reports.models import (
 )
 
 
+# La exclusión se cambia solo desde el reporte (ReportSourceExclusionService),
+# que recalcula los %; editarla aquí dejaría el reporte desalineado.
+SOURCE_EXCLUSION_READONLY_FIELDS = (
+    "source_key",
+    "word_count",
+    "is_excluded",
+    "excluded_by",
+    "excluded_at",
+    "exclusion_reason",
+)
+
+
 class ReportSourceInline(admin.TabularInline):
     model = ReportSource
     extra = 0
@@ -14,6 +26,7 @@ class ReportSourceInline(admin.TabularInline):
         "id",
         "created_at",
         "updated_at",
+        *SOURCE_EXCLUSION_READONLY_FIELDS,
     )
 
 
@@ -54,6 +67,8 @@ class AnalysisReportAdmin(admin.ModelAdmin):
         "created_at",
         "updated_at",
         "generated_at",
+        "span_alignment",
+        "original_similarity_percent",
     )
     autocomplete_fields = (
         "document",
@@ -72,12 +87,15 @@ class ReportSourceAdmin(admin.ModelAdmin):
         "source_type",
         "domain",
         "matched_percent",
+        "is_excluded",
         "report",
     )
     list_filter = (
         "source_type",
+        "is_excluded",
         "domain",
     )
+    readonly_fields = SOURCE_EXCLUSION_READONLY_FIELDS
     search_fields = (
         "title",
         "url",

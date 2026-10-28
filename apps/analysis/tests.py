@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import re
 from datetime import timedelta
 from decimal import Decimal
@@ -18,6 +19,10 @@ from django.utils import timezone
 from apps.accounts.models import User, UserRole
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.span_similarity import (
+    SpanSimilarityEngine,
+    SpanSource,
+)
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
     InternalSimilarityEngine,
@@ -2006,3 +2011,164 @@ class WebCandidateCollectorQueryTests(SimpleTestCase):
         self.assertIn("consultas=8/24 (límite=24)", summary[0])
         self.assertIn("páginas_consultadas=17", summary[0])
         self.assertIn(f"páginas_con_contenido={len(pages)}", summary[0])
+
+
+def _synthetic_text(seed: int, words: int) -> str:
+    """
+    Texto con vocabulario propio por semilla: ningún tramo de 8 palabras
+    se repite entre semillas distintas, así el % esperado es exacto.
+    """
+    rng = random.Random(seed)
+    vocabulary = [f"t{seed}p{index}" for index in range(400)]
+    return " ".join(rng.choice(vocabulary) for _ in range(words))
+
+
+def _span_source(text: str, key: str = "fuente", kind: str = "web", **kwargs):
+    return SpanSource(key=key, kind=kind, title=key, segments=(text,), **kwargs)
+
+
+class SpanSimilarityEngineTests(SimpleTestCase):
+    def _engine(self, **kwargs):
+        return SpanSimilarityEngine(
+            min_match_words=kwargs.get("min_match_words", 8),
+            max_gap_words=kwargs.get("max_gap_words", 2),
+        )
+
+    def test_literal_copy_is_100_percent(self) -> None:
+        text = _synthetic_text(1, 300)
+
+        result = self._engine().analyze(text, [_span_source(text)])
+
+        self.assertEqual(result.similarity_percent, Decimal("100.00"))
+        self.assertEqual(len(result.matches), 1)
+        self.assertEqual(result.matches[0].start_offset, 0)
+        self.assertEqual(result.matches[0].end_offset, len(text))
+
+    def test_matches_shorter_than_minimum_are_ignored(self) -> None:
+        source = _synthetic_text(1, 100)
+        copied = " ".join(source.split()[10:17])  # 7 palabras
+        content = f"{_synthetic_text(2, 50)} {copied} {_synthetic_text(3, 43)}"
+
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+
+    def test_partial_copy_percent_is_exact_in_words(self) -> None:
+        source = _synthetic_text(1, 200)
+        copied = " ".join(source.split()[20:70])  # 50 palabras
+        content = f"{_synthetic_text(2, 100)} {copied} {_synthetic_text(3, 50)}"
+
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(result.countable_word_count, 200)
+        self.assertEqual(result.similarity_percent, Decimal("25.00"))
+        self.assertEqual(result.matches[0].source_excerpt, copied)
+
+    def test_gaps_of_up_to_two_words_are_merged(self) -> None:
+        words = _synthetic_text(1, 40).split()
+        changed = list(words)
+        changed[20] = "distinta"
+        changed[21] = "otra"
+        content = " ".join(changed)
+
+        result = self._engine().analyze(content, [_span_source(" ".join(words))])
+
+        self.assertEqual(len(result.matches), 1)
+        self.assertEqual(result.matches[0].word_count, 40)
+        self.assertEqual(result.similarity_percent, Decimal("100.00"))
+
+    def test_gaps_longer_than_limit_split_the_match(self) -> None:
+        words = _synthetic_text(1, 40).split()
+        changed = list(words)
+        changed[20:23] = ["distinta", "otra", "nueva"]
+        content = " ".join(changed)
+
+        result = self._engine().analyze(content, [_span_source(" ".join(words))])
+
+        self.assertEqual(len(result.matches), 2)
+        self.assertEqual(result.similarity_percent, Decimal("92.50"))
+
+    def test_each_word_is_attributed_to_one_source_largest_first(self) -> None:
+        big = _synthetic_text(1, 100)
+        small = " ".join(big.split()[80:100]) + " " + _synthetic_text(2, 30)
+        content = f"{big} {_synthetic_text(2, 30)}"
+
+        result = self._engine().analyze(
+            content,
+            [
+                _span_source(small, key="chica"),
+                _span_source(big, key="grande"),
+            ],
+        )
+
+        by_key = {item.source.key: item.word_count for item in result.sources}
+        # "grande" se queda con sus 100; "chica" solo con las 30 palabras
+        # que nadie más cubría (las 20 compartidas no se cuentan dos veces).
+        self.assertEqual(by_key, {"grande": 100, "chica": 30})
+        self.assertEqual(result.similarity_percent, Decimal("100.00"))
+        self.assertEqual(
+            sum(item.percent for item in result.sources),
+            result.similarity_percent,
+        )
+
+    def test_leftover_shorter_than_minimum_is_not_attributed(self) -> None:
+        big = _synthetic_text(1, 100)
+        # Comparte las últimas 20 palabras con "grande" y le suma 5 propias.
+        tail = _synthetic_text(2, 5)
+        small = " ".join(big.split()[80:100]) + " " + tail
+        content = f"{big} {tail}"
+
+        result = self._engine().analyze(
+            content,
+            [_span_source(small, key="chica"), _span_source(big, key="grande")],
+        )
+
+        self.assertEqual([item.source.key for item in result.sources], ["grande"])
+
+    def test_excluded_quote_is_not_countable_and_breaks_matches(self) -> None:
+        source = _synthetic_text(1, 60)
+        words = source.split()
+        quoted = " ".join(words[25:35])
+        content = (
+            " ".join(words[:25]) + ' "' + quoted + '" ' + " ".join(words[35:])
+        )
+        quote_start = content.index('"')
+        quote_end = content.index('"', quote_start + 1) + 1
+
+        result = self._engine().analyze(
+            content,
+            [_span_source(source)],
+            excluded_ranges=[(quote_start, quote_end)],
+        )
+
+        self.assertEqual(result.countable_word_count, 50)
+        self.assertEqual(result.similarity_percent, Decimal("100.00"))
+        self.assertEqual(len(result.matches), 2)
+
+        for match in result.matches:
+            self.assertFalse(
+                match.start_offset < quote_end and match.end_offset > quote_start
+            )
+
+    def test_matches_do_not_cross_source_segments(self) -> None:
+        words = _synthetic_text(1, 12).split()
+        content = " ".join(words)
+        source = SpanSource(
+            key="partida",
+            kind="internal",
+            title="partida",
+            segments=(" ".join(words[:6]), " ".join(words[6:])),
+        )
+
+        result = self._engine().analyze(content, [source])
+
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+
+    def test_accents_and_case_are_normalized(self) -> None:
+        source = "La Educación Inicial promueve el desarrollo integral del niño en el aula"
+        content = "la educacion inicial promueve el desarrollo integral del nino en el aula"
+
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(result.similarity_percent, Decimal("100.00"))
+

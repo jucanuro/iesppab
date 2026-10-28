@@ -475,6 +475,43 @@ OAI_HARVEST_ENABLED = env_bool(
     True,
 )
 
+# Motor de similitud (interna, OAI y web):
+# - "chunk": fragmentos de 85 palabras con shingles y umbral (motor actual).
+# - "span": tramos de palabras idénticas >= SIMILARITY_MIN_MATCH_WORDS,
+#   unidos si los separan <= SIMILARITY_MAX_GAP_WORDS palabras, y cada
+#   palabra atribuida a una sola fuente (estilo Turnitin).
+SIMILARITY_ENGINE = os.getenv("SIMILARITY_ENGINE", "chunk").strip().lower()
+
+if SIMILARITY_ENGINE not in {"chunk", "span"}:
+    raise RuntimeError(
+        "SIMILARITY_ENGINE debe ser 'chunk' o 'span'."
+    )
+
+# Recuperación de candidatos para el motor "chunk" ("span" usa siempre la
+# nueva):
+# - "vieja": top-40 fragmentos/registros por huellas compartidas.
+# - "nueva": solo huellas raras (ver SIMILARITY_MAX_DOCUMENT_FREQUENCY),
+#   agrupadas por documento y filtradas antes del corte.
+SIMILARITY_RETRIEVAL = os.getenv("SIMILARITY_RETRIEVAL", "vieja").strip().lower()
+
+if SIMILARITY_RETRIEVAL not in {"vieja", "nueva"}:
+    raise RuntimeError(
+        "SIMILARITY_RETRIEVAL debe ser 'vieja' o 'nueva'."
+    )
+
+SIMILARITY_MIN_MATCH_WORDS = env_int("SIMILARITY_MIN_MATCH_WORDS", 8)
+SIMILARITY_MAX_GAP_WORDS = env_int("SIMILARITY_MAX_GAP_WORDS", 2)
+
+# Una huella compartida por más fuentes que esto es una frase común ("de la
+# presente investigación...") y no sirve para elegir candidatos.
+SIMILARITY_MAX_DOCUMENT_FREQUENCY = env_int(
+    "SIMILARITY_MAX_DOCUMENT_FREQUENCY",
+    50,
+)
+
+# Documentos internos + registros OAI que pasan a la alineación.
+SIMILARITY_MAX_CANDIDATES = env_int("SIMILARITY_MAX_CANDIDATES", 200)
+
 # Repositorios con endpoint OAI-PMH confirmado manualmente (verb=Identify
 # respondió con <Identify> o <error> válido, probado en este orden:
 # <dominio>/oai/request, <dominio>/server/oai/request,

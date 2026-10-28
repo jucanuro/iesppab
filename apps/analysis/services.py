@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Iterable
 from uuid import UUID
@@ -21,12 +23,23 @@ from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
     InternalSimilarityEngine,
+    SimilarityAnalysisResult,
+    SimilarityMatch,
+)
+from apps.analysis.engines.span_similarity import (
+    SOURCE_KIND_INTERNAL,
+    SOURCE_KIND_OAI,
+    SOURCE_KIND_WEB,
+    SpanAnalysisResult,
+    SpanSimilarityEngine,
+    SpanSource,
 )
 from apps.analysis.engines.text_filters import AcademicTextFilter
-from apps.analysis.engines.web_search import WebCandidateCollector
+from apps.analysis.engines.web_search import WebCandidateCollector, WebPageContent
 from apps.analysis.engines.web_similarity import (
     WebSimilarityAnalysisResult,
     WebSimilarityEngine,
+    WebSimilarityMatch,
 )
 from apps.analysis.indexers import DocumentKnowledgeIndexer
 from apps.analysis.models import (
@@ -37,6 +50,7 @@ from apps.analysis.models import (
     DocumentKnowledgeChunk,
     OaiRecord,
 )
+from apps.analysis.retrieval import CandidateRetriever
 from apps.documents.extractors import DocumentTextExtractor
 from apps.documents.models import Document, DocumentStatus
 from apps.reports.models import (
@@ -58,6 +72,34 @@ MAX_ANALYSIS_DELIVERIES = 2
 
 class DocumentAnalysisError(Exception):
     pass
+
+
+ALGORITHM_CHUNK_INTERNAL = "knowledge-chunks-shingling"
+ALGORITHM_CHUNK_WEB = "brave-search-html-pdf-shingling"
+ALGORITHM_SPAN_INTERNAL = "span-exact-words-v1"
+ALGORITHM_SPAN_WEB = "brave-search-span-exact-words-v1"
+
+
+@dataclass(frozen=True)
+class SimilarityRunResult:
+    internal_result: SimilarityAnalysisResult
+    web_result: WebSimilarityAnalysisResult
+    total_similarity_percent: Decimal
+    oai_records_by_id: dict[UUID, OaiRecord]
+    engine: str
+    retrieval: str
+
+    @property
+    def internal_algorithm(self) -> str:
+        return (
+            ALGORITHM_SPAN_INTERNAL
+            if self.engine == "span"
+            else ALGORITHM_CHUNK_INTERNAL
+        )
+
+    @property
+    def web_algorithm(self) -> str:
+        return ALGORITHM_SPAN_WEB if self.engine == "span" else ALGORITHM_CHUNK_WEB
 
 
 class DocumentAnalysisService:
@@ -103,6 +145,8 @@ class DocumentAnalysisService:
         self.internal_similarity_engine = InternalSimilarityEngine()
         self.web_candidate_collector = WebCandidateCollector()
         self.web_similarity_engine = WebSimilarityEngine()
+        self.candidate_retriever = CandidateRetriever()
+        self.span_similarity_engine = SpanSimilarityEngine()
 
         self.ai_detector = SpanishAIDetector()
         self.perplexity_detector = SpanishPerplexityDetector()
@@ -190,43 +234,17 @@ class DocumentAnalysisService:
                 content=indexing_content,
             )
 
-            self._mark_job_step(
-                job=job,
-                step="Comparando contra repositorio institucional",
+            similarity = self._run_similarity(
+                document=document,
+                analysis_content=analysis_content,
+                quoted_ranges=quoted_ranges,
+                collect_web_pages=lambda: self.web_candidate_collector.collect(
+                    content=analysis_content,
+                ),
+                on_step=lambda step: self._mark_job_step(job=job, step=step),
             )
-
-            fingerprint_candidates, oai_records_by_id = (
-                self._get_fingerprint_candidates(
-                    document=document,
-                    analysis_content=analysis_content,
-                )
-            )
-
-            internal_result = self.internal_similarity_engine.analyze(
-                content=analysis_content,
-                candidates=fingerprint_candidates,
-                excluded_ranges=quoted_ranges,
-            )
-
-            self._mark_job_step(
-                job=job,
-                step="Buscando coincidencias públicas en internet",
-            )
-
-            web_pages = self.web_candidate_collector.collect(
-                content=analysis_content,
-            )
-
-            self._mark_job_step(
-                job=job,
-                step="Comparando contra fuentes web encontradas",
-            )
-
-            web_result = self.web_similarity_engine.analyze(
-                content=analysis_content,
-                web_pages=web_pages,
-                excluded_ranges=quoted_ranges,
-            )
+            internal_result = similarity.internal_result
+            web_result = similarity.web_result
 
             self._mark_job_step(
                 job=job,
@@ -245,18 +263,11 @@ class DocumentAnalysisService:
                 )
             )
 
-            total_similarity_percent = self._calculate_total_similarity_percent(
-                content_length=len(analysis_content),
-                internal_ranges=internal_result.all_matched_ranges,
-                web_ranges=web_result.all_matched_ranges,
-                excluded_ranges=quoted_ranges,
-            )
-
             with transaction.atomic():
                 report = self._save_report(
                     document=document,
                     job=job,
-                    total_similarity_percent=total_similarity_percent,
+                    total_similarity_percent=similarity.total_similarity_percent,
                     internal_similarity_percent=internal_result.similarity_percent,
                     web_similarity_percent=web_result.web_similarity_percent,
                     ai_probability_percent=ai_probability_percent,
@@ -267,17 +278,20 @@ class DocumentAnalysisService:
                     exclude_quotes=exclude_quotes,
                     exclude_bibliography=exclude_bibliography,
                     quoted_ranges=quoted_ranges,
+                    similarity=similarity,
                 )
 
                 self._replace_internal_similarity_findings(
                     report=report,
                     matches=internal_result.matches,
-                    oai_records_by_id=oai_records_by_id,
+                    oai_records_by_id=similarity.oai_records_by_id,
+                    algorithm=similarity.internal_algorithm,
                 )
 
                 self._replace_web_similarity_findings(
                     report=report,
                     web_result=web_result,
+                    algorithm=similarity.web_algorithm,
                 )
 
                 self._replace_ai_findings(
@@ -643,6 +657,198 @@ class DocumentAnalysisService:
             ]
         )
 
+    # Tope de tramos que se persisten como ReportFinding con el motor span
+    # (el % se calcula siempre sobre todos).
+    SPAN_MAX_PERSISTED_MATCHES = 200
+
+    def _run_similarity(
+        self,
+        document: Document,
+        analysis_content: str,
+        quoted_ranges: list[tuple[int, int]],
+        collect_web_pages: Callable[[], list[WebPageContent]],
+        on_step: Callable[[str], None] | None = None,
+        engine: str | None = None,
+        retrieval: str | None = None,
+    ) -> SimilarityRunResult:
+        """
+        Similitud interna + OAI + web con el motor y la recuperación
+        configurados (`SIMILARITY_ENGINE`, `SIMILARITY_RETRIEVAL`), o los
+        que se pasen explícitamente (lo usa `benchmark_similarity`).
+
+        - chunk + vieja: comportamiento histórico.
+        - chunk + nueva: mismo motor chunk, candidatos de CandidateRetriever.
+        - span: siempre CandidateRetriever; una sola atribución de palabras
+          entre fuentes internas, OAI y web, así que internal + web = total.
+        """
+        engine = engine or getattr(settings, "SIMILARITY_ENGINE", "chunk")
+        retrieval = (
+            "nueva"
+            if engine == "span"
+            else retrieval or getattr(settings, "SIMILARITY_RETRIEVAL", "vieja")
+        )
+        step = on_step or (lambda message: None)
+
+        step("Comparando contra repositorio institucional")
+
+        if retrieval == "nueva":
+            retrieved = self.candidate_retriever.retrieve(
+                document=document,
+                analysis_content=analysis_content,
+                excluded_ranges=quoted_ranges,
+            )
+            oai_records_by_id = retrieved.oai_records_by_id
+            candidates = (
+                retrieved.to_chunk_candidates(
+                    max_candidates=self.candidate_retriever.max_candidates,
+                )
+                if engine == "chunk"
+                else []
+            )
+        else:
+            retrieved = None
+            candidates, oai_records_by_id = self._get_fingerprint_candidates(
+                document=document,
+                analysis_content=analysis_content,
+            )
+
+        internal_result: SimilarityAnalysisResult | None = None
+
+        if engine == "chunk":
+            internal_result = self.internal_similarity_engine.analyze(
+                content=analysis_content,
+                candidates=candidates,
+                excluded_ranges=quoted_ranges,
+            )
+
+        step("Buscando coincidencias públicas en internet")
+
+        web_pages = collect_web_pages()
+
+        step("Comparando contra fuentes web encontradas")
+
+        if engine == "span":
+            span_result = self.span_similarity_engine.analyze(
+                content=analysis_content,
+                sources=retrieved.to_span_sources()
+                + self._web_span_sources(web_pages),
+                excluded_ranges=quoted_ranges,
+            )
+            internal_result, web_result = self._split_span_result(span_result)
+
+            logger.info(
+                "Similitud por tramos. document_id=%s fuentes_alineadas=%s "
+                "fuentes_con_coincidencia=%s palabras_contables=%s total=%s",
+                document.id,
+                len(retrieved.sources) + len(web_pages),
+                len(span_result.sources),
+                span_result.countable_word_count,
+                span_result.similarity_percent,
+            )
+
+            return SimilarityRunResult(
+                internal_result=internal_result,
+                web_result=web_result,
+                total_similarity_percent=span_result.similarity_percent,
+                oai_records_by_id=oai_records_by_id,
+                engine=engine,
+                retrieval=retrieval,
+            )
+
+        web_result = self.web_similarity_engine.analyze(
+            content=analysis_content,
+            web_pages=web_pages,
+            excluded_ranges=quoted_ranges,
+        )
+
+        return SimilarityRunResult(
+            internal_result=internal_result,
+            web_result=web_result,
+            total_similarity_percent=self._calculate_total_similarity_percent(
+                content_length=len(analysis_content),
+                internal_ranges=internal_result.all_matched_ranges,
+                web_ranges=web_result.all_matched_ranges,
+                excluded_ranges=quoted_ranges,
+            ),
+            oai_records_by_id=oai_records_by_id,
+            engine=engine,
+            retrieval=retrieval,
+        )
+
+    def _web_span_sources(self, web_pages: list[WebPageContent]) -> list[SpanSource]:
+        return [
+            SpanSource(
+                key=f"web:{page.url}",
+                kind=SOURCE_KIND_WEB,
+                title=page.title or page.domain,
+                url=page.url,
+                domain=page.domain,
+                segments=(page.text,),
+            )
+            for page in web_pages
+        ]
+
+    def _split_span_result(
+        self,
+        span_result: SpanAnalysisResult,
+    ) -> tuple[SimilarityAnalysisResult, WebSimilarityAnalysisResult]:
+        """
+        Adapta el resultado del motor span a los resultados que ya consume
+        la persistencia: un SimilarityMatch / WebSimilarityMatch por tramo,
+        con el % de su fuente como `matched_percent`.
+        """
+        internal_kinds = (SOURCE_KIND_INTERNAL, SOURCE_KIND_OAI)
+        internal_spans = span_result.matches_for(internal_kinds)
+        web_spans = span_result.matches_for((SOURCE_KIND_WEB,))
+
+        def by_relevance(match) -> tuple:
+            return (-match.source_percent, match.start_offset)
+
+        internal_matches = [
+            SimilarityMatch(
+                source_document_id=match.source.source_id,
+                source_title=match.source.title,
+                source_owner_name=match.source.owner_name,
+                matched_percent=match.source_percent,
+                text_excerpt=match.text_excerpt,
+                source_excerpt=match.source_excerpt,
+                start_offset=match.start_offset,
+                end_offset=match.end_offset,
+            )
+            for match in sorted(internal_spans, key=by_relevance)
+        ]
+        web_matches = [
+            WebSimilarityMatch(
+                title=match.source.title,
+                url=match.source.url,
+                domain=match.source.domain,
+                matched_percent=match.source_percent,
+                text_excerpt=match.text_excerpt,
+                source_excerpt=match.source_excerpt,
+                start_offset=match.start_offset,
+                end_offset=match.end_offset,
+            )
+            for match in sorted(web_spans, key=by_relevance)
+        ]
+
+        return (
+            SimilarityAnalysisResult(
+                similarity_percent=span_result.percent_for(internal_kinds),
+                matches=internal_matches[: self.SPAN_MAX_PERSISTED_MATCHES],
+                all_matched_ranges=[
+                    (match.start_offset, match.end_offset)
+                    for match in internal_spans
+                ],
+            ),
+            WebSimilarityAnalysisResult(
+                web_similarity_percent=span_result.percent_for((SOURCE_KIND_WEB,)),
+                matches=web_matches[: self.SPAN_MAX_PERSISTED_MATCHES],
+                all_matched_ranges=[
+                    (match.start_offset, match.end_offset) for match in web_spans
+                ],
+            ),
+        )
+
     def _get_fingerprint_candidates(
         self,
         document: Document,
@@ -786,6 +992,7 @@ class DocumentAnalysisService:
         exclude_quotes: bool = True,
         exclude_bibliography: bool = True,
         quoted_ranges: list[tuple[int, int]] | None = None,
+        similarity: SimilarityRunResult | None = None,
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
             similarity_percent=total_similarity_percent,
@@ -807,8 +1014,18 @@ class DocumentAnalysisService:
                 "exclude_bibliography": exclude_bibliography,
                 "summary": {
                     "engine": "internal-web-academic-v2",
-                    "internal_similarity_algorithm": "knowledge-chunks-shingling",
-                    "web_similarity_algorithm": "brave-search-html-pdf-shingling",
+                    "similarity_engine": similarity.engine if similarity else "chunk",
+                    "similarity_retrieval": (
+                        similarity.retrieval if similarity else "vieja"
+                    ),
+                    "internal_similarity_algorithm": (
+                        similarity.internal_algorithm
+                        if similarity
+                        else ALGORITHM_CHUNK_INTERNAL
+                    ),
+                    "web_similarity_algorithm": (
+                        similarity.web_algorithm if similarity else ALGORITHM_CHUNK_WEB
+                    ),
                     "ai_score_breakdown": ai_score_breakdown or {},
                     "excluded_sections": excluded_sections,
                     # Rangos de `analyzed_content` descontados del %: el
@@ -831,6 +1048,7 @@ class DocumentAnalysisService:
         report: AnalysisReport,
         matches: list,
         oai_records_by_id: dict[UUID, OaiRecord] | None = None,
+        algorithm: str = ALGORITHM_CHUNK_INTERNAL,
     ) -> None:
         oai_records_by_id = oai_records_by_id or {}
 
@@ -902,7 +1120,7 @@ class DocumentAnalysisService:
                     text_excerpt=match.text_excerpt,
                     confidence_percent=match.matched_percent,
                     metadata={
-                        "algorithm": "knowledge-chunks-shingling",
+                        "algorithm": algorithm,
                         "source": finding_source,
                         "source_document_id": str(source_document_id),
                     },
@@ -912,6 +1130,7 @@ class DocumentAnalysisService:
         self,
         report: AnalysisReport,
         web_result: WebSimilarityAnalysisResult,
+        algorithm: str = ALGORITHM_CHUNK_WEB,
     ) -> None:
         ReportFinding.objects.filter(
             report=report,
@@ -962,7 +1181,7 @@ class DocumentAnalysisService:
                     text_excerpt=match.text_excerpt,
                     confidence_percent=match.matched_percent,
                     metadata={
-                        "algorithm": "brave-search-html-pdf-shingling",
+                        "algorithm": algorithm,
                         "source": "web",
                         "url": url,
                     },

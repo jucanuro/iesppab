@@ -45,6 +45,7 @@ from apps.analysis.models import (
     DocumentFingerprint,
     DocumentKnowledgeChunk,
 )
+from apps.analysis.retrieval import CandidateRetriever, compute_query_fingerprints
 from apps.analysis.services import (
     MAX_ANALYSIS_DELIVERIES,
     DocumentAnalysisError,
@@ -2171,4 +2172,226 @@ class SpanSimilarityEngineTests(SimpleTestCase):
         result = self._engine().analyze(content, [_span_source(source)])
 
         self.assertEqual(result.similarity_percent, Decimal("100.00"))
+
+
+class CandidateRetrieverTests(TestCase):
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = self._user("alumno1")
+        self.other_student = self._user("alumno2")
+        self.current = make_test_document(
+            self.institution, self.student, title="Documento actual"
+        )
+
+    def _user(self, username: str) -> User:
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+
+    def _indexed_document(self, owner: User, title: str, content: str) -> Document:
+        document = make_test_document(self.institution, owner, title=title)
+        DocumentKnowledgeIndexer().index(
+            DocumentText(document=document),
+            content=content,
+        )
+        return document
+
+    def _retriever(self, **kwargs):
+        return CandidateRetriever(
+            max_document_frequency=kwargs.get("max_document_frequency", 50),
+            max_candidates=kwargs.get("max_candidates", 200),
+        )
+
+    @override_settings(OAI_HARVEST_ENABLED=False)
+    def test_long_internal_document_is_retrieved_whole(self) -> None:
+        # ~66 fragmentos: con la recuperación vieja (top-40 fragmentos) la
+        # copia completa no podía pasar de ~60 %.
+        text = _synthetic_text(7, 3000)
+        source = self._indexed_document(self.other_student, "Tesis larga", text)
+
+        result = self._retriever().retrieve(self.current, text)
+
+        self.assertEqual([item.source_id for item in result.sources], [source.id])
+        self.assertGreater(len(result.sources[0].chunks), 40)
+
+        span = SpanSimilarityEngine(min_match_words=8, max_gap_words=2).analyze(
+            text,
+            result.to_span_sources(),
+        )
+        self.assertEqual(span.similarity_percent, Decimal("100.00"))
+
+    @override_settings(OAI_HARVEST_ENABLED=False)
+    def test_common_fingerprints_do_not_select_candidates(self) -> None:
+        common = _synthetic_text(8, 60)
+
+        # Tres documentos idénticos: toda huella suya está en las tres
+        # fuentes (frecuencia 3), por encima del umbral.
+        for index in range(3):
+            self._indexed_document(
+                self.other_student,
+                f"Comparte frase común {index}",
+                common,
+            )
+
+        result = self._retriever(max_document_frequency=2).retrieve(
+            self.current,
+            f"{common} {_synthetic_text(30, 60)}",
+        )
+
+        self.assertEqual(result.sources, [])
+
+    @override_settings(OAI_HARVEST_ENABLED=False)
+    def test_filters_apply_before_the_candidate_cut(self) -> None:
+        text = _synthetic_text(9, 200)
+        # El trabajo previo del propio alumno comparte TODO el texto y
+        # encabezaría el ranking; igual no debe ocupar el único cupo.
+        self._indexed_document(self.student, "Mi versión anterior", text)
+        other = self._indexed_document(
+            self.other_student,
+            "Trabajo de otro",
+            " ".join(text.split()[:80]) + " " + _synthetic_text(10, 120),
+        )
+
+        result = self._retriever(max_candidates=1).retrieve(self.current, text)
+
+        self.assertEqual([item.source_id for item in result.sources], [other.id])
+
+    def test_query_fingerprints_do_not_cross_excluded_quotes(self) -> None:
+        engine = InternalSimilarityEngine()
+        left = "uno dos tres cuatro cinco seis"
+        right = "siete ocho nueve diez once doce"
+        content = f'{left} "cita" {right}'
+        quote_start = content.index('"')
+        quote_end = content.rindex('"') + 1
+
+        fingerprints = compute_query_fingerprints(
+            content=content,
+            excluded_ranges=[(quote_start, quote_end)],
+            normalize=engine._normalize,
+        )
+
+        expected = compute_fingerprints(left) | compute_fingerprints(right)
+        self.assertEqual(fingerprints, expected)
+
+
+@override_settings(OAI_HARVEST_ENABLED=False, WEB_ANALYSIS_ENABLED=False)
+class SpanEngineServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.other_student = User.objects.create_user(
+            username="alumno2",
+            email="alumno2@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.current = make_test_document(self.institution, self.student)
+        self.internal_text = _synthetic_text(11, 300)
+        self.web_text = _synthetic_text(12, 300)
+        self.source = make_test_document(
+            self.institution, self.other_student, title="Fuente interna"
+        )
+        DocumentKnowledgeIndexer().index(
+            DocumentText(document=self.source),
+            content=self.internal_text,
+        )
+        self.web_page = WebPageContent(
+            title="Página",
+            url="https://example.com/pagina",
+            domain="example.com",
+            text=self.web_text,
+            source_format="html",
+        )
+        # 100 palabras de la fuente interna + 50 de la web + 50 originales.
+        self.content = " ".join(
+            [
+                " ".join(self.internal_text.split()[:100]),
+                " ".join(self.web_text.split()[:50]),
+                _synthetic_text(13, 50),
+            ]
+        )
+        self.service = DocumentAnalysisService(requested_by=self.student)
+
+    def _run(self, engine: str, retrieval: str = "vieja"):
+        return self.service._run_similarity(
+            document=self.current,
+            analysis_content=self.content,
+            quoted_ranges=[],
+            collect_web_pages=lambda: [self.web_page],
+            engine=engine,
+            retrieval=retrieval,
+        )
+
+    def test_span_internal_plus_web_equals_total(self) -> None:
+        result = self._run("span")
+
+        self.assertEqual(result.retrieval, "nueva")
+        self.assertEqual(result.internal_result.similarity_percent, Decimal("50.00"))
+        self.assertEqual(result.web_result.web_similarity_percent, Decimal("25.00"))
+        self.assertEqual(result.total_similarity_percent, Decimal("75.00"))
+
+    def test_span_findings_persist_with_source_percent(self) -> None:
+        result = self._run("span")
+        report = AnalysisReport.objects.create(document=self.current)
+
+        self.service._replace_internal_similarity_findings(
+            report=report,
+            matches=result.internal_result.matches,
+            oai_records_by_id=result.oai_records_by_id,
+            algorithm=result.internal_algorithm,
+        )
+        self.service._replace_web_similarity_findings(
+            report=report,
+            web_result=result.web_result,
+            algorithm=result.web_algorithm,
+        )
+
+        percents = {
+            source.title: source.matched_percent
+            for source in ReportSource.objects.filter(report=report)
+        }
+        self.assertEqual(
+            percents,
+            {"Fuente interna": Decimal("50.00"), "Página": Decimal("25.00")},
+        )
+        self.assertEqual(
+            set(report.findings.values_list("metadata__algorithm", flat=True)),
+            {"span-exact-words-v1", "brave-search-span-exact-words-v1"},
+        )
+
+    def test_chunk_engine_accepts_both_retrievals(self) -> None:
+        for retrieval in ("vieja", "nueva"):
+            result = self._run("chunk", retrieval)
+
+            self.assertEqual(result.retrieval, retrieval)
+            self.assertGreater(result.total_similarity_percent, Decimal("0.00"))
+
+    @override_settings(SIMILARITY_ENGINE="chunk", SIMILARITY_RETRIEVAL="vieja")
+    def test_default_configuration_keeps_the_current_engine(self) -> None:
+        result = self.service._run_similarity(
+            document=self.current,
+            analysis_content=self.content,
+            quoted_ranges=[],
+            collect_web_pages=lambda: [],
+        )
+
+        self.assertEqual((result.engine, result.retrieval), ("chunk", "vieja"))
+        self.assertEqual(result.internal_algorithm, "knowledge-chunks-shingling")
 

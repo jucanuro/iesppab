@@ -109,6 +109,10 @@ class AcademicTextFilter:
     # párrafo de prosa.
     COVER_RUN_MAX_PARAGRAPHS = 25
     COVER_RUN_PARAGRAPH_MAX_LENGTH = 200
+    # El título de una tesis suele ser una sola oración con punto final
+    # ("Juegos verbales para ... periodo 2024-2025."): hasta este largo,
+    # una oración única no se toma como prosa.
+    COVER_RUN_TITLE_MAX_LENGTH = 160
 
     # Prefijos típicos de una entrada de índice de tablas/figuras/anexos,
     # independientemente de si el número de página sobrevivió a la
@@ -702,10 +706,11 @@ class AcademicTextFilter:
 
         La racha solo incluye párrafos de UNA línea y cortos, dentro de los
         primeros `COVER_RUN_MAX_PARAGRAPHS`, y se corta en el primer párrafo
-        de prosa: al menos `COVER_PROSE_LINE_MIN_WORDS` palabras con cierre
-        de oración, o varias oraciones encadenadas. Un título largo sin
-        punto final o un rótulo terminado en ":" ("TESIS PARA OBTENER EL
-        TÍTULO PROFESIONAL DE:") no es prosa y no corta la racha.
+        de prosa: al menos `COVER_PROSE_LINE_MIN_WORDS` palabras y, además,
+        varias oraciones encadenadas o una oración con cierre más larga que
+        `COVER_RUN_TITLE_MAX_LENGTH`. Un título (aunque termine en punto) o
+        un rótulo terminado en ":" ("TESIS PARA OBTENER EL TÍTULO
+        PROFESIONAL DE:") no es prosa y no corta la racha.
 
         La racha cuenta como portada si trae una fórmula fija de carátula
         o, con al menos `COVER_MIN_LINES` líneas, predominan las
@@ -751,15 +756,18 @@ class AcademicTextFilter:
         return 0
 
     def _is_prose_paragraph(self, paragraph: str) -> bool:
+        if len(paragraph.split()) < self.COVER_PROSE_LINE_MIN_WORDS:
+            return False
+
         if (
-            len(paragraph.split()) >= self.COVER_PROSE_LINE_MIN_WORDS
-            and paragraph[-1] in ".!?"
+            len(self.COVER_SENTENCE_BREAK.findall(paragraph))
+            > self.COVER_MAX_SENTENCE_BREAKS
         ):
             return True
 
         return (
-            len(self.COVER_SENTENCE_BREAK.findall(paragraph))
-            > self.COVER_MAX_SENTENCE_BREAKS
+            paragraph[-1] in ".!?"
+            and len(paragraph) > self.COVER_RUN_TITLE_MAX_LENGTH
         )
 
     def _looks_like_cover(self, paragraph: str) -> bool:

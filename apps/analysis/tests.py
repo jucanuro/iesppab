@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
@@ -23,6 +24,11 @@ from apps.analysis.engines.similarity import (
     SimilarityMatch,
 )
 from apps.analysis.engines.text_filters import AcademicTextFilter
+from apps.analysis.engines.web_search import (
+    WebCandidateCollector,
+    WebPageContent,
+    WebSearchResult,
+)
 from apps.analysis.engines.web_similarity import (
     WebSimilarityAnalysisResult,
     WebSimilarityMatch,
@@ -41,12 +47,14 @@ from apps.analysis.services import (
 )
 from apps.analysis.tasks import run_document_analysis
 from apps.core.models import Institution
+from apps.documents.extractors import DocumentTextExtractor
 from apps.documents.models import (
     Document,
     DocumentKind,
     DocumentStatus,
     DocumentText,
 )
+from apps.documents.tests import DocxDocumentTestMixin
 from apps.reports.models import AnalysisReport, ReportSource
 
 
@@ -1729,8 +1737,9 @@ class AcademicTextFilterDocxCoverRunTests(TestCase):
         "UNIVERSIDAD CÉSAR VALLEJO",
         "FACULTAD DE DERECHO Y HUMANIDADES",
         "ESCUELA PROFESIONAL DE EDUCACIÓN",
+        # Título con punto final, como en muchas tesis: no corta la racha.
         "Estrategias lúdicas para mejorar la expresión oral en estudiantes "
-        "de educación inicial de una institución educativa de Trujillo",
+        "de educación inicial de una institución educativa de Trujillo, 2023.",
         "TESIS PARA OBTENER EL TÍTULO PROFESIONAL DE LICENCIADA EN EDUCACIÓN INICIAL:",
         "Autora:",
         "Mantilla Rodríguez, Ana Lucía (orcid.org/0000-0002-1234-5678)",
@@ -1825,3 +1834,175 @@ class AcademicTextFilterDocxCoverRunTests(TestCase):
             "La expresión oral es una competencia",
             self._filter(paragraphs).content,
         )
+
+
+TOPICS = [
+    "la comprension lectora",
+    "la convivencia escolar",
+    "el pensamiento critico",
+    "la expresion oral",
+    "la motivacion academica",
+    "el trabajo colaborativo",
+    "la evaluacion formativa",
+    "la educacion ambiental",
+]
+
+
+def _body_paragraph(index: int) -> str:
+    topic = TOPICS[index % len(TOPICS)]
+    return (
+        f"En la seccion {index} del estudio se analiza {topic} en estudiantes "
+        f"del nivel primario de una institucion publica de la region. "
+        f"Los resultados de la seccion {index} muestran que {topic} mejora "
+        f"cuando el docente organiza actividades planificadas y sostenidas "
+        f"durante todo el periodo academico evaluado."
+    )
+
+
+@override_settings(WEB_ANALYSIS_MAX_QUERY_PHRASES=8)
+class WebSearchPhrasesFromDocxTests(DocxDocumentTestMixin, TestCase):
+    """
+    Tesis Mantilla: un DOCX de 113 párrafos daba 0 % de similitud web
+    porque llegaba como un solo bloque y solo se buscaba una frase del
+    inicio. Las frases deben salir de todo el documento, sin la portada.
+    """
+
+    COVER = AcademicTextFilterDocxCoverRunTests.MANTILLA_COVER
+    BODY_PARAGRAPH_COUNT = 40
+
+    def _phrases_for_docx(self) -> list[str]:
+        paragraphs = self.COVER + [
+            _body_paragraph(index) for index in range(self.BODY_PARAGRAPH_COUNT)
+        ]
+        document = self.make_docx_document(paragraphs)
+
+        extracted = DocumentTextExtractor().extract(document=document)
+        filtered = AcademicTextFilter().filter_for_similarity(
+            content=extracted.content,
+        )
+
+        self.assertIn("portada", filtered.excluded_sections)
+
+        return WebCandidateCollector()._extract_search_phrases(
+            content=filtered.content,
+        )
+
+    def _sections(self, phrases: list[str]) -> list[int]:
+        return [
+            int(re.search(r"seccion (\d+)", phrase).group(1))
+            for phrase in phrases
+        ]
+
+    def test_phrases_cover_start_middle_and_end_of_the_document(self) -> None:
+        phrases = self._phrases_for_docx()
+        sections = self._sections(phrases)
+
+        self.assertEqual(len(phrases), 8)
+        self.assertEqual(sections, sorted(sections))
+        self.assertTrue(any(section < 8 for section in sections), sections)
+        self.assertTrue(any(16 <= section < 24 for section in sections), sections)
+        self.assertTrue(any(section >= 32 for section in sections), sections)
+
+    def test_cover_lines_never_become_search_phrases(self) -> None:
+        phrases = " ".join(self._phrases_for_docx())
+
+        for marker in ("Autora", "Asesor", "orcid", "TRUJILLO", "LÍNEA DE INVESTIGACIÓN"):
+            self.assertNotIn(marker, phrases)
+
+
+class _FakeSearchClient:
+    def __init__(self, results_per_query: int = 5) -> None:
+        self.queries: list[str] = []
+        self.results_per_query = results_per_query
+
+    def search(self, query: str, count: int) -> list[WebSearchResult]:
+        self.queries.append(query)
+        query_index = len(self.queries)
+        return [
+            WebSearchResult(
+                title=f"Fuente {query_index}-{result_index}",
+                url=f"https://example.com/{query_index}/{result_index}",
+                domain="example.com",
+                snippet="",
+            )
+            for result_index in range(self.results_per_query)
+        ]
+
+
+class _FakeFetcher:
+    def __init__(self, empty_urls: set[str] | None = None) -> None:
+        self.empty_urls = empty_urls or set()
+
+    def fetch(self, result: WebSearchResult) -> WebPageContent | None:
+        if result.url in self.empty_urls:
+            return None
+
+        return WebPageContent(
+            title=result.title,
+            url=result.url,
+            domain=result.domain,
+            text="texto de la pagina",
+            source_format="HTML",
+        )
+
+
+@override_settings(
+    WEB_ANALYSIS_ENABLED=True,
+    WEB_ANALYSIS_MAX_QUERY_PHRASES=8,
+    WEB_ANALYSIS_MAX_QUERIES=24,
+    WEB_ANALYSIS_MAX_PAGES_TOTAL=16,
+    WEB_ANALYSIS_MAX_PAGES_PER_QUERY=2,
+)
+class WebCandidateCollectorQueryTests(SimpleTestCase):
+    PHRASES = [f"frase numero {index} del documento analizado" for index in range(8)]
+
+    def test_every_phrase_gets_a_quoted_and_an_unquoted_query(self) -> None:
+        queries = WebCandidateCollector()._build_queries(phrases=self.PHRASES)
+
+        for phrase in self.PHRASES:
+            self.assertIn(f'"{phrase}"', queries)
+            self.assertIn(phrase, queries)
+
+    @override_settings(WEB_ANALYSIS_MAX_QUERIES=10)
+    def test_total_queries_respect_the_configured_limit(self) -> None:
+        queries = WebCandidateCollector()._build_queries(phrases=self.PHRASES)
+
+        self.assertEqual(len(queries), 10)
+        # El recorte no deja sin buscar el final del documento: la ronda de
+        # comillas recorre todas las frases antes que cualquier otra.
+        self.assertIn(f'"{self.PHRASES[-1]}"', queries)
+
+    def _collector(self, **fetcher_kwargs) -> WebCandidateCollector:
+        collector = WebCandidateCollector()
+        collector.search_client = _FakeSearchClient()
+        collector.fetcher = _FakeFetcher(**fetcher_kwargs)
+        collector._extract_search_phrases = lambda content: self.PHRASES
+        return collector
+
+    def test_pages_are_spread_across_queries_of_the_whole_document(self) -> None:
+        collector = self._collector()
+
+        pages = collector.collect(content="irrelevante")
+
+        self.assertEqual(len(pages), 16)
+        # Dos páginas por consulta: las 8 consultas con comillas (una por
+        # tramo del documento) aportan páginas, no solo las primeras.
+        self.assertEqual(len(collector.search_client.queries), 8)
+        self.assertEqual(
+            collector.search_client.queries,
+            [f'"{phrase}"' for phrase in self.PHRASES],
+        )
+
+    def test_collect_logs_queries_pages_and_pages_with_content(self) -> None:
+        collector = self._collector(empty_urls={"https://example.com/1/0"})
+
+        with self.assertLogs("apps.analysis.engines.web_search", level="INFO") as logs:
+            pages = collector.collect(content="irrelevante")
+
+        summary = [line for line in logs.output if "Búsqueda web terminada" in line]
+
+        self.assertEqual(len(summary), 1)
+        self.assertIn("frases=8", summary[0])
+        self.assertIn("consultas=8/24 (límite=24)", summary[0])
+        self.assertIn("páginas_consultadas=17", summary[0])
+        self.assertIn(f"páginas_con_contenido={len(pages)}", summary[0])

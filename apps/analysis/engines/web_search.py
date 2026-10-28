@@ -317,8 +317,15 @@ class WebCandidateCollector:
     def __init__(self) -> None:
         self.search_client = BraveWebSearchClient()
         self.fetcher = WebPageFetcher()
+        # Cantidad de tramos iguales en que se divide el documento: se busca
+        # la mejor oración de CADA tramo, para cubrir inicio, medio y final.
         self.max_query_phrases = getattr(settings, "WEB_ANALYSIS_MAX_QUERY_PHRASES", 8)
+        self.max_queries = getattr(settings, "WEB_ANALYSIS_MAX_QUERIES", 24)
         self.max_pages_total = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_TOTAL", 16)
+        # Tope de páginas que aporta cada consulta: sin él, las primeras
+        # consultas (inicio del documento) llenan `max_pages_total` y los
+        # tramos del medio y del final nunca llegan a buscarse.
+        self.max_pages_per_query = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_PER_QUERY", 2)
 
     def collect(self, content: str) -> list[WebPageContent]:
         if not getattr(settings, "WEB_ANALYSIS_ENABLED", True):
@@ -327,24 +334,41 @@ class WebCandidateCollector:
         phrases = self._extract_search_phrases(content=content)
 
         if not phrases:
+            logger.info(
+                "Búsqueda web omitida: no se encontraron frases buscables en el documento."
+            )
             return []
 
         queries = self._build_queries(phrases=phrases)
 
         seen_urls: set[str] = set()
         pages: list[WebPageContent] = []
+        executed_queries = 0
+        fetched_pages = 0
 
         for query in queries:
+            if len(pages) >= self.max_pages_total:
+                break
+
+            executed_queries += 1
             results = self.search_client.search(
                 query=query,
                 count=5,
             )
+            pages_from_query = 0
 
             for result in results:
+                if (
+                    len(pages) >= self.max_pages_total
+                    or pages_from_query >= self.max_pages_per_query
+                ):
+                    break
+
                 if result.url in seen_urls:
                     continue
 
                 seen_urls.add(result.url)
+                fetched_pages += 1
 
                 page = self.fetcher.fetch(result=result)
 
@@ -352,13 +376,32 @@ class WebCandidateCollector:
                     continue
 
                 pages.append(page)
+                pages_from_query += 1
 
-                if len(pages) >= self.max_pages_total:
-                    return pages
+        logger.info(
+            "Búsqueda web terminada. frases=%s consultas=%s/%s (límite=%s) "
+            "páginas_consultadas=%s páginas_con_contenido=%s",
+            len(phrases),
+            executed_queries,
+            len(queries),
+            self.max_queries,
+            fetched_pages,
+            len(pages),
+        )
 
         return pages
 
     def _build_queries(self, phrases: list[str]) -> list[str]:
+        """
+        Consultas por prioridad, recortadas a `max_queries`:
+        1. cada frase entre comillas (coincidencia literal: pocos
+           resultados, pero muy fuertes);
+        2. cada frase SIN comillas (encuentra textos parafraseados, que es
+           lo habitual; las comillas exactas casi nunca dan resultado ahí);
+        3. PDF y repositorios académicos para las primeras frases.
+        Cada ronda recorre todas las frases antes de pasar a la siguiente,
+        así el recorte nunca deja sin buscar el final del documento.
+        """
         queries: list[str] = []
 
         selected_phrases = phrases[: self.max_query_phrases]
@@ -366,23 +409,66 @@ class WebCandidateCollector:
         for phrase in selected_phrases:
             queries.append(f'"{phrase}"')
 
-        for phrase in selected_phrases[:4]:
+        for phrase in selected_phrases:
             queries.append(phrase)
+
+        for phrase in selected_phrases[:3]:
+            queries.append(f'"{phrase}" filetype:pdf')
 
         for phrase in selected_phrases[:3]:
             for domain in self.ACADEMIC_DOMAINS:
                 queries.append(f'"{phrase}" site:{domain}')
 
-        for phrase in selected_phrases[:3]:
-            queries.append(f'"{phrase}" filetype:pdf')
-
-        return self._dedupe_keep_order(queries)
+        return self._dedupe_keep_order(queries)[: self.max_queries]
 
     def _extract_search_phrases(self, content: str) -> list[str]:
-        paragraphs = re.split(r"\n\s*\n", content)
-        candidates: list[str] = []
+        """
+        Divide el documento en `max_query_phrases` tramos iguales (por
+        posición de carácter) y toma la mejor oración de cada uno, en orden
+        del documento. Tomar las primeras N frases dejaba sin buscar el
+        medio y el final de una tesis.
+        """
+        candidates = self._phrase_candidates(content=content)
 
-        for paragraph in paragraphs:
+        if not candidates or self.max_query_phrases <= 0:
+            return []
+
+        section_size = max(len(content), 1) / self.max_query_phrases
+        best_by_section: dict[int, str] = {}
+
+        for offset, phrase in candidates:
+            section = min(int(offset / section_size), self.max_query_phrases - 1)
+            current = best_by_section.get(section)
+
+            if current is None or len(phrase) > len(current):
+                best_by_section[section] = phrase
+
+        phrases = self._dedupe_keep_order(
+            [best_by_section[section] for section in sorted(best_by_section)]
+        )
+
+        logger.info(
+            "Frases de búsqueda web seleccionadas. candidatas=%s tramos=%s "
+            "tramos_con_frase=%s",
+            len(candidates),
+            self.max_query_phrases,
+            len(phrases),
+        )
+
+        return phrases
+
+    def _phrase_candidates(self, content: str) -> list[tuple[int, str]]:
+        """
+        (offset, frase) de cada oración buscable de los párrafos útiles.
+        """
+        candidates: list[tuple[int, str]] = []
+        paragraph_start = 0
+
+        for separator in re.finditer(r"\n\s*\n|\Z", content):
+            paragraph = content[paragraph_start : separator.start()]
+            offset = paragraph_start
+            paragraph_start = separator.end()
+
             clean = re.sub(r"\s+", " ", paragraph).strip()
 
             if len(clean) < 160:
@@ -391,35 +477,32 @@ class WebCandidateCollector:
             if self._is_low_value_paragraph(clean):
                 continue
 
-            phrase = self._best_phrase_from_paragraph(clean)
+            candidates.extend(
+                (offset + sentence_offset, phrase)
+                for sentence_offset, phrase in self._phrases_from_paragraph(paragraph)
+            )
 
-            if phrase:
-                candidates.append(phrase)
+        return candidates
 
-        return self._dedupe_keep_order(candidates)
+    def _phrases_from_paragraph(self, paragraph: str) -> list[tuple[int, str]]:
+        phrases: list[tuple[int, str]] = []
 
-    def _best_phrase_from_paragraph(self, paragraph: str) -> str:
-        sentences = re.split(r"(?<=[.!?])\s+", paragraph)
-
-        sentence_candidates: list[str] = []
-
-        for sentence in sentences:
-            clean = re.sub(r"\s+", " ", sentence).strip()
+        for match in re.finditer(r"\S.*?(?:[.!?](?=\s)|$)", paragraph, flags=re.DOTALL):
+            clean = re.sub(r"\s+", " ", match.group(0)).strip()
             words = clean.split()
 
             if 10 <= len(words) <= 34:
-                sentence_candidates.append(clean)
+                phrases.append((match.start(), clean[:260]))
 
-        if sentence_candidates:
-            sentence_candidates.sort(key=len, reverse=True)
-            return sentence_candidates[0][:260]
+        if phrases:
+            return phrases
 
         words = paragraph.split()
 
         if len(words) >= 18:
-            return " ".join(words[:30])[:260]
+            return [(0, " ".join(words[:30])[:260])]
 
-        return ""
+        return []
 
     def _is_low_value_paragraph(self, text: str) -> bool:
         lowered = text.lower()

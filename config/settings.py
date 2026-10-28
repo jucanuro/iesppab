@@ -455,6 +455,20 @@ WEB_ANALYSIS_MAX_PAGES_TOTAL = env_int(
     16,
 )
 
+# Tope total de consultas a Brave por análisis (frases con y sin comillas,
+# PDF, repositorios académicos, en ese orden de prioridad).
+WEB_ANALYSIS_MAX_QUERIES = env_int(
+    "WEB_ANALYSIS_MAX_QUERIES",
+    24,
+)
+
+# Páginas que aporta como máximo cada consulta, para que el tope total de
+# páginas se reparta entre los tramos de todo el documento.
+WEB_ANALYSIS_MAX_PAGES_PER_QUERY = env_int(
+    "WEB_ANALYSIS_MAX_PAGES_PER_QUERY",
+    2,
+)
+
 
 OAI_HARVEST_ENABLED = env_bool(
     "OAI_HARVEST_ENABLED",

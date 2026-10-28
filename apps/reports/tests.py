@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from io import StringIO
 
 from django.core.files.base import ContentFile
+from django.core.management import call_command
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
@@ -603,3 +605,119 @@ class ExclusionFlagsMigrationTests(TransactionTestCase):
         executor.migrate(executor.loader.graph.leaf_nodes())
 
         self.assertTrue(AnalysisReport._meta.get_field("exclude_quotes").default)
+
+
+class BackfillAnalyzedContentCommandTests(TestCase):
+    """
+    `backfill_analyzed_content` congela en los reportes antiguos el texto
+    filtrado que hoy se reconstruye al vuelo, para que un cambio posterior
+    del extractor o del filtro no desalinee sus resaltados.
+    """
+
+    COVER = ResolveAnalyzedContentFallbackTests.COVER
+    BODY = ResolveAnalyzedContentFallbackTests.BODY
+
+    def setUp(self) -> None:
+        institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba-backfill",
+        )
+        student = User.objects.create_user(
+            username="alumno-backfill",
+            email="alumno-backfill@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=institution,
+        )
+        self.raw_content = f"{self.COVER}\n\n{self.BODY}"
+
+        def make_document(suffix: str) -> Document:
+            return Document.objects.create(
+                institution=institution,
+                owner=student,
+                uploaded_by=student,
+                title=f"Tesis {suffix}",
+                original_filename=f"{suffix}.pdf",
+                original_file=f"private/{suffix}.pdf",
+                mime_type="application/pdf",
+                file_size_bytes=10,
+                sha256_hash=f"hash-backfill-{suffix}",
+            )
+
+        legacy_document = make_document("antiguo")
+        DocumentText.objects.create(
+            document=legacy_document,
+            content=self.raw_content,
+            word_count=len(self.raw_content.split()),
+            character_count=len(self.raw_content),
+        )
+        self.legacy_report = AnalysisReport.objects.create(
+            document=legacy_document,
+            risk_level=ReportRiskLevel.LOW,
+            analyzed_content="",
+        )
+
+        self.current_report = AnalysisReport.objects.create(
+            document=make_document("actual"),
+            risk_level=ReportRiskLevel.LOW,
+            analyzed_content="texto ya congelado por el análisis",
+        )
+
+        self.no_text_report = AnalysisReport.objects.create(
+            document=make_document("sin-texto"),
+            risk_level=ReportRiskLevel.LOW,
+            analyzed_content="",
+        )
+
+    def _run(self, *args: str) -> str:
+        output = StringIO()
+        call_command("backfill_analyzed_content", *args, stdout=output)
+        return output.getvalue()
+
+    def test_dry_run_is_the_default_and_writes_nothing(self) -> None:
+        output = self._run()
+
+        self.legacy_report.refresh_from_db()
+        self.assertEqual(self.legacy_report.analyzed_content, "")
+        self.assertIn("CONGELARÍA", output)
+        self.assertIn("No se escribió nada", output)
+
+    def test_apply_freezes_the_current_filtered_text(self) -> None:
+        expected = resolve_analyzed_content(self.legacy_report)
+
+        self._run("--apply")
+
+        self.legacy_report.refresh_from_db()
+        self.assertEqual(self.legacy_report.analyzed_content, expected)
+        self.assertNotIn("UNIVERSIDAD", self.legacy_report.analyzed_content)
+        self.assertIn(
+            "acompanamiento pedagogico",
+            self.legacy_report.analyzed_content,
+        )
+
+    def test_apply_does_not_touch_reports_already_frozen_or_without_text(
+        self,
+    ) -> None:
+        self._run("--apply")
+
+        self.current_report.refresh_from_db()
+        self.no_text_report.refresh_from_db()
+        self.assertEqual(
+            self.current_report.analyzed_content,
+            "texto ya congelado por el análisis",
+        )
+        self.assertEqual(self.no_text_report.analyzed_content, "")
+
+    def test_frozen_text_survives_a_later_change_of_the_extracted_text(
+        self,
+    ) -> None:
+        self._run("--apply")
+        frozen = AnalysisReport.objects.get(pk=self.legacy_report.pk).analyzed_content
+
+        # Simula un extractor nuevo que cambia el texto crudo guardado.
+        DocumentText.objects.filter(document=self.legacy_report.document).update(
+            content="Texto completamente distinto. " * 10,
+        )
+
+        report = AnalysisReport.objects.get(pk=self.legacy_report.pk)
+        self.assertEqual(resolve_analyzed_content(report), frozen)

@@ -2135,3 +2135,120 @@ class WebSearchPhraseSelectionTests(SimpleTestCase):
         [group] = self._groups(content)
 
         self.assertIn(group[0], self.CONTENT_SENTENCE)
+
+
+class _ProbeFakeFetcher:
+    def __init__(self, texts_by_url: dict[str, str]) -> None:
+        self.texts_by_url = texts_by_url
+
+    def fetch(self, result: WebSearchResult) -> WebPageContent | None:
+        return WebPageContent(
+            title=result.title,
+            url=result.url,
+            domain=result.domain,
+            text=self.texts_by_url.get(result.url, "texto sin relacion"),
+            source_format="HTML",
+        )
+
+
+@override_settings(
+    BRAVE_SEARCH_API_KEY="clave-de-prueba",
+    WEB_ANALYSIS_MAX_QUERY_PHRASES=8,
+    WEB_ANALYSIS_MAX_QUERIES=24,
+    WEB_ANALYSIS_MAX_PAGES_TOTAL=16,
+    WEB_ANALYSIS_MAX_PAGES_PER_QUERY=2,
+)
+class WebSearchProbeCommandTests(TestCase):
+    def setUp(self) -> None:
+        institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        student = User.objects.create_user(
+            username="alumno-probe",
+            email="alumno-probe@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=institution,
+        )
+        self.content = "\n\n".join(
+            _body_paragraph(index) for index in range(16)
+        )
+        self.document = Document(
+            institution=institution,
+            owner=student,
+            uploaded_by=student,
+            title="Tesis probe",
+            kind=DocumentKind.OTHER,
+            original_filename="tesis.pdf",
+            mime_type="application/pdf",
+            file_size_bytes=10,
+            sha256_hash="hash-probe",
+        )
+        self.document.original_file.save(
+            "tesis.pdf",
+            ContentFile(b"%PDF-1.4"),
+            save=False,
+        )
+        self.document.save()
+        AnalysisReport.objects.create(
+            document=self.document,
+            analyzed_content=self.content,
+        )
+
+    def _call(self, *args: str) -> str:
+        stdout = StringIO()
+        call_command("web_search_probe", str(self.document.id), *args, stdout=stdout)
+        return stdout.getvalue()
+
+    def test_dry_run_prints_queries_of_both_strategies_without_searching(self) -> None:
+        with mock.patch(
+            "apps.analysis.engines.web_search.BraveWebSearchClient.search",
+            side_effect=AssertionError("dry-run no debe llamar a Brave"),
+        ):
+            output = self._call("--dry-run", "--estrategia", "ambas")
+
+        self.assertIn("=== Estrategia anterior ===", output)
+        self.assertIn("=== Estrategia nueva ===", output)
+        self.assertIn("site:repositorio.ucv.edu.pe", output)
+        new_section = output.split("=== Estrategia nueva ===")[1]
+        self.assertNotIn("site:", new_section)
+        self.assertNotIn("filetype:", new_section)
+        self.assertRegex(output, r"Consultas generadas\s+24\s+24")
+
+    def test_counts_shared_eight_word_sequences_per_page(self) -> None:
+        words = self.content.split()
+        # Página 1: comparte 3 secuencias de 8 palabras (10 palabras seguidas).
+        # Página 2: comparte 1 secuencia. El resto, ninguna.
+        texts_by_url = {
+            "https://example.com/1/0": "relleno " + " ".join(words[100:110]) + " relleno",
+            "https://example.com/1/1": " ".join(words[300:308]),
+        }
+
+        def fake_collector(command_self) -> WebCandidateCollector:
+            collector = WebCandidateCollector()
+            collector.search_client = _FakeSearchClient()
+            collector.fetcher = _ProbeFakeFetcher(texts_by_url)
+            return collector
+
+        with mock.patch(
+            "apps.analysis.management.commands.web_search_probe.Command._collector",
+            fake_collector,
+        ):
+            output = self._call("--estrategia", "ambas")
+
+        self.assertIn("[   3 secuencias] https://example.com/1/0", output)
+        self.assertIn("[   1 secuencias] https://example.com/1/1", output)
+        self.assertRegex(output, r"Páginas con ≥1 secuencia de 8\s+2\s+2")
+        self.assertRegex(output, r"Páginas con ≥3 secuencias de 8\s+1\s+1")
+        self.assertIn("Páginas (anterior)", output)
+        self.assertIn("Páginas (nueva)", output)
+
+    def test_without_api_key_requires_dry_run(self) -> None:
+        with override_settings(BRAVE_SEARCH_API_KEY=""):
+            with self.assertRaises(CommandError):
+                self._call()
+
+    def test_unknown_document_raises_command_error(self) -> None:
+        with self.assertRaises(CommandError):
+            call_command("web_search_probe", str(uuid4()), "--dry-run", stdout=StringIO())

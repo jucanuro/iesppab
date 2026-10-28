@@ -19,6 +19,9 @@ SOURCE_KIND_INTERNAL = "internal"
 SOURCE_KIND_OAI = "oai"
 SOURCE_KIND_WEB = "web"
 
+ALGORITHM_SPAN_INTERNAL = "span-exact-words-v1"
+ALGORITHM_SPAN_WEB = "brave-search-span-exact-words-v1"
+
 MATCH_TYPE_EXACT = "exacta"
 MATCH_TYPE_FUZZY = "aproximada"
 MATCH_TYPE_LABELS = {
@@ -95,6 +98,41 @@ class SpanAnalysisResult:
     def matches_for(self, kinds: Iterable[str]) -> list[SpanMatch]:
         kinds = set(kinds)
         return [match for match in self.matches if match.source.kind in kinds]
+
+
+SPAN_ALIGNMENT_VERSION = 1
+
+
+class SpanAlignmentError(Exception):
+    """
+    La alineación guardada en un reporte falta o no corresponde a su texto.
+    """
+
+
+@dataclass
+class SourceAlignment:
+    source: SpanSource
+    # Palabra del documento -> palabra de la fuente con la que coincide
+    # (None en las palabras de un hueco unido o cambiadas en una paráfrasis).
+    coverage: dict[int, int | None]
+    # Palabras que solo cubre la paráfrasis ligera.
+    fuzzy_words: set[int]
+    # Tokens de la fuente, solo en memoria durante el análisis.
+    source_tokens: list[tuple[str | None, int, int, int]] | None = None
+    # Alineación leída del reporte: (primera, última palabra, extracto de la
+    # fuente) por cada tramo cubierto.
+    excerpts: list[tuple[int, int, str]] = field(default_factory=list)
+
+
+@dataclass
+class SpanAlignment:
+    # (palabra normalizada o None si no cuenta, inicio, fin) del documento.
+    words: list[tuple[str | None, int, int]]
+    countable_word_count: int
+    min_match_words: int
+    # Solo las fuentes con alguna palabra cubierta, en el orden en que se
+    # alinearon (desempata la atribución).
+    sources: list[SourceAlignment] = field(default_factory=list)
 
 
 def _percent(part: int, total: int) -> Decimal:
@@ -183,15 +221,38 @@ class SpanSimilarityEngine:
         sources: Sequence[SpanSource],
         excluded_ranges: Sequence[tuple[int, int]] = (),
     ) -> SpanAnalysisResult:
+        return self.attribute(
+            content=content,
+            alignment=self.align(
+                content=content,
+                sources=sources,
+                excluded_ranges=excluded_ranges,
+            ),
+        )
+
+    def align(
+        self,
+        content: str,
+        sources: Sequence[SpanSource],
+        excluded_ranges: Sequence[tuple[int, int]] = (),
+    ) -> SpanAlignment:
+        """
+        Pasos 1-3: cobertura de cada fuente sobre las palabras del documento,
+        sin repartir todavía las palabras entre fuentes. Es lo que se guarda
+        en el reporte para poder excluir una fuente y volver a repartir sin
+        releer las fuentes.
+        """
         words = self._document_words(content, excluded_ranges)
         tokens = [word[0] for word in words]
         countable_word_count = sum(1 for token in tokens if token is not None)
+        alignment = SpanAlignment(
+            words=words,
+            countable_word_count=countable_word_count,
+            min_match_words=self.min_match_words,
+        )
 
         if countable_word_count == 0 or not sources:
-            return SpanAnalysisResult(
-                similarity_percent=Decimal("0.00"),
-                countable_word_count=countable_word_count,
-            )
+            return alignment
 
         document_kgrams = self._kgram_positions(tokens, self.min_match_words)
         document_short_kgrams = (
@@ -201,19 +262,7 @@ class SpanSimilarityEngine:
         )
 
         if not document_kgrams:
-            return SpanAnalysisResult(
-                similarity_percent=Decimal("0.00"),
-                countable_word_count=countable_word_count,
-            )
-
-        # Por fuente: palabra del documento -> palabra de la fuente con la
-        # que coincide (None para las palabras de un hueco unido), y los
-        # tokens de la fuente para armar el extracto después.
-        coverages: list[dict[int, int | None]] = []
-        source_tokens: list[list[tuple[str | None, int, int, int]]] = []
-        covered_sources: list[SpanSource] = []
-        # Por fuente: palabras que solo cubre la paráfrasis ligera.
-        fuzzy_words: list[set[int]] = []
+            return alignment
 
         for source in sources:
             tokens_of_source = self._source_tokens(source)
@@ -243,12 +292,50 @@ class SpanSimilarityEngine:
             if not coverage:
                 continue
 
-            coverages.append(coverage)
-            source_tokens.append(tokens_of_source)
-            covered_sources.append(source)
-            fuzzy_words.append(only_fuzzy)
+            alignment.sources.append(
+                SourceAlignment(
+                    source=source,
+                    coverage=coverage,
+                    fuzzy_words=only_fuzzy,
+                    source_tokens=tokens_of_source,
+                )
+            )
 
-        owner = self._attribute(coverages=coverages, word_count=len(tokens))
+        return alignment
+
+    def attribute(
+        self,
+        content: str,
+        alignment: SpanAlignment,
+        excluded_keys: Iterable[str] = (),
+    ) -> SpanAnalysisResult:
+        """
+        Pasos 4-5: reparte las palabras entre las fuentes alineadas (menos
+        las de `excluded_keys`) y calcula los %. Las palabras de una fuente
+        excluida pasan a la siguiente fuente que las cubría, si la había.
+        """
+        excluded_keys = set(excluded_keys)
+        words = alignment.words
+        countable_word_count = alignment.countable_word_count
+        aligned = [
+            item
+            for item in alignment.sources
+            if item.source.key not in excluded_keys
+        ]
+
+        if countable_word_count == 0 or not aligned:
+            return SpanAnalysisResult(
+                similarity_percent=Decimal("0.00"),
+                countable_word_count=countable_word_count,
+            )
+
+        coverages = [item.coverage for item in aligned]
+        covered_sources = [item.source for item in aligned]
+        owner = self._attribute(
+            coverages=coverages,
+            word_count=len(words),
+            min_match_words=alignment.min_match_words,
+        )
 
         assigned_by_source: dict[int, list[int]] = {}
 
@@ -263,26 +350,10 @@ class SpanSimilarityEngine:
         counted_by_source: dict[int, int] = {}
 
         for source_index, assigned in assigned_by_source.items():
-            coverage = coverages[source_index]
-            runs: list[tuple[int, int, str, int]] = []
-
-            for first, last in self._runs(assigned):
-                if any(
-                    index in fuzzy_words[source_index]
-                    for index in range(first, last + 1)
-                ):
-                    match_type = MATCH_TYPE_FUZZY
-                    counted = sum(
-                        1
-                        for index in range(first, last + 1)
-                        if coverage[index] is not None
-                    )
-                else:
-                    match_type = MATCH_TYPE_EXACT
-                    counted = last - first + 1
-
-                runs.append((first, last, match_type, counted))
-
+            runs = [
+                (first, last, *self._run_count(aligned[source_index], first, last))
+                for first, last in self._runs(assigned)
+            ]
             runs_by_source[source_index] = runs
             counted_by_source[source_index] = sum(run[3] for run in runs)
 
@@ -320,9 +391,7 @@ class SpanSimilarityEngine:
                             : self.EXCERPT_MAX_CHARS
                         ],
                         source_excerpt=self._source_excerpt(
-                            source=covered_sources[source_index],
-                            tokens=source_tokens[source_index],
-                            coverage=coverages[source_index],
+                            aligned=aligned[source_index],
                             first=first,
                             last=last,
                         ),
@@ -340,6 +409,33 @@ class SpanSimilarityEngine:
             sources=source_results,
             matches=matches,
         )
+
+    def coverage_word_count(self, aligned: SourceAlignment) -> int:
+        """
+        Palabras que la fuente cubriría si fuera la única: con la misma
+        regla de conteo que la atribución, sin competir con otras fuentes.
+        """
+        return sum(
+            self._run_count(aligned, first, last)[1]
+            for first, last in self._runs(sorted(aligned.coverage))
+        )
+
+    def _run_count(
+        self,
+        aligned: SourceAlignment,
+        first: int,
+        last: int,
+    ) -> tuple[str, int]:
+        if any(
+            index in aligned.fuzzy_words for index in range(first, last + 1)
+        ):
+            return MATCH_TYPE_FUZZY, sum(
+                1
+                for index in range(first, last + 1)
+                if aligned.coverage[index] is not None
+            )
+
+        return MATCH_TYPE_EXACT, last - first + 1
 
     @property
     def fuzzy_enabled(self) -> bool:
@@ -649,6 +745,7 @@ class SpanSimilarityEngine:
         self,
         coverages: list[dict[int, int | None]],
         word_count: int,
+        min_match_words: int,
     ) -> list[int]:
         """
         Voraz con evaluación perezosa: el conteo de palabras libres de una
@@ -664,7 +761,9 @@ class SpanSimilarityEngine:
 
         while heap:
             negative_count, source_index = heapq.heappop(heap)
-            free_words = self._free_words(coverages[source_index], owner)
+            free_words = self._free_words(
+                coverages[source_index], owner, min_match_words
+            )
 
             if not free_words:
                 continue
@@ -682,6 +781,7 @@ class SpanSimilarityEngine:
         self,
         coverage: dict[int, int | None],
         owner: list[int],
+        min_match_words: int,
     ) -> list[int]:
         """
         Palabras de la fuente que siguen libres, descartando los restos de
@@ -695,7 +795,7 @@ class SpanSimilarityEngine:
         return [
             word_index
             for first, last in self._runs(free)
-            if last - first + 1 >= self.min_match_words
+            if last - first + 1 >= min_match_words
             for word_index in range(first, last + 1)
         ]
 
@@ -712,12 +812,23 @@ class SpanSimilarityEngine:
 
     def _source_excerpt(
         self,
-        source: SpanSource,
-        tokens: list[tuple[str | None, int, int, int]],
-        coverage: dict[int, int | None],
+        aligned: SourceAlignment,
         first: int,
         last: int,
     ) -> str:
+        # Alineación leída del reporte: ya no está el texto de la fuente,
+        # solo el extracto de cada tramo cubierto. Se usa el del tramo que
+        # contiene al atribuido (puede ser algo más largo si otra fuente se
+        # quedó con parte).
+        if aligned.source_tokens is None:
+            for run_first, run_last, excerpt in aligned.excerpts:
+                if run_first <= first <= run_last:
+                    return excerpt
+
+            return ""
+
+        coverage = aligned.coverage
+        tokens = aligned.source_tokens
         source_positions = [
             coverage[index]
             for index in range(first, last + 1)
@@ -729,9 +840,130 @@ class SpanSimilarityEngine:
 
         _, first_segment, excerpt_start, _ = tokens[source_positions[0]]
         _, last_segment, _, excerpt_end = tokens[source_positions[-1]]
-        segment = source.segments[first_segment]
+        segment = aligned.source.segments[first_segment]
 
         if last_segment != first_segment or excerpt_end <= excerpt_start:
             excerpt_end = excerpt_start + self.EXCERPT_MAX_CHARS
 
         return segment[excerpt_start:excerpt_end][: self.EXCERPT_MAX_CHARS]
+
+    # --- Persistencia de la alineación -------------------------------------
+
+    def alignment_to_json(
+        self,
+        alignment: SpanAlignment,
+        details: dict[str, dict] | None = None,
+    ) -> dict:
+        """
+        Forma compacta para `AnalysisReport.span_alignment`: por fuente, sus
+        rangos de palabras cubiertas, las que no tienen palabra idéntica en
+        la fuente (huecos/cambiadas), las que solo cubre la paráfrasis, y el
+        extracto de la fuente de cada tramo cubierto. Las posiciones de las
+        palabras no se guardan: se recalculan desde `analyzed_content`.
+        `details` son metadatos por clave de fuente (OAI, reenvío...).
+        """
+        details = details or {}
+        sources = []
+
+        for aligned in alignment.sources:
+            source = aligned.source
+            covered_runs = self._runs(sorted(aligned.coverage))
+            sources.append(
+                {
+                    "key": source.key,
+                    "kind": source.kind,
+                    "title": source.title,
+                    "owner_name": source.owner_name,
+                    "url": source.url,
+                    "domain": source.domain,
+                    "source_id": str(source.source_id) if source.source_id else "",
+                    "covered": [list(run) for run in covered_runs],
+                    "unmatched": [
+                        list(run)
+                        for run in self._runs(
+                            sorted(
+                                index
+                                for index, value in aligned.coverage.items()
+                                if value is None
+                            )
+                        )
+                    ],
+                    "fuzzy": [
+                        list(run) for run in self._runs(sorted(aligned.fuzzy_words))
+                    ],
+                    "excerpts": [
+                        [first, last, self._source_excerpt(aligned, first, last)]
+                        for first, last in covered_runs
+                    ],
+                    "details": details.get(source.key, {}),
+                }
+            )
+
+        return {
+            "version": SPAN_ALIGNMENT_VERSION,
+            "min_match_words": alignment.min_match_words,
+            "countable_word_count": alignment.countable_word_count,
+            "sources": sources,
+        }
+
+    def alignment_from_json(
+        self,
+        data: dict,
+        content: str,
+        excluded_ranges: Sequence[tuple[int, int]] = (),
+    ) -> SpanAlignment:
+        if not data or data.get("version") != SPAN_ALIGNMENT_VERSION:
+            raise SpanAlignmentError("El reporte no tiene una alineación guardada.")
+
+        words = self._document_words(content, excluded_ranges)
+        countable_word_count = sum(1 for word in words if word[0] is not None)
+
+        if countable_word_count != data["countable_word_count"]:
+            raise SpanAlignmentError(
+                "La alineación guardada no corresponde al texto analizado."
+            )
+
+        alignment = SpanAlignment(
+            words=words,
+            countable_word_count=countable_word_count,
+            min_match_words=data["min_match_words"],
+        )
+
+        def expand(runs: list) -> list[int]:
+            return [
+                index for first, last in runs for index in range(first, last + 1)
+            ]
+
+        for item in data["sources"]:
+            unmatched = set(expand(item["unmatched"]))
+            # Solo importa si la palabra tiene o no palabra idéntica en la
+            # fuente (None); la posición exacta en la fuente ya no se usa.
+            coverage = {
+                index: (None if index in unmatched else 0)
+                for index in expand(item["covered"])
+            }
+
+            if coverage and max(coverage) >= len(words):
+                raise SpanAlignmentError(
+                    "La alineación guardada no corresponde al texto analizado."
+                )
+
+            alignment.sources.append(
+                SourceAlignment(
+                    source=SpanSource(
+                        key=item["key"],
+                        kind=item["kind"],
+                        title=item["title"],
+                        segments=(),
+                        source_id=UUID(item["source_id"]) if item["source_id"] else None,
+                        owner_name=item["owner_name"],
+                        url=item["url"],
+                        domain=item["domain"],
+                    ),
+                    coverage=coverage,
+                    fuzzy_words=set(expand(item["fuzzy"])),
+                    excerpts=[tuple(excerpt) for excerpt in item["excerpts"]],
+                )
+            )
+
+        return alignment

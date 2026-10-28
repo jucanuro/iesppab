@@ -1,22 +1,22 @@
 caso,categoria,palabras,esperado,configuracion,total,interno_oai,web,criterio,fuentes,segundos
-copia_100,sintetico,770,100.00,chunk+vieja,99.98,99.98,0.00,OK,1/1,0.45
-copia_100,sintetico,770,100.00,chunk+nueva,99.98,99.98,0.00,OK,1/1,0.38
-copia_100,sintetico,770,100.00,span,100.00,100.00,0.00,OK,1/1,0.35
-copia_50,sintetico,788,52.92,chunk+vieja,73.30,73.30,0.00,FALLA,1/1,0.32
-copia_50,sintetico,788,52.92,chunk+nueva,73.30,73.30,0.00,FALLA,1/1,0.33
-copia_50,sintetico,788,52.92,span,52.92,52.92,0.00,OK,1/1,0.33
-copia_10,sintetico,1866,9.65,chunk+vieja,20.73,6.91,13.82,FALLA,1/1 +1,0.28
-copia_10,sintetico,1866,9.65,chunk+nueva,20.73,6.91,13.82,FALLA,1/1 +1,0.35
+copia_100,sintetico,770,100.00,chunk+vieja,99.98,99.98,0.00,OK,1/1,29.68
+copia_100,sintetico,770,100.00,chunk+nueva,99.98,99.98,0.00,OK,1/1,1.78
+copia_100,sintetico,770,100.00,span,100.00,100.00,0.00,OK,1/1,0.42
+copia_50,sintetico,788,52.92,chunk+vieja,73.30,73.30,0.00,FALLA,1/1,4.32
+copia_50,sintetico,788,52.92,chunk+nueva,73.30,73.30,0.00,FALLA,1/1,1.20
+copia_50,sintetico,788,52.92,span,52.92,52.92,0.00,OK,1/1,0.32
+copia_10,sintetico,1866,9.65,chunk+vieja,20.73,6.91,13.82,FALLA,1/1 +1,5.38
+copia_10,sintetico,1866,9.65,chunk+nueva,20.73,6.91,13.82,FALLA,1/1 +1,1.86
 copia_10,sintetico,1866,9.65,span,12.22,2.57,9.65,OK,1/1 +4,0.23
-frases_20,sintetico,2202,9.08,chunk+vieja,23.94,17.42,6.51,FALLA,3/5,0.31
-frases_20,sintetico,2202,9.08,chunk+nueva,23.94,17.42,6.51,FALLA,3/5,0.47
-frases_20,sintetico,2202,9.08,span,10.17,8.36,1.82,OK,5/5 +3,0.35
-parafrasis_1de6,parafrasis,758,60.00,chunk+vieja,99.98,99.98,0.00,OK,1/1,0.15
-parafrasis_1de6,parafrasis,758,60.00,chunk+nueva,99.98,99.98,0.00,OK,1/1,0.23
-parafrasis_1de6,parafrasis,758,60.00,span,99.60,99.60,0.00,OK,1/1,0.19
-original,original,960,0.00,chunk+vieja,0.00,0.00,0.00,OK,0/0,0.15
-original,original,960,0.00,chunk+nueva,0.00,0.00,0.00,OK,0/0,0.25
-original,original,960,0.00,span,0.83,0.83,0.00,OK,0/0 +1,0.19
-misma_tematica,original,916,0.00,chunk+vieja,0.00,0.00,0.00,OK,0/0,0.09
-misma_tematica,original,916,0.00,chunk+nueva,0.00,0.00,0.00,OK,0/0,0.23
-misma_tematica,original,916,0.00,span,0.00,0.00,0.00,OK,0/0,0.17
+frases_20,sintetico,2202,9.08,chunk+vieja,23.94,17.42,6.51,FALLA,3/5,5.20
+frases_20,sintetico,2202,9.08,chunk+nueva,23.94,17.42,6.51,FALLA,3/5,1.33
+frases_20,sintetico,2202,9.08,span,10.17,8.36,1.82,OK,5/5 +3,0.30
+parafrasis_1de6,parafrasis,758,60.00,chunk+vieja,99.98,99.98,0.00,OK,1/1,0.98
+parafrasis_1de6,parafrasis,758,60.00,chunk+nueva,99.98,99.98,0.00,OK,1/1,0.39
+parafrasis_1de6,parafrasis,758,60.00,span,83.11,83.11,0.00,OK,1/1,0.18
+original,original,960,0.00,chunk+vieja,0.00,0.00,0.00,OK,0/0,3.59
+original,original,960,0.00,chunk+nueva,0.00,0.00,0.00,OK,0/0,0.63
+original,original,960,0.00,span,0.83,0.83,0.00,OK,0/0 +1,0.18
+misma_tematica,original,916,0.00,chunk+vieja,0.00,0.00,0.00,OK,0/0,0.71
+misma_tematica,original,916,0.00,chunk+nueva,0.00,0.00,0.00,OK,0/0,0.41
+misma_tematica,original,916,0.00,span,0.00,0.00,0.00,OK,0/0,0.12

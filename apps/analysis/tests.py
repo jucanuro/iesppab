@@ -2199,11 +2199,30 @@ class SpanSimilarityEngineTests(SimpleTestCase):
         result = self._engine().analyze(content, [_span_source(source)])
 
         self.assertEqual(exact_only.similarity_percent, Decimal("0.00"))
-        self.assertGreaterEqual(result.similarity_percent, Decimal("95.00"))
+        # 1 de cada 6 palabras cambiada: solo cuentan las 100 idénticas de 120.
+        self.assertEqual(result.similarity_percent, Decimal("83.33"))
         self.assertEqual(
             {match.match_type for match in result.matches},
             {MATCH_TYPE_FUZZY},
         )
+
+    def test_approximate_block_highlights_changed_words_but_does_not_count_them(
+        self,
+    ) -> None:
+        source = _synthetic_text(1, 120)
+        content = self._paraphrase(source)
+
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(len(result.matches), 1)
+        match = result.matches[0]
+        # El bloque resaltado va de la primera palabra a la penúltima (la
+        # última es una cambiada), cambiadas intermedias incluidas.
+        self.assertEqual(match.start_offset, 0)
+        self.assertTrue(content[: match.end_offset].endswith(source.split()[118]))
+        self.assertIn("cambio5", match.text_excerpt)
+        self.assertEqual(match.word_count, 100)
+        self.assertEqual(result.sources[0].word_count, 100)
 
     def test_exact_match_stays_exact_with_fuzzy_enabled(self) -> None:
         text = _synthetic_text(1, 100)
@@ -2465,8 +2484,9 @@ class SpanEngineServiceTests(TestCase):
             algorithm=result.web_algorithm,
         )
 
-        self.assertGreaterEqual(
-            result.web_result.web_similarity_percent, Decimal("45.00")
+        # 50 palabras idénticas de 120 contables: las cambiadas no suman.
+        self.assertEqual(
+            result.web_result.web_similarity_percent, Decimal("41.67")
         )
         self.assertEqual(
             set(

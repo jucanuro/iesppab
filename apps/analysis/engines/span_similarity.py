@@ -57,6 +57,8 @@ class SpanMatch:
     source_percent: Decimal
     start_offset: int
     end_offset: int
+    # Palabras que cuentan para el %: en un tramo aproximado, solo las
+    # idénticas (puede ser menor que las palabras resaltadas).
     word_count: int
     text_excerpt: str
     source_excerpt: str
@@ -120,7 +122,8 @@ class SpanSimilarityEngine:
        ellas; las demás compiten solo por las palabras que quedan libres.
        Ninguna palabra se cuenta dos veces.
     5. % = palabras atribuidas / palabras contables (las de las citas
-       excluidas no son contables ni pueden coincidir).
+       excluidas no son contables ni pueden coincidir). En los bloques de
+       paráfrasis ligera solo cuentan las palabras idénticas.
 
     Paráfrasis ligera (paso 2 bis): además, encadena tramos cortos de
     >= `min_short_run` palabras idénticas, en el mismo orden en el documento
@@ -253,16 +256,46 @@ class SpanSimilarityEngine:
             if source_index >= 0:
                 assigned_by_source.setdefault(source_index, []).append(word_index)
 
+        # Tramos de cada fuente con su tipo y las palabras que cuentan para
+        # el %: en un bloque aproximado solo las idénticas (las cambiadas del
+        # hueco se resaltan pero no suman); en uno exacto, todo el tramo.
+        runs_by_source: dict[int, list[tuple[int, int, str, int]]] = {}
+        counted_by_source: dict[int, int] = {}
+
+        for source_index, assigned in assigned_by_source.items():
+            coverage = coverages[source_index]
+            runs: list[tuple[int, int, str, int]] = []
+
+            for first, last in self._runs(assigned):
+                if any(
+                    index in fuzzy_words[source_index]
+                    for index in range(first, last + 1)
+                ):
+                    match_type = MATCH_TYPE_FUZZY
+                    counted = sum(
+                        1
+                        for index in range(first, last + 1)
+                        if coverage[index] is not None
+                    )
+                else:
+                    match_type = MATCH_TYPE_EXACT
+                    counted = last - first + 1
+
+                runs.append((first, last, match_type, counted))
+
+            runs_by_source[source_index] = runs
+            counted_by_source[source_index] = sum(run[3] for run in runs)
+
         source_results: list[SpanSourceResult] = []
         source_percents: dict[int, Decimal] = {}
 
-        for source_index, assigned in assigned_by_source.items():
-            percent = _percent(len(assigned), countable_word_count)
+        for source_index, counted in counted_by_source.items():
+            percent = _percent(counted, countable_word_count)
             source_percents[source_index] = percent
             source_results.append(
                 SpanSourceResult(
                     source=covered_sources[source_index],
-                    word_count=len(assigned),
+                    word_count=counted,
                     percent=percent,
                 )
             )
@@ -271,8 +304,8 @@ class SpanSimilarityEngine:
 
         matches: list[SpanMatch] = []
 
-        for source_index, assigned in assigned_by_source.items():
-            for first, last in self._runs(assigned):
+        for source_index, runs in runs_by_source.items():
+            for first, last, match_type, counted in runs:
                 start_offset = words[first][1]
                 end_offset = words[last][2]
 
@@ -282,7 +315,7 @@ class SpanSimilarityEngine:
                         source_percent=source_percents[source_index],
                         start_offset=start_offset,
                         end_offset=end_offset,
-                        word_count=last - first + 1,
+                        word_count=counted,
                         text_excerpt=content[start_offset:end_offset][
                             : self.EXCERPT_MAX_CHARS
                         ],
@@ -293,14 +326,7 @@ class SpanSimilarityEngine:
                             first=first,
                             last=last,
                         ),
-                        match_type=(
-                            MATCH_TYPE_FUZZY
-                            if any(
-                                index in fuzzy_words[source_index]
-                                for index in range(first, last + 1)
-                            )
-                            else MATCH_TYPE_EXACT
-                        ),
+                        match_type=match_type,
                     )
                 )
 

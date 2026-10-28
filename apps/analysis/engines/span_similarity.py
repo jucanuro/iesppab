@@ -19,6 +19,13 @@ SOURCE_KIND_INTERNAL = "internal"
 SOURCE_KIND_OAI = "oai"
 SOURCE_KIND_WEB = "web"
 
+MATCH_TYPE_EXACT = "exacta"
+MATCH_TYPE_FUZZY = "aproximada"
+MATCH_TYPE_LABELS = {
+    MATCH_TYPE_EXACT: "coincidencia exacta",
+    MATCH_TYPE_FUZZY: "paráfrasis/coincidencia aproximada",
+}
+
 
 @dataclass(frozen=True)
 class SpanSource:
@@ -53,6 +60,9 @@ class SpanMatch:
     word_count: int
     text_excerpt: str
     source_excerpt: str
+    # MATCH_TYPE_FUZZY si alguna palabra del tramo vino solo de la unión de
+    # tramos cortos (paráfrasis ligera); MATCH_TYPE_EXACT si no.
+    match_type: str = MATCH_TYPE_EXACT
 
 
 @dataclass(frozen=True)
@@ -111,7 +121,18 @@ class SpanSimilarityEngine:
        Ninguna palabra se cuenta dos veces.
     5. % = palabras atribuidas / palabras contables (las de las citas
        excluidas no son contables ni pueden coincidir).
+
+    Paráfrasis ligera (paso 2 bis): además, encadena tramos cortos de
+    >= `min_short_run` palabras idénticas, en el mismo orden en el documento
+    y en la fuente, separados por huecos de <= `max_gap_words` palabras en
+    ambos lados. Un bloque encadenado cuenta si suma >= `min_fuzzy_span`
+    palabras (huecos incluidos) y al menos `min_fuzzy_ratio` de ellas son
+    idénticas. Se desactiva con `min_short_run >= min_match_words`.
     """
+
+    # Un k-grama corto que aparece más veces que esto en el documento es una
+    # muletilla ("de la presente investigación") y no sirve como semilla.
+    SHORT_RUN_MAX_DOCUMENT_OCCURRENCES = 8
 
     EXCERPT_MAX_CHARS = 900
 
@@ -119,6 +140,9 @@ class SpanSimilarityEngine:
         self,
         min_match_words: int | None = None,
         max_gap_words: int | None = None,
+        min_short_run: int | None = None,
+        min_fuzzy_span: int | None = None,
+        min_fuzzy_ratio: float | None = None,
     ) -> None:
         self.min_match_words = max(
             2,
@@ -131,6 +155,22 @@ class SpanSimilarityEngine:
             max_gap_words
             if max_gap_words is not None
             else getattr(settings, "SIMILARITY_MAX_GAP_WORDS", 2),
+        )
+        self.min_short_run = max(
+            2,
+            min_short_run
+            if min_short_run is not None
+            else getattr(settings, "SIMILARITY_MIN_SHORT_RUN", 4),
+        )
+        self.min_fuzzy_span = (
+            min_fuzzy_span
+            if min_fuzzy_span is not None
+            else getattr(settings, "SIMILARITY_MIN_FUZZY_SPAN", 15)
+        )
+        self.min_fuzzy_ratio = (
+            min_fuzzy_ratio
+            if min_fuzzy_ratio is not None
+            else getattr(settings, "SIMILARITY_MIN_FUZZY_RATIO", 0.7)
         )
         self._normalized_words: dict[str, str] = {}
 
@@ -150,7 +190,12 @@ class SpanSimilarityEngine:
                 countable_word_count=countable_word_count,
             )
 
-        document_kgrams = self._kgram_positions(tokens)
+        document_kgrams = self._kgram_positions(tokens, self.min_match_words)
+        document_short_kgrams = (
+            self._kgram_positions(tokens, self.min_short_run)
+            if self.fuzzy_enabled
+            else {}
+        )
 
         if not document_kgrams:
             return SpanAnalysisResult(
@@ -164,21 +209,41 @@ class SpanSimilarityEngine:
         coverages: list[dict[int, int | None]] = []
         source_tokens: list[list[tuple[str | None, int, int, int]]] = []
         covered_sources: list[SpanSource] = []
+        # Por fuente: palabras que solo cubre la paráfrasis ligera.
+        fuzzy_words: list[set[int]] = []
 
         for source in sources:
             tokens_of_source = self._source_tokens(source)
+            source_words = [token[0] for token in tokens_of_source]
             coverage = self._coverage(
                 document_kgrams=document_kgrams,
-                source_words=[token[0] for token in tokens_of_source],
+                source_words=source_words,
             )
+
+            if coverage:
+                self._fill_gaps(coverage=coverage, tokens=tokens)
+
+            fuzzy_coverage = (
+                self._fuzzy_coverage(
+                    document_short_kgrams=document_short_kgrams,
+                    source_words=source_words,
+                    tokens=tokens,
+                )
+                if document_short_kgrams
+                else {}
+            )
+            only_fuzzy = set(fuzzy_coverage) - set(coverage)
+
+            for word_index in only_fuzzy:
+                coverage[word_index] = fuzzy_coverage[word_index]
 
             if not coverage:
                 continue
 
-            self._fill_gaps(coverage=coverage, tokens=tokens)
             coverages.append(coverage)
             source_tokens.append(tokens_of_source)
             covered_sources.append(source)
+            fuzzy_words.append(only_fuzzy)
 
         owner = self._attribute(coverages=coverages, word_count=len(tokens))
 
@@ -228,6 +293,14 @@ class SpanSimilarityEngine:
                             first=first,
                             last=last,
                         ),
+                        match_type=(
+                            MATCH_TYPE_FUZZY
+                            if any(
+                                index in fuzzy_words[source_index]
+                                for index in range(first, last + 1)
+                            )
+                            else MATCH_TYPE_EXACT
+                        ),
                     )
                 )
 
@@ -241,6 +314,10 @@ class SpanSimilarityEngine:
             sources=source_results,
             matches=matches,
         )
+
+    @property
+    def fuzzy_enabled(self) -> bool:
+        return self.min_short_run < self.min_match_words
 
     def _normalize_word(self, word: str) -> str:
         normalized = self._normalized_words.get(word)
@@ -309,8 +386,8 @@ class SpanSimilarityEngine:
     def _kgram_positions(
         self,
         tokens: list[str | None],
+        size: int,
     ) -> dict[tuple[str, ...], list[int]]:
-        size = self.min_match_words
         positions: dict[tuple[str, ...], list[int]] = {}
         # Cantidad de palabras válidas (no None) seguidas que terminan en i.
         valid_run = 0
@@ -357,6 +434,166 @@ class SpanSimilarityEngine:
                     )
 
         return coverage
+
+    def _fuzzy_coverage(
+        self,
+        document_short_kgrams: dict[tuple[str, ...], list[int]],
+        source_words: list[str | None],
+        tokens: list[str | None],
+    ) -> dict[int, int | None]:
+        """
+        Paráfrasis ligera: encadena tramos cortos idénticos en orden y
+        devuelve la cobertura (palabra del documento -> palabra de la fuente,
+        None en los huecos) de los bloques que cumplen largo y proporción.
+        """
+        seeds = self._short_seeds(document_short_kgrams, source_words)
+
+        if not seeds:
+            return {}
+
+        # Cadena de mayor cantidad de palabras idénticas que termina en cada
+        # semilla. Las semillas van ordenadas por inicio en el documento, así
+        # que todo predecesor posible ya está calculado.
+        seeds.sort()
+        seeds_by_document_end: dict[int, list[int]] = {}
+        chain_matched: list[int] = []
+        chain_previous: list[int] = []
+
+        for index, (document_start, source_start, length) in enumerate(seeds):
+            best_matched, best_previous = length, -1
+
+            for document_gap in range(self.max_gap_words + 1):
+                previous_end = document_start - document_gap - 1
+
+                if document_gap and any(
+                    tokens[gap_index] is None
+                    for gap_index in range(previous_end + 1, document_start)
+                ):
+                    continue
+
+                for previous in seeds_by_document_end.get(previous_end, ()):
+                    _, previous_source_start, previous_length = seeds[previous]
+                    source_gap = (
+                        source_start - (previous_source_start + previous_length)
+                    )
+
+                    if not 0 <= source_gap <= self.max_gap_words:
+                        continue
+
+                    if any(
+                        source_words[gap_index] is None
+                        for gap_index in range(
+                            previous_source_start + previous_length,
+                            source_start,
+                        )
+                    ):
+                        continue
+
+                    matched = chain_matched[previous] + length
+
+                    if matched > best_matched:
+                        best_matched, best_previous = matched, previous
+
+            chain_matched.append(best_matched)
+            chain_previous.append(best_previous)
+            seeds_by_document_end.setdefault(
+                document_start + length - 1, []
+            ).append(index)
+
+        coverage: dict[int, int | None] = {}
+        is_predecessor = set(chain_previous)
+
+        for index in range(len(seeds)):
+            if index in is_predecessor:
+                continue
+
+            chain = [index]
+
+            while chain_previous[chain[-1]] >= 0:
+                chain.append(chain_previous[chain[-1]])
+
+            chain.reverse()
+            first_start = seeds[chain[0]][0]
+            last_start, _, last_length = seeds[chain[-1]]
+            span = last_start + last_length - first_start
+
+            if (
+                len(chain) < 2
+                or span < self.min_fuzzy_span
+                or chain_matched[index] < self.min_fuzzy_ratio * span
+            ):
+                continue
+
+            for document_index in range(first_start, last_start + last_length):
+                coverage.setdefault(document_index, None)
+
+            for seed_index in chain:
+                document_start, source_start, length = seeds[seed_index]
+
+                for offset in range(length):
+                    if coverage.get(document_start + offset) is None:
+                        coverage[document_start + offset] = source_start + offset
+
+        return coverage
+
+    def _short_seeds(
+        self,
+        document_short_kgrams: dict[tuple[str, ...], list[int]],
+        source_words: list[str | None],
+    ) -> list[tuple[int, int, int]]:
+        """
+        Tramos maximales de >= `min_short_run` palabras idénticas como
+        (inicio en el documento, inicio en la fuente, largo): los k-gramas
+        cortos comunes que caen en la misma diagonal y se solapan forman un
+        solo tramo.
+        """
+        size = self.min_short_run
+        hits_by_diagonal: dict[int, list[int]] = {}
+        valid_run = 0
+
+        for index, token in enumerate(source_words):
+            valid_run = valid_run + 1 if token is not None else 0
+
+            if valid_run < size:
+                continue
+
+            source_start = index - size + 1
+            document_starts = document_short_kgrams.get(
+                tuple(source_words[source_start : index + 1])
+            )
+
+            if (
+                not document_starts
+                or len(document_starts) > self.SHORT_RUN_MAX_DOCUMENT_OCCURRENCES
+            ):
+                continue
+
+            for document_start in document_starts:
+                hits_by_diagonal.setdefault(
+                    source_start - document_start, []
+                ).append(document_start)
+
+        seeds: list[tuple[int, int, int]] = []
+
+        for diagonal, document_starts in hits_by_diagonal.items():
+            document_starts.sort()
+            run_start = run_end = document_starts[0]
+
+            for document_start in document_starts[1:] + [None]:
+                # Mismo diagonal y k-gramas que se tocan o solapan: todas
+                # las palabras entre ellos son idénticas.
+                if document_start is not None and document_start <= run_end + size:
+                    run_end = document_start
+                    continue
+
+                seeds.append(
+                    (run_start, run_start + diagonal, run_end - run_start + size)
+                )
+
+                if document_start is not None:
+                    run_start = run_end = document_start
+
+        return seeds
 
     def _fill_gaps(
         self,

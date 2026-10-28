@@ -48,6 +48,8 @@ PARAPHRASE_EVERY = 6
 # Criterio de aceptación (puntos porcentuales).
 SYNTHETIC_TOLERANCE = Decimal("3.00")
 ORIGINAL_TOLERANCE = Decimal("1.00")
+# La paráfrasis ligera debe detectarse al menos en este % (piso, no ±).
+PARAPHRASE_MIN_PERCENT = Decimal("60.00")
 
 # Reemplazos para la paráfrasis: palabras que no aparecen como tales en las
 # muestras, así el cambio siempre rompe la coincidencia.
@@ -80,7 +82,7 @@ class BenchmarkCase:
     expected_percent: Decimal
     expected_sources: set[str]
     # "sintetico" (tolerancia 3 pts), "original" (tolerancia 1 pt) o
-    # "informativo" (sin criterio: ver la nota de paráfrasis).
+    # "parafrasis" (piso de PARAPHRASE_MIN_PERCENT).
     category: str
     note: str = ""
 
@@ -270,21 +272,22 @@ class Command(BaseCommand):
         ))
 
         # 5. Paráfrasis ligera: 1 de cada 6 palabras cambiada. El tramo
-        # idéntico más largo queda en 5 palabras; con la regla "excluir
-        # coincidencias < 8 palabras" lo esperado es 0 %, aunque el texto
-        # sigue siendo copia en un ~83 %.
+        # idéntico más largo queda en 5 palabras, así que solo lo detecta la
+        # unión de tramos cortos del motor span (el bloque cuenta también las
+        # palabras cambiadas).
         paraphrased = self._paraphrase(s4.text)
         cases.append(
             BenchmarkCase(
                 name="parafrasis_1de6",
                 description="Fuente OAI con 1 de cada 6 palabras cambiada",
                 content=paraphrased,
-                expected_percent=Decimal("0.00"),
-                expected_sources=set(),
-                category="informativo",
+                expected_percent=PARAPHRASE_MIN_PERCENT,
+                expected_sources={s4.label},
+                category="parafrasis",
                 note=(
-                    "Regla Turnitin con mínimo 8 palabras: 0 %. Copia real "
-                    "≈83 % (5 de cada 6 palabras); fuera del criterio."
+                    "Copia real ≈83 % (5 de cada 6 palabras idénticas); criterio "
+                    f">= {PARAPHRASE_MIN_PERCENT} %. Solo tramos exactos de 8+ "
+                    "palabras darían 0 %."
                 ),
             )
         )
@@ -493,6 +496,8 @@ class Command(BaseCommand):
             return "OK" if error <= SYNTHETIC_TOLERANCE else "FALLA"
         if case.category == "original":
             return "OK" if error <= ORIGINAL_TOLERANCE else "FALLA"
+        if case.category == "parafrasis":
+            return "OK" if result.percent >= case.expected_percent else "FALLA"
         return "-"
 
     def _sources_cell(self, case: BenchmarkCase, result: CaseResult) -> str:
@@ -531,7 +536,8 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(
             "f: fuentes esperadas detectadas / esperadas; +N = fuentes no esperadas. "
-            f"Criterio: sintéticos ±{SYNTHETIC_TOLERANCE} pts, originales ±{ORIGINAL_TOLERANCE} pts."
+            f"Criterio: sintéticos ±{SYNTHETIC_TOLERANCE} pts, originales ±{ORIGINAL_TOLERANCE} pts, "
+            f"paráfrasis >= {PARAPHRASE_MIN_PERCENT} %."
         )
 
         self.stdout.write(

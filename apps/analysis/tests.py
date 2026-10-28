@@ -20,6 +20,8 @@ from apps.accounts.models import User, UserRole
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.span_similarity import (
+    MATCH_TYPE_EXACT,
+    MATCH_TYPE_FUZZY,
     SpanSimilarityEngine,
     SpanSource,
 )
@@ -2036,6 +2038,9 @@ class SpanSimilarityEngineTests(SimpleTestCase):
         return SpanSimilarityEngine(
             min_match_words=kwargs.get("min_match_words", 8),
             max_gap_words=kwargs.get("max_gap_words", 2),
+            min_short_run=kwargs.get("min_short_run", 4),
+            min_fuzzy_span=kwargs.get("min_fuzzy_span", 15),
+            min_fuzzy_ratio=kwargs.get("min_fuzzy_ratio", 0.7),
         )
 
     def test_literal_copy_is_100_percent(self) -> None:
@@ -2176,6 +2181,72 @@ class SpanSimilarityEngineTests(SimpleTestCase):
 
         self.assertEqual(result.similarity_percent, Decimal("100.00"))
 
+
+    def _paraphrase(self, text: str, every: int = 6) -> str:
+        words = text.split()
+        return " ".join(
+            f"cambio{index}" if index % every == every - 1 else word
+            for index, word in enumerate(words)
+        )
+
+    def test_light_paraphrase_is_detected_as_approximate(self) -> None:
+        source = _synthetic_text(1, 120)
+        content = self._paraphrase(source)
+
+        exact_only = self._engine(min_short_run=8).analyze(
+            content, [_span_source(source)]
+        )
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(exact_only.similarity_percent, Decimal("0.00"))
+        self.assertGreaterEqual(result.similarity_percent, Decimal("95.00"))
+        self.assertEqual(
+            {match.match_type for match in result.matches},
+            {MATCH_TYPE_FUZZY},
+        )
+
+    def test_exact_match_stays_exact_with_fuzzy_enabled(self) -> None:
+        text = _synthetic_text(1, 100)
+
+        result = self._engine().analyze(text, [_span_source(text)])
+
+        self.assertEqual(result.matches[0].match_type, MATCH_TYPE_EXACT)
+
+    def test_short_runs_below_fuzzy_span_are_ignored(self) -> None:
+        source = _synthetic_text(1, 100).split()
+        # Dos tramos de 5 palabras con un hueco de 1: 11 < 15 palabras.
+        block = source[10:15] + ["cambio"] + source[16:21]
+        content = " ".join(
+            _synthetic_text(2, 40).split() + block + _synthetic_text(3, 40).split()
+        )
+
+        result = self._engine().analyze(content, [_span_source(" ".join(source))])
+
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+
+    def test_short_runs_out_of_order_in_source_are_not_chained(self) -> None:
+        source = _synthetic_text(1, 200).split()
+        # Tramos de 5 palabras idénticos, pero tomados de lugares distantes
+        # de la fuente: no es una paráfrasis de un mismo pasaje.
+        block = []
+        for start in (150, 20, 90, 60):
+            block += source[start : start + 5] + ["cambio"]
+        content = " ".join(
+            _synthetic_text(2, 40).split() + block + _synthetic_text(3, 40).split()
+        )
+
+        result = self._engine().analyze(content, [_span_source(" ".join(source))])
+
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+
+    def test_fuzzy_ratio_rejects_sparse_blocks(self) -> None:
+        source = _synthetic_text(1, 120)
+        # 4 idénticas + 2 cambiadas: 67 % < 70 %.
+        content = self._paraphrase(source, every=3)
+
+        result = self._engine().analyze(content, [_span_source(source)])
+
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
 
 class CandidateRetrieverTests(TestCase):
     def setUp(self) -> None:
@@ -2377,6 +2448,33 @@ class SpanEngineServiceTests(TestCase):
         self.assertEqual(
             set(report.findings.values_list("metadata__algorithm", flat=True)),
             {"span-exact-words-v1", "brave-search-span-exact-words-v1"},
+        )
+
+    def test_span_findings_mark_paraphrase_as_approximate(self) -> None:
+        words = self.web_text.split()[:60]
+        paraphrased = " ".join(
+            "cambio" if index % 6 == 5 else word for index, word in enumerate(words)
+        )
+        self.content = f"{_synthetic_text(13, 60)} {paraphrased}"
+        result = self._run("span")
+        report = AnalysisReport.objects.create(document=self.current)
+
+        self.service._replace_web_similarity_findings(
+            report=report,
+            web_result=result.web_result,
+            algorithm=result.web_algorithm,
+        )
+
+        self.assertGreaterEqual(
+            result.web_result.web_similarity_percent, Decimal("45.00")
+        )
+        self.assertEqual(
+            set(
+                report.findings.values_list(
+                    "metadata__match_type", "metadata__match_type_label"
+                )
+            ),
+            {("aproximada", "paráfrasis/coincidencia aproximada")},
         )
 
     def test_chunk_engine_accepts_both_retrievals(self) -> None:

@@ -24,6 +24,8 @@ class WebSimilarityMatch:
     source_excerpt: str
     start_offset: int
     end_offset: int
+    # Solo lo llena el motor span: "exacta" o "aproximada" (paráfrasis).
+    match_type: str = ""
 
 
 @dataclass(frozen=True)

@@ -27,6 +27,7 @@ from apps.analysis.engines.similarity import (
     SimilarityMatch,
 )
 from apps.analysis.engines.span_similarity import (
+    MATCH_TYPE_LABELS,
     SOURCE_KIND_INTERNAL,
     SOURCE_KIND_OAI,
     SOURCE_KIND_WEB,
@@ -814,6 +815,7 @@ class DocumentAnalysisService:
                 source_excerpt=match.source_excerpt,
                 start_offset=match.start_offset,
                 end_offset=match.end_offset,
+                match_type=match.match_type,
             )
             for match in sorted(internal_spans, key=by_relevance)
         ]
@@ -827,6 +829,7 @@ class DocumentAnalysisService:
                 source_excerpt=match.source_excerpt,
                 start_offset=match.start_offset,
                 end_offset=match.end_offset,
+                match_type=match.match_type,
             )
             for match in sorted(web_spans, key=by_relevance)
         ]
@@ -1123,6 +1126,7 @@ class DocumentAnalysisService:
                         "algorithm": algorithm,
                         "source": finding_source,
                         "source_document_id": str(source_document_id),
+                        **self._match_type_metadata(match),
                     },
                 )
 
@@ -1184,8 +1188,21 @@ class DocumentAnalysisService:
                         "algorithm": algorithm,
                         "source": "web",
                         "url": url,
+                        **self._match_type_metadata(match),
                     },
                 )
+
+    def _match_type_metadata(self, match) -> dict[str, str]:
+        if not match.match_type:
+            return {}
+
+        return {
+            "match_type": match.match_type,
+            "match_type_label": MATCH_TYPE_LABELS.get(
+                match.match_type,
+                match.match_type,
+            ),
+        }
 
     def _replace_ai_findings(
         self,

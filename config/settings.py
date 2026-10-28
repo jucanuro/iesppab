@@ -502,6 +502,17 @@ if SIMILARITY_RETRIEVAL not in {"vieja", "nueva"}:
 SIMILARITY_MIN_MATCH_WORDS = env_int("SIMILARITY_MIN_MATCH_WORDS", 8)
 SIMILARITY_MAX_GAP_WORDS = env_int("SIMILARITY_MAX_GAP_WORDS", 2)
 
+# Paráfrasis ligera del motor "span": tramos cortos de
+# >= SIMILARITY_MIN_SHORT_RUN palabras idénticas, en el mismo orden en el
+# documento y la fuente y separados por <= SIMILARITY_MAX_GAP_WORDS
+# palabras, se unen en un bloque si suma >= SIMILARITY_MIN_FUZZY_SPAN
+# palabras con al menos SIMILARITY_MIN_FUZZY_RATIO idénticas. Se marcan como
+# "paráfrasis/coincidencia aproximada". Se desactiva con
+# SIMILARITY_MIN_SHORT_RUN >= SIMILARITY_MIN_MATCH_WORDS.
+SIMILARITY_MIN_SHORT_RUN = env_int("SIMILARITY_MIN_SHORT_RUN", 4)
+SIMILARITY_MIN_FUZZY_SPAN = env_int("SIMILARITY_MIN_FUZZY_SPAN", 15)
+SIMILARITY_MIN_FUZZY_RATIO = float(os.getenv("SIMILARITY_MIN_FUZZY_RATIO", "0.7"))
+
 # Una huella compartida por más fuentes que esto es una frase común ("de la
 # presente investigación...") y no sirve para elegir candidatos.
 SIMILARITY_MAX_DOCUMENT_FREQUENCY = env_int(

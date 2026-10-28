@@ -1716,3 +1716,112 @@ class SweepStaleJobsTests(TestCase):
         job.document.refresh_from_db()
         self.assertEqual(job.status, AnalysisJobStatus.FAILED)
         self.assertEqual(job.document.status, DocumentStatus.QUEUED)
+
+
+class AcademicTextFilterDocxCoverRunTests(TestCase):
+    """
+    En DOCX cada línea de la carátula llega como su propio párrafo. La
+    racha inicial de párrafos cortos se evalúa como un bloque.
+    """
+
+    # Portada real de la tesis Mantilla, una línea por párrafo de Word.
+    MANTILLA_COVER = [
+        "UNIVERSIDAD CÉSAR VALLEJO",
+        "FACULTAD DE DERECHO Y HUMANIDADES",
+        "ESCUELA PROFESIONAL DE EDUCACIÓN",
+        "Estrategias lúdicas para mejorar la expresión oral en estudiantes "
+        "de educación inicial de una institución educativa de Trujillo",
+        "TESIS PARA OBTENER EL TÍTULO PROFESIONAL DE LICENCIADA EN EDUCACIÓN INICIAL:",
+        "Autora:",
+        "Mantilla Rodríguez, Ana Lucía (orcid.org/0000-0002-1234-5678)",
+        "Asesor:",
+        "Dr. Pérez Gómez, Carlos Alberto (orcid.org/0000-0003-8765-4321)",
+        "LÍNEA DE INVESTIGACIÓN:",
+        "Didácticas y evaluación de los aprendizajes",
+        "TRUJILLO — PERÚ",
+        "2023",
+    ]
+    BODY_PARAGRAPHS = [
+        (
+            "La expresión oral es una competencia comunicativa que los niños "
+            "desarrollan desde los primeros años de escolaridad. En el aula "
+            "de educación inicial se observan dificultades para pronunciar, "
+            "ordenar ideas y sostener una conversación con sus pares."
+        ),
+        (
+            "El juego constituye una estrategia didáctica pertinente para "
+            "estimular el lenguaje. Diversos estudios señalan que las "
+            "actividades lúdicas favorecen la participación espontánea y la "
+            "confianza de los estudiantes al comunicarse."
+        ),
+    ]
+
+    def _filter(self, paragraphs: list[str]):
+        return AcademicTextFilter().filter_for_similarity(
+            content="\n\n".join(paragraphs),
+        )
+
+    def test_mantilla_cover_split_in_single_line_paragraphs_is_removed(
+        self,
+    ) -> None:
+        result = self._filter(self.MANTILLA_COVER + self.BODY_PARAGRAPHS)
+
+        for marker in ("Autora:", "Asesor:", "orcid.org", "LÍNEA DE INVESTIGACIÓN", "TRUJILLO", "2023"):
+            self.assertNotIn(marker, result.content)
+
+        self.assertIn("portada", result.excluded_sections)
+        self.assertIn("La expresión oral es una competencia", result.content)
+        self.assertIn("El juego constituye una estrategia", result.content)
+
+    def test_cover_run_stops_at_first_prose_paragraph(self) -> None:
+        # Un párrafo corto en mayúsculas DESPUÉS de la prosa no forma parte
+        # de la portada aunque se parezca a una línea de carátula.
+        trailing_heading = "CAPÍTULO I: AUTORA: MARCO TEÓRICO DE LA INVESTIGACIÓN"
+        paragraphs = (
+            self.MANTILLA_COVER
+            + self.BODY_PARAGRAPHS[:1]
+            + [trailing_heading]
+            + self.BODY_PARAGRAPHS[1:]
+        )
+
+        filter_ = AcademicTextFilter()
+        paragraphs_after_split = [p for p in paragraphs if p.strip()]
+
+        self.assertEqual(
+            filter_._leading_cover_run_length(paragraphs_after_split),
+            len(self.MANTILLA_COVER),
+        )
+        self.assertIn(trailing_heading, self._filter(paragraphs).content)
+
+    def test_cover_marker_beyond_the_first_paragraphs_is_ignored(self) -> None:
+        many_short = [f"Línea corta número {index}" for index in range(30)]
+
+        run_length = AcademicTextFilter()._leading_cover_run_length(
+            many_short + ["Autora:"] + self.BODY_PARAGRAPHS,
+        )
+
+        # "Autora:" queda fuera de los primeros 25 párrafos, y lo que hay
+        # dentro (minúsculas, sin fórmula de carátula) no es portada.
+        self.assertEqual(run_length, 0)
+
+    def test_document_starting_with_resumen_is_not_discarded(self) -> None:
+        result = self._filter(["RESUMEN"] + self.BODY_PARAGRAPHS)
+
+        self.assertNotIn("portada", result.excluded_sections)
+        self.assertIn("La expresión oral es una competencia", result.content)
+        self.assertIn("El juego constituye una estrategia", result.content)
+
+    def test_resumen_heading_with_short_keywords_is_not_a_cover(self) -> None:
+        paragraphs = [
+            "RESUMEN",
+            "Palabras clave: juego, expresión oral",
+        ] + self.BODY_PARAGRAPHS
+
+        self.assertEqual(
+            AcademicTextFilter()._leading_cover_run_length(paragraphs),
+            0,
+        )
+        self.assertIn(
+            "La expresión oral es una competencia",
+            self._filter(paragraphs).content,
+        )

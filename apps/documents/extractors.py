@@ -135,7 +135,11 @@ class DocumentTextExtractor:
                         if row_text:
                             parts.append(row_text)
 
-                return "\n".join(parts)
+                # Cada párrafo de Word va separado por una línea en blanco:
+                # el filtro académico, la detección de IA y la búsqueda web
+                # parten el texto en párrafos por "\n\n". Con un solo "\n"
+                # todo el DOCX quedaba como UN párrafo.
+                return "\n\n".join(parts)
 
         except Exception as exc:
             logger.exception(

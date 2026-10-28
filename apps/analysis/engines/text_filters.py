@@ -85,6 +85,7 @@ class AcademicTextFilter:
         "autora:",
         "autores:",
         "presentado por:",
+        "orcid",
     ]
 
     # Una línea de carátula es un fragmento suelto y corto. Una línea con
@@ -101,6 +102,13 @@ class AcademicTextFilter:
     # capitalizada = prosa corrida de varias oraciones, nunca una portada.
     COVER_SENTENCE_BREAK = re.compile(r"[.!?]\s+[A-ZÁÉÍÓÚÑ¿¡]")
     COVER_MAX_SENTENCE_BREAKS = 1
+    # En DOCX cada línea de la carátula es su propio párrafo ("Autora:",
+    # "Asesor:", ORCID, ciudad, año), así que la portada llega partida en
+    # 10-15 párrafos de una sola línea. Esa racha inicial se evalúa como
+    # UN bloque, solo dentro de los primeros párrafos y hasta el primer
+    # párrafo de prosa.
+    COVER_RUN_MAX_PARAGRAPHS = 25
+    COVER_RUN_PARAGRAPH_MAX_LENGTH = 200
 
     # Prefijos típicos de una entrada de índice de tablas/figuras/anexos,
     # independientemente de si el número de página sobrevivió a la
@@ -226,16 +234,25 @@ class AcademicTextFilter:
         )
         excluded.extend(removed_index_runs)
 
-        paragraphs = re.split(r"\n\s*\n", normalized)
+        paragraphs = [
+            paragraph.strip()
+            for paragraph in re.split(r"\n\s*\n", normalized)
+            if paragraph.strip()
+        ]
         kept: list[str] = []
 
-        for index, paragraph in enumerate(paragraphs):
-            clean = paragraph.strip()
+        cover_run_length = self._leading_cover_run_length(paragraphs)
 
-            if not clean:
-                continue
+        if cover_run_length:
+            excluded.append("portada")
+            paragraphs = paragraphs[cover_run_length:]
 
-            if index <= 3 and self._looks_like_cover(paragraph=clean):
+        for index, clean in enumerate(paragraphs):
+            if (
+                not cover_run_length
+                and index <= 3
+                and self._looks_like_cover(paragraph=clean)
+            ):
                 excluded.append("portada")
                 continue
 
@@ -677,6 +694,73 @@ class AcademicTextFilter:
             return "weak"
 
         return None
+
+    def _leading_cover_run_length(self, paragraphs: list[str]) -> int:
+        """
+        Cantidad de párrafos iniciales que forman una carátula partida en
+        párrafos de una sola línea (caso DOCX), o 0 si no la hay.
+
+        La racha solo incluye párrafos de UNA línea y cortos, dentro de los
+        primeros `COVER_RUN_MAX_PARAGRAPHS`, y se corta en el primer párrafo
+        de prosa: al menos `COVER_PROSE_LINE_MIN_WORDS` palabras con cierre
+        de oración, o varias oraciones encadenadas. Un título largo sin
+        punto final o un rótulo terminado en ":" ("TESIS PARA OBTENER EL
+        TÍTULO PROFESIONAL DE:") no es prosa y no corta la racha.
+
+        La racha cuenta como portada si trae una fórmula fija de carátula
+        o, con al menos `COVER_MIN_LINES` líneas, predominan las
+        MAYÚSCULAS. Un documento que empieza con "RESUMEN" seguido de
+        prosa deja una racha de una sola línea sin fórmula: no es portada.
+        """
+        run: list[str] = []
+
+        for paragraph in paragraphs[: self.COVER_RUN_MAX_PARAGRAPHS]:
+            if (
+                "\n" in paragraph
+                or len(paragraph) > self.COVER_RUN_PARAGRAPH_MAX_LENGTH
+                or self._is_prose_paragraph(paragraph)
+            ):
+                break
+
+            run.append(paragraph)
+
+        # Una sola línea suelta no es una racha: ese caso ya lo cubre la
+        # evaluación párrafo a párrafo de `_looks_like_cover`.
+        if len(run) < 2:
+            return 0
+
+        block = "\n".join(run)
+        lowered = block.lower()
+
+        if any(marker in lowered for marker in self.STRONG_COVER_MARKERS):
+            return len(run)
+
+        letters = [char for char in block if char.isalpha()]
+        uppercase_ratio = (
+            sum(1 for char in letters if char.isupper()) / len(letters)
+            if letters
+            else 0.0
+        )
+
+        if (
+            len(run) >= self.COVER_MIN_LINES
+            and uppercase_ratio >= self.COVER_UPPERCASE_MIN_RATIO
+        ):
+            return len(run)
+
+        return 0
+
+    def _is_prose_paragraph(self, paragraph: str) -> bool:
+        if (
+            len(paragraph.split()) >= self.COVER_PROSE_LINE_MIN_WORDS
+            and paragraph[-1] in ".!?"
+        ):
+            return True
+
+        return (
+            len(self.COVER_SENTENCE_BREAK.findall(paragraph))
+            > self.COVER_MAX_SENTENCE_BREAKS
+        )
 
     def _looks_like_cover(self, paragraph: str) -> bool:
         """

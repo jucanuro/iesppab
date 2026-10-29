@@ -32,6 +32,14 @@ class WebPageContent:
     source_format: str
 
 
+@dataclass(frozen=True)
+class WebSearchRun:
+    # (consulta que la trajo, página) en el orden en que se obtuvieron.
+    pages: list[tuple[str, WebPageContent]]
+    executed_queries: int
+    fetched_pages: int
+
+
 class BraveWebSearchClient:
     BASE_URL = "https://api.search.brave.com/res/v1/web/search"
 
@@ -295,11 +303,47 @@ class WebPageFetcher:
         return text.strip()
 
 
+SPANISH_STOPWORDS = frozenset(
+    """
+    a al algo algunas algunos ante antes aquel aquella aquellas aquellos bajo
+    aqui así asi aunque cada como con contra cual cuales cuando de del desde
+    donde dos durante e el ella ellas ellos en entre era eran es esa esas ese
+    eso esos esta estaba estas este esto estos fue fueron ha han hasta hacia
+    hay la
+    las le les lo los mas más me mediante mi mientras muy ni no nos o otra
+    otras otro otros para pero por porque que qué se sea segun según ser si
+    sí sido sin sino sobre son su sus tal también tambien tan tanto te toda
+    todas todo todos tras u un una unas uno unos y ya
+    """.split()
+)
+
+ENGLISH_STOPWORDS = frozenset(
+    """
+    a an and are as at be been but by for from has have in into is it its
+    of on or that the their these this those to was were which while with
+    """.split()
+)
+
+_WORD_EDGE_PUNCTUATION = ".,;:¿?¡!"
+# Letras (con tildes) y, como mucho, guiones internos: descarta dígitos,
+# paréntesis, comillas, barras, "&", etc.
+_PLAIN_WORD_RE = re.compile(r"^[^\W\d_]+(?:-[^\W\d_]+)*$", flags=re.UNICODE)
+_ACRONYM_RE = re.compile(r"[A-ZÁÉÍÓÚÑÜ]{2,}")
+
+
 class WebCandidateCollector:
     """
-    Busca candidatos web normales y también búsqueda dirigida académica.
+    Busca en la web frases cortas y distintivas de todo el documento.
+
+    Una oración completa de 30 palabras casi nunca aparece literal en otra
+    fuente; las coincidencias reales (como las que reporta Turnitin) son
+    tramos académicos de 8-20 palabras. Por eso se buscan ventanas de
+    PHRASE_MIN_WORDS-PHRASE_MAX_WORDS palabras dentro de cada oración.
     """
 
+    # Referencia de repositorios académicos peruanos. Ya no se usan en
+    # consultas `site:` (gastaban presupuesto en muy pocas frases); la
+    # lista sigue siendo la fuente de dominios para OAI_HARVEST_REPOSITORIES.
     ACADEMIC_DOMAINS = [
         "repositorio.ucv.edu.pe",
         "repositorio.upn.edu.pe",
@@ -314,11 +358,17 @@ class WebCandidateCollector:
         "dialnet.unirioja.es",
     ]
 
+    PHRASE_MIN_WORDS = 8
+    PHRASE_MAX_WORDS = 14
+    PHRASES_PER_SECTION = 2
+    CONTENT_WORD_MIN_LENGTH = 4
+
     def __init__(self) -> None:
         self.search_client = BraveWebSearchClient()
         self.fetcher = WebPageFetcher()
-        # Cantidad de tramos iguales en que se divide el documento: se busca
-        # la mejor oración de CADA tramo, para cubrir inicio, medio y final.
+        # Cantidad de tramos iguales en que se divide el documento: se
+        # buscan las mejores frases de CADA tramo, para cubrir inicio,
+        # medio y final.
         self.max_query_phrases = getattr(settings, "WEB_ANALYSIS_MAX_QUERY_PHRASES", 8)
         self.max_queries = getattr(settings, "WEB_ANALYSIS_MAX_QUERIES", 24)
         self.max_pages_total = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_TOTAL", 16)
@@ -331,18 +381,39 @@ class WebCandidateCollector:
         if not getattr(settings, "WEB_ANALYSIS_ENABLED", True):
             return []
 
-        phrases = self._extract_search_phrases(content=content)
+        phrase_groups = self._extract_search_phrases(content=content)
 
-        if not phrases:
+        if not phrase_groups:
             logger.info(
                 "Búsqueda web omitida: no se encontraron frases buscables en el documento."
             )
             return []
 
-        queries = self._build_queries(phrases=phrases)
+        queries = self._build_queries(phrase_groups=phrase_groups)
+        run = self.run_queries(queries=queries)
+        pages = [page for _query, page in run.pages]
 
+        logger.info(
+            "Búsqueda web terminada. frases=%s consultas=%s/%s (límite=%s) "
+            "páginas_consultadas=%s páginas_con_contenido=%s",
+            sum(len(group) for group in phrase_groups),
+            run.executed_queries,
+            len(queries),
+            self.max_queries,
+            run.fetched_pages,
+            len(pages),
+        )
+
+        return pages
+
+    def run_queries(self, queries: list[str]) -> WebSearchRun:
+        """
+        Ejecuta las consultas en orden y descarga sus páginas respetando
+        `max_pages_total` y `max_pages_per_query`. Devuelve cada página
+        junto a la consulta que la trajo (lo usa `web_search_probe`).
+        """
         seen_urls: set[str] = set()
-        pages: list[WebPageContent] = []
+        pages: list[tuple[str, WebPageContent]] = []
         executed_queries = 0
         fetched_pages = 0
 
@@ -375,91 +446,103 @@ class WebCandidateCollector:
                 if page is None:
                     continue
 
-                pages.append(page)
+                pages.append((query, page))
                 pages_from_query += 1
 
-        logger.info(
-            "Búsqueda web terminada. frases=%s consultas=%s/%s (límite=%s) "
-            "páginas_consultadas=%s páginas_con_contenido=%s",
-            len(phrases),
-            executed_queries,
-            len(queries),
-            self.max_queries,
-            fetched_pages,
-            len(pages),
+        return WebSearchRun(
+            pages=pages,
+            executed_queries=executed_queries,
+            fetched_pages=fetched_pages,
         )
 
-        return pages
-
-    def _build_queries(self, phrases: list[str]) -> list[str]:
+    def _build_queries(self, phrase_groups: list[list[str]]) -> list[str]:
         """
-        Consultas por prioridad, recortadas a `max_queries`:
-        1. cada frase entre comillas (coincidencia literal: pocos
-           resultados, pero muy fuertes);
-        2. cada frase SIN comillas (encuentra textos parafraseados, que es
-           lo habitual; las comillas exactas casi nunca dan resultado ahí);
-        3. PDF y repositorios académicos para las primeras frases.
-        Cada ronda recorre todas las frases antes de pasar a la siguiente,
+        Consultas por rondas, recortadas a `max_queries`:
+        1. la mejor frase de cada tramo, entre comillas;
+        2. la segunda frase de cada tramo, entre comillas;
+        3. la mejor frase de cada tramo SIN comillas (textos parafraseados).
+        Cada ronda recorre todos los tramos antes de pasar a la siguiente,
         así el recorte nunca deja sin buscar el final del documento.
         """
-        queries: list[str] = []
+        groups = [group for group in phrase_groups[: self.max_query_phrases] if group]
 
-        selected_phrases = phrases[: self.max_query_phrases]
-
-        for phrase in selected_phrases:
-            queries.append(f'"{phrase}"')
-
-        for phrase in selected_phrases:
-            queries.append(phrase)
-
-        for phrase in selected_phrases[:3]:
-            queries.append(f'"{phrase}" filetype:pdf')
-
-        for phrase in selected_phrases[:3]:
-            for domain in self.ACADEMIC_DOMAINS:
-                queries.append(f'"{phrase}" site:{domain}')
+        queries = [f'"{group[0]}"' for group in groups]
+        queries.extend(f'"{group[1]}"' for group in groups if len(group) > 1)
+        queries.extend(group[0] for group in groups)
 
         return self._dedupe_keep_order(queries)[: self.max_queries]
 
-    def _extract_search_phrases(self, content: str) -> list[str]:
+    def _extract_search_phrases(self, content: str) -> list[list[str]]:
         """
         Divide el documento en `max_query_phrases` tramos iguales (por
-        posición de carácter) y toma la mejor oración de cada uno, en orden
-        del documento. Tomar las primeras N frases dejaba sin buscar el
-        medio y el final de una tesis.
+        posición de carácter) y devuelve, en orden del documento, hasta
+        PHRASES_PER_SECTION frases por tramo: la ventana más distintiva y
+        la mejor de OTRA oración, para no buscar dos veces casi lo mismo.
         """
-        candidates = self._phrase_candidates(content=content)
+        if self.max_query_phrases <= 0:
+            return []
 
-        if not candidates or self.max_query_phrases <= 0:
+        sentences = self._sentence_candidates(content=content)
+
+        if not sentences:
             return []
 
         section_size = max(len(content), 1) / self.max_query_phrases
-        best_by_section: dict[int, str] = {}
+        # tramo -> [(puntaje, índice de oración, frase)]
+        windows_by_section: dict[int, list[tuple[float, int, str]]] = {}
+        window_count = 0
 
-        for offset, phrase in candidates:
+        for sentence_index, (offset, sentence) in enumerate(sentences):
             section = min(int(offset / section_size), self.max_query_phrases - 1)
-            current = best_by_section.get(section)
 
-            if current is None or len(phrase) > len(current):
-                best_by_section[section] = phrase
+            for score, phrase in self._phrase_windows(sentence):
+                window_count += 1
+                windows_by_section.setdefault(section, []).append(
+                    (score, sentence_index, phrase)
+                )
 
-        phrases = self._dedupe_keep_order(
-            [best_by_section[section] for section in sorted(best_by_section)]
-        )
+        phrase_groups: list[list[str]] = []
+        # Una oración repetida (p. ej. la conclusión que repite el resumen)
+        # no debe gastar dos consultas en la misma frase.
+        chosen_phrases: set[str] = set()
+
+        for section in sorted(windows_by_section):
+            # Orden estable: a igual puntaje gana la ventana más temprana.
+            ranked = sorted(windows_by_section[section], key=lambda item: -item[0])
+            group: list[str] = []
+            used_sentences: set[int] = set()
+
+            for _score, sentence_index, phrase in ranked:
+                key = phrase.lower()
+
+                if sentence_index in used_sentences or key in chosen_phrases:
+                    continue
+
+                group.append(phrase)
+                used_sentences.add(sentence_index)
+                chosen_phrases.add(key)
+
+                if len(group) >= self.PHRASES_PER_SECTION:
+                    break
+
+            if group:
+                phrase_groups.append(group)
 
         logger.info(
-            "Frases de búsqueda web seleccionadas. candidatas=%s tramos=%s "
-            "tramos_con_frase=%s",
-            len(candidates),
+            "Frases de búsqueda web seleccionadas. oraciones=%s ventanas=%s "
+            "tramos=%s tramos_con_frase=%s frases=%s",
+            len(sentences),
+            window_count,
             self.max_query_phrases,
-            len(phrases),
+            len(phrase_groups),
+            sum(len(group) for group in phrase_groups),
         )
 
-        return phrases
+        return phrase_groups
 
-    def _phrase_candidates(self, content: str) -> list[tuple[int, str]]:
+    def _sentence_candidates(self, content: str) -> list[tuple[int, str]]:
         """
-        (offset, frase) de cada oración buscable de los párrafos útiles.
+        (offset, oración) de cada oración en español de los párrafos útiles.
         """
         candidates: list[tuple[int, str]] = []
         paragraph_start = 0
@@ -477,32 +560,95 @@ class WebCandidateCollector:
             if self._is_low_value_paragraph(clean):
                 continue
 
-            candidates.extend(
-                (offset + sentence_offset, phrase)
-                for sentence_offset, phrase in self._phrases_from_paragraph(paragraph)
-            )
+            for match in re.finditer(
+                r"\S.*?(?:[.!?](?=\s)|$)", paragraph, flags=re.DOTALL
+            ):
+                sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+
+                if len(sentence.split()) < self.PHRASE_MIN_WORDS:
+                    continue
+
+                # El resumen en inglés (abstract) no se busca: gastaba
+                # consultas en un texto que casi nunca se copia literal.
+                if not self._looks_spanish(sentence):
+                    continue
+
+                candidates.append((offset + match.start(), sentence))
 
         return candidates
 
-    def _phrases_from_paragraph(self, paragraph: str) -> list[tuple[int, str]]:
-        phrases: list[tuple[int, str]] = []
+    def _phrase_windows(self, sentence: str) -> list[tuple[float, str]]:
+        """
+        (puntaje, frase) de cada ventana válida de PHRASE_MIN_WORDS a
+        PHRASE_MAX_WORDS palabras dentro de la oración. Se descartan
+        ventanas con citas, números, siglas o que empiezan/terminan en
+        palabra vacía.
+        """
+        tokens = sentence.split()
+        cores = [token.strip(_WORD_EDGE_PUNCTUATION) for token in tokens]
+        windows: list[tuple[float, str]] = []
 
-        for match in re.finditer(r"\S.*?(?:[.!?](?=\s)|$)", paragraph, flags=re.DOTALL):
-            clean = re.sub(r"\s+", " ", match.group(0)).strip()
-            words = clean.split()
+        for start in range(len(tokens)):
+            for size in range(self.PHRASE_MIN_WORDS, self.PHRASE_MAX_WORDS + 1):
+                end = start + size
 
-            if 10 <= len(words) <= 34:
-                phrases.append((match.start(), clean[:260]))
+                if end > len(tokens):
+                    break
 
-        if phrases:
-            return phrases
+                if not self._is_valid_window(tokens[start:end], cores[start:end]):
+                    continue
 
-        words = paragraph.split()
+                phrase = " ".join(tokens[start:end]).strip(_WORD_EDGE_PUNCTUATION)
+                windows.append((self._distinctiveness(cores[start:end]), phrase))
 
-        if len(words) >= 18:
-            return [(0, " ".join(words[:30])[:260])]
+        return windows
 
-        return []
+    def _is_valid_window(self, tokens: list[str], cores: list[str]) -> bool:
+        if cores[0].lower() in SPANISH_STOPWORDS or cores[-1].lower() in SPANISH_STOPWORDS:
+            return False
+
+        # Ninguna palabra interna cierra con punto (abreviaturas como "al."
+        # de "et al." o "Dr." delatan citas o cortes de oración).
+        if any(token.endswith(".") for token in tokens[:-1]):
+            return False
+
+        for core in cores:
+            if not core or not _PLAIN_WORD_RE.match(core):
+                return False
+
+            if _ACRONYM_RE.search(core):
+                return False
+
+        lowered = " ".join(cores).lower()
+
+        return "et al" not in lowered
+
+    def _distinctiveness(self, cores: list[str]) -> float:
+        """
+        Más palabras de contenido (y más largas) => frase más distintiva;
+        se penalizan ventanas dominadas por palabras vacías.
+        """
+        content_words = [
+            core
+            for core in cores
+            if core.lower() not in SPANISH_STOPWORDS
+            and len(core) >= self.CONTENT_WORD_MIN_LENGTH
+        ]
+        stopword_ratio = sum(
+            1 for core in cores if core.lower() in SPANISH_STOPWORDS
+        ) / len(cores)
+        length_bonus = sum(max(len(word) - 6, 0) for word in content_words) * 0.1
+
+        return len(content_words) + length_bonus - 2 * max(stopword_ratio - 0.5, 0)
+
+    def _looks_spanish(self, sentence: str) -> bool:
+        words = [
+            word.strip(_WORD_EDGE_PUNCTUATION).lower() for word in sentence.split()
+        ]
+        spanish = sum(1 for word in words if word in SPANISH_STOPWORDS)
+        english = sum(1 for word in words if word in ENGLISH_STOPWORDS)
+
+        return spanish >= english
 
     def _is_low_value_paragraph(self, text: str) -> bool:
         lowered = text.lower()

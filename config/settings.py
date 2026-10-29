@@ -457,6 +457,8 @@ if AI_DETECTION_MODE not in {"global", "segments"}:
         "AI_DETECTION_MODE debe ser 'global' o 'segments'."
     )
 
+# Tramos en que se divide el documento para elegir frases de búsqueda web
+# (hasta 2 frases de 8-14 palabras por tramo).
 WEB_ANALYSIS_MAX_QUERY_PHRASES = env_int(
     "WEB_ANALYSIS_MAX_QUERY_PHRASES",
     8,
@@ -467,8 +469,9 @@ WEB_ANALYSIS_MAX_PAGES_TOTAL = env_int(
     16,
 )
 
-# Tope total de consultas a Brave por análisis (frases con y sin comillas,
-# PDF, repositorios académicos, en ese orden de prioridad).
+# Tope total de consultas a Brave por análisis. Por tramo del documento:
+# mejor frase entre comillas, segunda frase entre comillas y mejor frase
+# sin comillas, en ese orden de prioridad (8 tramos x 3 = 24).
 WEB_ANALYSIS_MAX_QUERIES = env_int(
     "WEB_ANALYSIS_MAX_QUERIES",
     24,

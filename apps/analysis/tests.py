@@ -1862,12 +1862,26 @@ TOPICS = [
 ]
 
 
+PLACE_SYLLABLES = ["ba", "ce", "di", "fo", "gu", "la", "me", "ni", "po", "ru"]
+
+
+def _place_name(index: int) -> str:
+    """
+    Nombre único y sin dígitos por párrafo: las frases de búsqueda web no
+    admiten números, y un nombre largo asegura que la frase elegida de
+    cada tramo sea distinta y localizable en el texto.
+    """
+    syllables = "".join(PLACE_SYLLABLES[int(digit)] for digit in f"{index:02d}")
+    return f"{syllables.capitalize()}pampacancha"
+
+
 def _body_paragraph(index: int) -> str:
     topic = TOPICS[index % len(TOPICS)]
+    place = _place_name(index)
     return (
         f"En la seccion {index} del estudio se analiza {topic} en estudiantes "
-        f"del nivel primario de una institucion publica de la region. "
-        f"Los resultados de la seccion {index} muestran que {topic} mejora "
+        f"del nivel primario de una institucion publica de {place}. "
+        f"Los resultados de la seccion {index} en {place} muestran que {topic} mejora "
         f"cuando el docente organiza actividades planificadas y sostenidas "
         f"durante todo el periodo academico evaluado."
     )
@@ -1884,7 +1898,7 @@ class WebSearchPhrasesFromDocxTests(DocxDocumentTestMixin, TestCase):
     COVER = AcademicTextFilterDocxCoverRunTests.MANTILLA_COVER
     BODY_PARAGRAPH_COUNT = 40
 
-    def _phrases_for_docx(self) -> list[str]:
+    def _phrases_for_docx(self) -> tuple[list[list[str]], str]:
         paragraphs = self.COVER + [
             _body_paragraph(index) for index in range(self.BODY_PARAGRAPH_COUNT)
         ]
@@ -1897,28 +1911,29 @@ class WebSearchPhrasesFromDocxTests(DocxDocumentTestMixin, TestCase):
 
         self.assertIn("portada", filtered.excluded_sections)
 
-        return WebCandidateCollector()._extract_search_phrases(
+        phrase_groups = WebCandidateCollector()._extract_search_phrases(
             content=filtered.content,
         )
-
-    def _sections(self, phrases: list[str]) -> list[int]:
-        return [
-            int(re.search(r"seccion (\d+)", phrase).group(1))
-            for phrase in phrases
-        ]
+        return phrase_groups, filtered.content
 
     def test_phrases_cover_start_middle_and_end_of_the_document(self) -> None:
-        phrases = self._phrases_for_docx()
-        sections = self._sections(phrases)
+        phrase_groups, content = self._phrases_for_docx()
+        # Posición relativa (0-1) de la mejor frase de cada tramo.
+        positions = [content.find(group[0]) / len(content) for group in phrase_groups]
 
-        self.assertEqual(len(phrases), 8)
-        self.assertEqual(sections, sorted(sections))
-        self.assertTrue(any(section < 8 for section in sections), sections)
-        self.assertTrue(any(16 <= section < 24 for section in sections), sections)
-        self.assertTrue(any(section >= 32 for section in sections), sections)
+        self.assertEqual(len(phrase_groups), 8)
+        self.assertTrue(all(len(group) == 2 for group in phrase_groups), phrase_groups)
+        for group in phrase_groups:
+            for phrase in group:
+                self.assertIn(phrase, content)
+        self.assertEqual(positions, sorted(positions))
+        self.assertTrue(any(position < 0.2 for position in positions), positions)
+        self.assertTrue(any(0.4 <= position < 0.6 for position in positions), positions)
+        self.assertTrue(any(position >= 0.8 for position in positions), positions)
 
     def test_cover_lines_never_become_search_phrases(self) -> None:
-        phrases = " ".join(self._phrases_for_docx())
+        phrase_groups, _content = self._phrases_for_docx()
+        phrases = " ".join(phrase for group in phrase_groups for phrase in group)
 
         for marker in ("Autora", "Asesor", "orcid", "TRUJILLO", "LÍNEA DE INVESTIGACIÓN"):
             self.assertNotIn(marker, phrases)
@@ -1968,29 +1983,55 @@ class _FakeFetcher:
     WEB_ANALYSIS_MAX_PAGES_PER_QUERY=2,
 )
 class WebCandidateCollectorQueryTests(SimpleTestCase):
-    PHRASES = [f"frase numero {index} del documento analizado" for index in range(8)]
+    PHRASE_GROUPS = [
+        [f"mejor frase del tramo {index}", f"segunda frase del tramo {index}"]
+        for index in range(8)
+    ]
 
-    def test_every_phrase_gets_a_quoted_and_an_unquoted_query(self) -> None:
-        queries = WebCandidateCollector()._build_queries(phrases=self.PHRASES)
+    def test_queries_are_built_in_three_rounds_over_every_section(self) -> None:
+        queries = WebCandidateCollector()._build_queries(
+            phrase_groups=self.PHRASE_GROUPS,
+        )
 
-        for phrase in self.PHRASES:
-            self.assertIn(f'"{phrase}"', queries)
-            self.assertIn(phrase, queries)
+        self.assertEqual(len(queries), 24)
+        self.assertEqual(queries[:8], [f'"{group[0]}"' for group in self.PHRASE_GROUPS])
+        self.assertEqual(queries[8:16], [f'"{group[1]}"' for group in self.PHRASE_GROUPS])
+        # Sin comillas solo va la mejor frase de cada tramo.
+        self.assertEqual(queries[16:], [group[0] for group in self.PHRASE_GROUPS])
+
+    def test_no_site_or_filetype_queries(self) -> None:
+        queries = WebCandidateCollector()._build_queries(
+            phrase_groups=self.PHRASE_GROUPS,
+        )
+
+        self.assertFalse(any("site:" in query or "filetype:" in query for query in queries))
+
+    def test_sections_with_a_single_phrase_skip_the_second_round(self) -> None:
+        queries = WebCandidateCollector()._build_queries(
+            phrase_groups=[["frase uno"], ["frase dos", "frase tres"]],
+        )
+
+        self.assertEqual(
+            queries,
+            ['"frase uno"', '"frase dos"', '"frase tres"', "frase uno", "frase dos"],
+        )
 
     @override_settings(WEB_ANALYSIS_MAX_QUERIES=10)
     def test_total_queries_respect_the_configured_limit(self) -> None:
-        queries = WebCandidateCollector()._build_queries(phrases=self.PHRASES)
+        queries = WebCandidateCollector()._build_queries(
+            phrase_groups=self.PHRASE_GROUPS,
+        )
 
         self.assertEqual(len(queries), 10)
-        # El recorte no deja sin buscar el final del documento: la ronda de
-        # comillas recorre todas las frases antes que cualquier otra.
-        self.assertIn(f'"{self.PHRASES[-1]}"', queries)
+        # El recorte no deja sin buscar el final del documento: la primera
+        # ronda recorre todos los tramos antes que cualquier otra.
+        self.assertIn(f'"{self.PHRASE_GROUPS[-1][0]}"', queries)
 
     def _collector(self, **fetcher_kwargs) -> WebCandidateCollector:
         collector = WebCandidateCollector()
         collector.search_client = _FakeSearchClient()
         collector.fetcher = _FakeFetcher(**fetcher_kwargs)
-        collector._extract_search_phrases = lambda content: self.PHRASES
+        collector._extract_search_phrases = lambda content: self.PHRASE_GROUPS
         return collector
 
     def test_pages_are_spread_across_queries_of_the_whole_document(self) -> None:
@@ -2004,7 +2045,7 @@ class WebCandidateCollectorQueryTests(SimpleTestCase):
         self.assertEqual(len(collector.search_client.queries), 8)
         self.assertEqual(
             collector.search_client.queries,
-            [f'"{phrase}"' for phrase in self.PHRASES],
+            [f'"{group[0]}"' for group in self.PHRASE_GROUPS],
         )
 
     def test_collect_logs_queries_pages_and_pages_with_content(self) -> None:
@@ -2016,7 +2057,7 @@ class WebCandidateCollectorQueryTests(SimpleTestCase):
         summary = [line for line in logs.output if "Búsqueda web terminada" in line]
 
         self.assertEqual(len(summary), 1)
-        self.assertIn("frases=8", summary[0])
+        self.assertIn("frases=16", summary[0])
         self.assertIn("consultas=8/24 (límite=24)", summary[0])
         self.assertIn("páginas_consultadas=17", summary[0])
         self.assertIn(f"páginas_con_contenido={len(pages)}", summary[0])
@@ -2866,3 +2907,208 @@ class EvaluateAIDetectionCommandTests(TestCase):
         self.assertIn("humano_tesis_01.txt", output)
         self.assertIn("Barrido de MIDPOINT", output)
         self.assertIn("precisión=", output)
+
+
+def _paragraph(*sentences: str) -> str:
+    return " ".join(sentences)
+
+
+@override_settings(WEB_ANALYSIS_MAX_QUERY_PHRASES=1)
+class WebSearchPhraseSelectionTests(SimpleTestCase):
+    """
+    Tesis Mantilla: buscar la oración más larga (30+ palabras) entre
+    comillas daba 0 % web. Ahora se buscan ventanas de 8-14 palabras sin
+    citas, números, siglas ni palabras vacías en los bordes.
+    """
+
+    CONTENT_SENTENCE = (
+        "El juego tradicional favorece la expresión oral espontánea mediante "
+        "interacciones lúdicas normadas culturalmente en comunidades rurales andinas."
+    )
+    OTHER_SENTENCE = (
+        "Los docentes valoraron positivamente las rondas infantiles como "
+        "estrategia didáctica pertinente para fortalecer vocabulario y fluidez."
+    )
+
+    def _groups(self, content: str) -> list[list[str]]:
+        return WebCandidateCollector()._extract_search_phrases(content=content)
+
+    def _all_phrases(self, content: str) -> list[str]:
+        return [phrase for group in self._groups(content) for phrase in group]
+
+    def test_phrases_are_short_windows_inside_one_sentence(self) -> None:
+        content = _paragraph(self.CONTENT_SENTENCE, self.OTHER_SENTENCE)
+
+        for phrase in self._all_phrases(content):
+            self.assertTrue(8 <= len(phrase.split()) <= 14, phrase)
+            self.assertIn(phrase, content)
+            self.assertNotIn(". ", phrase)
+
+    def test_second_phrase_comes_from_a_different_sentence(self) -> None:
+        content = _paragraph(self.CONTENT_SENTENCE, self.OTHER_SENTENCE)
+
+        [group] = self._groups(content)
+
+        self.assertEqual(len(group), 2)
+        self.assertIn(group[0], self.CONTENT_SENTENCE + self.OTHER_SENTENCE)
+        self.assertNotEqual(
+            group[0] in self.CONTENT_SENTENCE,
+            group[1] in self.CONTENT_SENTENCE,
+        )
+
+    def test_windows_never_include_citations_numbers_or_acronyms(self) -> None:
+        content = _paragraph(
+            "Según Quiroz-Sagardia (2025) y Rojas et al. 2024 los juegos "
+            "tradicionales operaron como herramientas MINEDU de socialización "
+            "temprana en 45 instituciones educativas públicas del país.",
+            self.CONTENT_SENTENCE,
+        )
+
+        for phrase in self._all_phrases(content):
+            self.assertNotRegex(phrase, r"\d|\(|\)|et al|MINEDU")
+
+    def test_windows_do_not_start_or_end_with_stopwords(self) -> None:
+        content = _paragraph(self.CONTENT_SENTENCE, self.OTHER_SENTENCE)
+
+        for phrase in self._all_phrases(content):
+            words = [word.strip(".,;:").lower() for word in phrase.split()]
+            self.assertNotIn(words[0], {"el", "la", "los", "de", "en", "y", "para"})
+            self.assertNotIn(words[-1], {"el", "la", "los", "de", "en", "y", "para"})
+
+    def test_english_abstract_is_not_searched(self) -> None:
+        abstract = (
+            "It was concluded that traditional games constitute highly valuable "
+            "pedagogical and sociocultural mediators that foster oral communicative "
+            "competence in elementary education, provided their implementation follows "
+            "an intentional and contextualized teaching plan."
+        )
+
+        self.assertEqual(self._groups(abstract), [])
+
+    def test_prefers_content_words_over_stopword_heavy_windows(self) -> None:
+        content = _paragraph(
+            "Esto es lo que se hizo en el aula de la escuela para que los niños "
+            "lo vean y lo usen en su casa con sus padres y con sus amigos.",
+            self.CONTENT_SENTENCE,
+        )
+
+        [group] = self._groups(content)
+
+        self.assertIn(group[0], self.CONTENT_SENTENCE)
+
+
+class _ProbeFakeFetcher:
+    def __init__(self, texts_by_url: dict[str, str]) -> None:
+        self.texts_by_url = texts_by_url
+
+    def fetch(self, result: WebSearchResult) -> WebPageContent | None:
+        return WebPageContent(
+            title=result.title,
+            url=result.url,
+            domain=result.domain,
+            text=self.texts_by_url.get(result.url, "texto sin relacion"),
+            source_format="HTML",
+        )
+
+
+@override_settings(
+    BRAVE_SEARCH_API_KEY="clave-de-prueba",
+    WEB_ANALYSIS_MAX_QUERY_PHRASES=8,
+    WEB_ANALYSIS_MAX_QUERIES=24,
+    WEB_ANALYSIS_MAX_PAGES_TOTAL=16,
+    WEB_ANALYSIS_MAX_PAGES_PER_QUERY=2,
+)
+class WebSearchProbeCommandTests(TestCase):
+    def setUp(self) -> None:
+        institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        student = User.objects.create_user(
+            username="alumno-probe",
+            email="alumno-probe@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=institution,
+        )
+        self.content = "\n\n".join(
+            _body_paragraph(index) for index in range(16)
+        )
+        self.document = Document(
+            institution=institution,
+            owner=student,
+            uploaded_by=student,
+            title="Tesis probe",
+            kind=DocumentKind.OTHER,
+            original_filename="tesis.pdf",
+            mime_type="application/pdf",
+            file_size_bytes=10,
+            sha256_hash="hash-probe",
+        )
+        self.document.original_file.save(
+            "tesis.pdf",
+            ContentFile(b"%PDF-1.4"),
+            save=False,
+        )
+        self.document.save()
+        AnalysisReport.objects.create(
+            document=self.document,
+            analyzed_content=self.content,
+        )
+
+    def _call(self, *args: str) -> str:
+        stdout = StringIO()
+        call_command("web_search_probe", str(self.document.id), *args, stdout=stdout)
+        return stdout.getvalue()
+
+    def test_dry_run_prints_queries_of_both_strategies_without_searching(self) -> None:
+        with mock.patch(
+            "apps.analysis.engines.web_search.BraveWebSearchClient.search",
+            side_effect=AssertionError("dry-run no debe llamar a Brave"),
+        ):
+            output = self._call("--dry-run", "--estrategia", "ambas")
+
+        self.assertIn("=== Estrategia anterior ===", output)
+        self.assertIn("=== Estrategia nueva ===", output)
+        self.assertIn("site:repositorio.ucv.edu.pe", output)
+        new_section = output.split("=== Estrategia nueva ===")[1]
+        self.assertNotIn("site:", new_section)
+        self.assertNotIn("filetype:", new_section)
+        self.assertRegex(output, r"Consultas generadas\s+24\s+24")
+
+    def test_counts_shared_eight_word_sequences_per_page(self) -> None:
+        words = self.content.split()
+        # Página 1: comparte 3 secuencias de 8 palabras (10 palabras seguidas).
+        # Página 2: comparte 1 secuencia. El resto, ninguna.
+        texts_by_url = {
+            "https://example.com/1/0": "relleno " + " ".join(words[100:110]) + " relleno",
+            "https://example.com/1/1": " ".join(words[300:308]),
+        }
+
+        def fake_collector(command_self) -> WebCandidateCollector:
+            collector = WebCandidateCollector()
+            collector.search_client = _FakeSearchClient()
+            collector.fetcher = _ProbeFakeFetcher(texts_by_url)
+            return collector
+
+        with mock.patch(
+            "apps.analysis.management.commands.web_search_probe.Command._collector",
+            fake_collector,
+        ):
+            output = self._call("--estrategia", "ambas")
+
+        self.assertIn("[   3 secuencias] https://example.com/1/0", output)
+        self.assertIn("[   1 secuencias] https://example.com/1/1", output)
+        self.assertRegex(output, r"Páginas con ≥1 secuencia de 8\s+2\s+2")
+        self.assertRegex(output, r"Páginas con ≥3 secuencias de 8\s+1\s+1")
+        self.assertIn("Páginas (anterior)", output)
+        self.assertIn("Páginas (nueva)", output)
+
+    def test_without_api_key_requires_dry_run(self) -> None:
+        with override_settings(BRAVE_SEARCH_API_KEY=""):
+            with self.assertRaises(CommandError):
+                self._call()
+
+    def test_unknown_document_raises_command_error(self) -> None:
+        with self.assertRaises(CommandError):
+            call_command("web_search_probe", str(uuid4()), "--dry-run", stdout=StringIO())

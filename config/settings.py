@@ -445,6 +445,18 @@ PERPLEXITY_AI_DETECTION_ENABLED = env_bool(
     False,
 )
 
+# Cómo se aplica la señal de perplejidad (solo si la anterior está activa):
+# - "global": una perplejidad para los primeros 900 tokens (motor actual).
+# - "segments": todo el documento en segmentos de ~150-250 palabras; el %
+#   es el de palabras evaluables en segmentos con score >= 50 (estilo
+#   Turnitin). Ver apps/analysis/engines/ai_segments.py.
+AI_DETECTION_MODE = os.getenv("AI_DETECTION_MODE", "global").strip().lower()
+
+if AI_DETECTION_MODE not in {"global", "segments"}:
+    raise RuntimeError(
+        "AI_DETECTION_MODE debe ser 'global' o 'segments'."
+    )
+
 WEB_ANALYSIS_MAX_QUERY_PHRASES = env_int(
     "WEB_ANALYSIS_MAX_QUERY_PHRASES",
     8,

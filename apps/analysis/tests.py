@@ -17,7 +17,10 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
+from apps.analysis.engines import ai_segments
+from apps.analysis.engines import perplexity_detector as perplexity_module
 from apps.analysis.engines.exclusions import calculate_similarity_percent
+from apps.analysis.engines.perplexity_detector import PerplexityAnalysisResult
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.span_similarity import (
     MATCH_TYPE_EXACT,
@@ -2533,3 +2536,333 @@ class BenchmarkSimilarityCommandTests(TestCase):
 
         # Nada de lo indexado por el banco de pruebas queda en la base.
         self.assertFalse(Institution.objects.filter(slug__startswith="benchmark-").exists())
+
+
+# --- Detección de IA por segmentos (AI_DETECTION_MODE=segments) ---
+#
+# El modelo nunca se carga en estos tests: se mockea
+# `perplexity_detector._batch_sequence_perplexities`, que es el único punto
+# por donde el modo segments llega a torch.
+
+SEGMENT_HUMAN_SENTENCE = "El estudio revisa la práctica docente en escuelas rurales del país."
+SEGMENT_AI_SENTENCE = "La propuesta robótica fortalece la gestión pedagógica de manera integral."
+
+
+def _segment_paragraph(sentence: str, words: int) -> str:
+    per_sentence = len(sentence.split())
+    return " ".join([sentence] * max(1, words // per_sentence))
+
+
+def _fake_perplexities(texts: list[str]) -> list[float]:
+    # "robótica" marca el texto de IA (perplejidad baja); el resto es humano.
+    return [30.0 if "robótica" in text else 150.0 for text in texts]
+
+
+class AISegmentsBuildTests(SimpleTestCase):
+    def test_segments_respect_paragraphs_and_cover_whole_document(self) -> None:
+        paragraphs = [_segment_paragraph(SEGMENT_HUMAN_SENTENCE, 110) for _ in range(9)]
+        content = "\n\n".join(paragraphs)
+
+        segments = ai_segments.build_segments(content)
+
+        self.assertGreater(len(segments), 1)
+        self.assertEqual(
+            sum(segment.word_count for segment in segments),
+            len(content.split()),
+        )
+        for segment in segments:
+            # Ningún segmento empieza ni termina a mitad de párrafo.
+            self.assertTrue(segment.start == 0 or content[segment.start - 2:segment.start] == "\n\n")
+            self.assertTrue(segment.end == len(content) or content[segment.end:segment.end + 2] == "\n\n")
+            self.assertLessEqual(segment.word_count, ai_segments.SEGMENT_MAX_WORDS)
+
+    def test_long_paragraph_without_breaks_is_split_by_sentences(self) -> None:
+        content = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 900)
+
+        segments = ai_segments.build_segments(content)
+
+        self.assertGreaterEqual(len(segments), 4)
+        for segment in segments:
+            self.assertTrue(content[segment.start:segment.end].endswith("país."))
+
+    def test_does_not_split_sentence_after_et_al(self) -> None:
+        sentences = ai_segments.split_sentences(
+            "Según García Flores et al. (2022) el juego mejora la oralidad. "
+            "Otros autores, p. ej. Ruiz, coinciden."
+        )
+
+        self.assertEqual(len(sentences), 2)
+        self.assertTrue(sentences[0].startswith("Según García Flores et al. (2022)"))
+
+    def test_figure_titles_and_quotes_are_not_evaluated(self) -> None:
+        body = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 160)
+        quote = "“esta cita textual no debe evaluarse jamás”"
+        content = f"Tabla 2\nConvergencias identificadas en los estudios\n\n{body} {quote}"
+        quote_start = content.index(quote)
+
+        segments = ai_segments.build_segments(
+            content,
+            excluded_ranges=[(quote_start, quote_start + len(quote))],
+        )
+
+        self.assertEqual(len(segments), 1)
+        text = segments[0].evaluable_text
+        self.assertNotIn("Convergencias", text)
+        self.assertNotIn("cita textual", text)
+        self.assertEqual(segments[0].evaluable_word_count, len(body.split()))
+
+    def test_english_or_technical_segment_is_not_evaluable(self) -> None:
+        english = _segment_paragraph(
+            "The results of this study show that games are used in the classroom.",
+            170,
+        )
+        boolean = _segment_paragraph('("traditional games" OR "juegos") AND PRISMA 2020 SciELO.', 170)
+        spanish = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 170)
+
+        reasons = [
+            segment.excluded_reason
+            for segment in ai_segments.build_segments("\n\n".join([english, boolean, spanish]))
+        ]
+
+        self.assertEqual(
+            reasons,
+            [ai_segments.REASON_NOISE, ai_segments.REASON_NOISE, ""],
+        )
+
+
+class AISegmentsAggregateTests(SimpleTestCase):
+    def _segment(self, words: int, perplexity: float | None, reason: str = ""):
+        return ai_segments.TextSegment(
+            start=0,
+            end=0,
+            word_count=words,
+            evaluable_text="",
+            evaluable_word_count=words,
+            noise_ratio=0.0,
+            sentences=[],
+            perplexity=perplexity,
+            excluded_reason=reason,
+        )
+
+    def test_percent_is_share_of_evaluable_words_in_ai_segments(self) -> None:
+        segments = [
+            self._segment(200, 30.0),  # score ~84 -> IA
+            self._segment(100, 150.0),  # score ~0 -> humano
+            self._segment(300, None, ai_segments.REASON_NOISE),  # no cuenta
+        ]
+
+        self.assertEqual(ai_segments.aggregate_ai_percent(segments), Decimal("66.67"))
+
+    def test_midpoint_changes_result_without_rerunning_model(self) -> None:
+        segments = [self._segment(200, 80.0), self._segment(200, 150.0)]
+
+        self.assertEqual(ai_segments.aggregate_ai_percent(segments), Decimal("0.00"))
+        self.assertEqual(
+            ai_segments.aggregate_ai_percent(segments, midpoint=90.0),
+            Decimal("50.00"),
+        )
+
+    def test_no_evaluable_words_gives_zero(self) -> None:
+        segments = [self._segment(200, None, ai_segments.REASON_NOISE)]
+
+        self.assertEqual(ai_segments.aggregate_ai_percent(segments), Decimal("0.00"))
+
+
+class SegmentedPerplexityDetectorTests(SimpleTestCase):
+    def test_whole_document_is_evaluated_and_breakdown_has_segments(self) -> None:
+        # ~2000 palabras: muy por encima de los 900 tokens del modo global.
+        paragraphs = [
+            _segment_paragraph(
+                SEGMENT_AI_SENTENCE if index >= 8 else SEGMENT_HUMAN_SENTENCE,
+                100,
+            )
+            for index in range(20)
+        ]
+        content = "\n\n".join(paragraphs)
+
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ):
+            result = ai_segments.SegmentedPerplexityDetector().analyze(content)
+
+        self.assertTrue(all(segment.perplexity is not None for segment in result.segments))
+        ai_words = sum(len(p.split()) for p in paragraphs if "robótica" in p)
+        expected = Decimal(ai_words * 100) / Decimal(len(content.split()))
+        self.assertEqual(result.ai_probability_percent, expected.quantize(Decimal("0.01")))
+
+        breakdown = result.to_breakdown()
+        self.assertEqual(breakdown["segment_count"], len(result.segments))
+        first = breakdown["segments"][0]
+        self.assertEqual(
+            set(first),
+            {
+                "start", "end", "words", "evaluable_words", "perplexity",
+                "sentence_median_perplexity", "burstiness", "noise_ratio",
+                "score", "evaluable", "excluded_reason",
+            },
+        )
+        self.assertEqual(first["sentence_median_perplexity"], 150.0)
+        self.assertEqual(first["burstiness"], 0.0)
+        self.assertTrue(first["evaluable"])
+
+    def test_segment_without_perplexity_is_not_evaluable(self) -> None:
+        content = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=lambda texts: [None] * len(texts),
+        ):
+            result = ai_segments.SegmentedPerplexityDetector().analyze(content)
+
+        self.assertEqual(result.segments[0].excluded_reason, ai_segments.REASON_NO_PERPLEXITY)
+        self.assertEqual(result.ai_probability_percent, Decimal("0.00"))
+
+
+class AIDetectionModeServiceTests(TestCase):
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.document = make_test_document(self.institution, self.student)
+        self.service = DocumentAnalysisService(requested_by=self.student)
+        self.heuristic = mock.Mock(ai_probability_percent=Decimal("12.00"))
+        self.content = "\n\n".join(
+            _segment_paragraph(sentence, 200)
+            for sentence in (SEGMENT_HUMAN_SENTENCE, SEGMENT_AI_SENTENCE)
+        )
+
+    def test_default_mode_is_global(self) -> None:
+        self.assertEqual(settings.AI_DETECTION_MODE, "global")
+
+    @override_settings(PERPLEXITY_AI_DETECTION_ENABLED=True, AI_DETECTION_MODE="global")
+    def test_global_mode_keeps_previous_behavior(self) -> None:
+        with mock.patch.object(
+            self.service.perplexity_detector,
+            "analyze",
+            return_value=PerplexityAnalysisResult(
+                ai_probability_percent=Decimal("3.83"),
+                mean_perplexity=103.3,
+                burstiness=None,
+                sentence_count=10,
+            ),
+        ), mock.patch.object(
+            self.service.segmented_perplexity_detector, "analyze"
+        ) as segmented:
+            percent, breakdown, detector = self.service._estimate_ai_probability(
+                document=self.document,
+                analysis_content=self.content,
+                heuristic_result=self.heuristic,
+            )
+
+        segmented.assert_not_called()
+        self.assertEqual(percent, Decimal("3.83"))
+        self.assertEqual(detector, "perplexity-burstiness-v1")
+        self.assertNotIn("segments", breakdown)
+
+    @override_settings(PERPLEXITY_AI_DETECTION_ENABLED=True, AI_DETECTION_MODE="segments")
+    def test_segments_mode_stores_segments_and_skips_quotes(self) -> None:
+        quoted = (0, len(SEGMENT_HUMAN_SENTENCE))
+
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ), mock.patch.object(self.service.perplexity_detector, "analyze") as global_analyze:
+            percent, breakdown, detector = self.service._estimate_ai_probability(
+                document=self.document,
+                analysis_content=self.content,
+                heuristic_result=self.heuristic,
+                quoted_ranges=[quoted],
+            )
+
+        global_analyze.assert_not_called()
+        self.assertEqual(detector, "perplexity-segments-v1")
+        self.assertEqual(breakdown["mode"], "segments")
+        self.assertEqual(breakdown["combination"], "perplexity-segments-replaces-heuristic")
+        self.assertEqual(breakdown["segment_count"], 2)
+        self.assertEqual(breakdown["segments"][0]["start"], 0)
+        # La primera oración (citada) no cuenta como palabra evaluable.
+        self.assertEqual(
+            breakdown["segments"][0]["evaluable_words"],
+            breakdown["segments"][0]["words"] - len(SEGMENT_HUMAN_SENTENCE.split()),
+        )
+        self.assertEqual(breakdown["perplexity_ai_score"], str(percent))
+        self.assertGreater(percent, Decimal("40.00"))
+        self.assertLess(percent, Decimal("60.00"))
+
+    @override_settings(PERPLEXITY_AI_DETECTION_ENABLED=True, AI_DETECTION_MODE="segments")
+    def test_segments_mode_falls_back_to_heuristic_on_error(self) -> None:
+        with mock.patch.object(
+            self.service.segmented_perplexity_detector,
+            "analyze",
+            side_effect=RuntimeError("sin torch"),
+        ):
+            percent, breakdown, detector = self.service._estimate_ai_probability(
+                document=self.document,
+                analysis_content=self.content,
+                heuristic_result=self.heuristic,
+            )
+
+        self.assertEqual(percent, Decimal("12.00"))
+        self.assertEqual(detector, "spanish-heuristic-v1")
+        self.assertEqual(breakdown["combination"], "heuristic-only")
+
+
+class EvaluateAIDetectionCommandTests(TestCase):
+    def test_command_prints_table_and_midpoint_sweep(self) -> None:
+        institution = Institution.objects.create(name="Instituto", slug="instituto")
+        student = User.objects.create_user(
+            username="alumno2",
+            email="alumno2@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=institution,
+        )
+        document = make_test_document(institution, student, title="Proyecto Mantilla")
+        AnalysisReport.objects.create(
+            document=document,
+            analyzed_content=_segment_paragraph(SEGMENT_AI_SENTENCE, 400),
+        )
+        stdout = StringIO()
+
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ), mock.patch(
+            "apps.analysis.management.commands.evaluate_ai_detection."
+            "SpanishPerplexityDetector.analyze",
+            return_value=PerplexityAnalysisResult(
+                ai_probability_percent=Decimal("3.83"),
+                mean_perplexity=103.3,
+                burstiness=None,
+                sentence_count=10,
+            ),
+        ):
+            call_command(
+                "evaluate_ai_detection",
+                "--skip-bank",
+                "--midpoints=55,90",
+                f"--csv-path={settings.BASE_DIR / 'tmp_eval_test.csv'}",
+                stdout=stdout,
+                stderr=StringIO(),
+            )
+
+        (settings.BASE_DIR / "tmp_eval_test.csv").unlink()
+        output = stdout.getvalue()
+        self.assertIn("Proyecto Mantilla", output)
+        self.assertIn("ia_01.txt", output)
+        self.assertIn("humano_tesis_01.txt", output)
+        self.assertIn("Barrido de MIDPOINT", output)
+        self.assertIn("precisión=", output)

@@ -19,6 +19,7 @@ from apps.accounts.models import User
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.ai_segments import SegmentedPerplexityDetector
 from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
 from apps.analysis.engines.similarity import (
     CandidateKnowledgeChunk,
@@ -140,6 +141,7 @@ class DocumentAnalysisService:
 
     AI_DETECTOR_HEURISTIC = "spanish-heuristic-v1"
     AI_DETECTOR_PERPLEXITY = "perplexity-burstiness-v1"
+    AI_DETECTOR_PERPLEXITY_SEGMENTS = "perplexity-segments-v1"
 
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
@@ -156,6 +158,7 @@ class DocumentAnalysisService:
 
         self.ai_detector = SpanishAIDetector()
         self.perplexity_detector = SpanishPerplexityDetector()
+        self.segmented_perplexity_detector = SegmentedPerplexityDetector()
 
     def execute(
         self,
@@ -266,6 +269,7 @@ class DocumentAnalysisService:
                     document=document,
                     analysis_content=analysis_content,
                     heuristic_result=ai_result,
+                    quoted_ranges=quoted_ranges,
                 )
             )
 
@@ -360,6 +364,7 @@ class DocumentAnalysisService:
         document: Document,
         analysis_content: str,
         heuristic_result: AIAnalysisResult,
+        quoted_ranges: list[tuple[int, int]] | None = None,
     ) -> tuple[Decimal, dict, str]:
         """
         Cuando `PERPLEXITY_AI_DETECTION_ENABLED` está activo (desactivada por
@@ -371,6 +376,9 @@ class DocumentAnalysisService:
         la señal de perplejidad no está habilitada o falla (p. ej.
         torch/transformers no instalados en este entorno), se conserva el
         comportamiento original: solo la heurística.
+
+        Con `AI_DETECTION_MODE=segments` la perplejidad se evalúa sobre todo
+        el documento por segmentos (ver `_estimate_ai_probability_by_segments`).
         """
         breakdown = {
             "heuristic_ai_score": str(heuristic_result.ai_probability_percent),
@@ -386,6 +394,15 @@ class DocumentAnalysisService:
                 heuristic_result.ai_probability_percent,
                 breakdown,
                 self.AI_DETECTOR_HEURISTIC,
+            )
+
+        if settings.AI_DETECTION_MODE == "segments":
+            return self._estimate_ai_probability_by_segments(
+                document=document,
+                analysis_content=analysis_content,
+                heuristic_result=heuristic_result,
+                quoted_ranges=quoted_ranges,
+                fallback_breakdown=breakdown,
             )
 
         started_at = time.monotonic()
@@ -436,6 +453,69 @@ class DocumentAnalysisService:
         )
 
         return final_probability, breakdown, self.AI_DETECTOR_PERPLEXITY
+
+    def _estimate_ai_probability_by_segments(
+        self,
+        *,
+        document: Document,
+        analysis_content: str,
+        heuristic_result: AIAnalysisResult,
+        quoted_ranges: list[tuple[int, int]] | None,
+        fallback_breakdown: dict,
+    ) -> tuple[Decimal, dict, str]:
+        """
+        % IA = % de palabras evaluables en segmentos con score >= 50. Los
+        segmentos (offsets sobre `analysis_content`) quedan en el breakdown
+        para pintarlos en el visor. Las citas marcadas no se evalúan.
+        """
+        started_at = time.monotonic()
+
+        try:
+            result = self.segmented_perplexity_detector.analyze(
+                analysis_content,
+                excluded_ranges=quoted_ranges,
+            )
+        except Exception:
+            logger.exception(
+                "Fallo calculando la señal de perplejidad por segmentos; se usa "
+                "solo la heurística. document_id=%s",
+                document.id,
+            )
+            return (
+                heuristic_result.ai_probability_percent,
+                fallback_breakdown,
+                self.AI_DETECTOR_HEURISTIC,
+            )
+
+        elapsed_seconds = time.monotonic() - started_at
+
+        breakdown = {
+            "heuristic_ai_score": str(heuristic_result.ai_probability_percent),
+            "perplexity_ai_score": str(result.ai_probability_percent),
+            "mean_perplexity": None,
+            "burstiness": None,
+            "sentence_count": sum(len(s.sentences) for s in result.segments),
+            "combination": "perplexity-segments-replaces-heuristic",
+            "mode": "segments",
+            **result.to_breakdown(),
+        }
+
+        logger.info(
+            "Señal de perplejidad por segmentos calculada. document_id=%s "
+            "ia=%s segmentos=%s evaluables=%s palabras_evaluables=%s tiempo=%.2fs",
+            document.id,
+            result.ai_probability_percent,
+            len(result.segments),
+            len(result.evaluable_segments),
+            result.evaluable_word_count,
+            elapsed_seconds,
+        )
+
+        return (
+            result.ai_probability_percent,
+            breakdown,
+            self.AI_DETECTOR_PERPLEXITY_SEGMENTS,
+        )
 
     def check_permission(self, document_id: UUID) -> Document:
         """

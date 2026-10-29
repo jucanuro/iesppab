@@ -2909,6 +2909,137 @@ class EvaluateAIDetectionCommandTests(TestCase):
         self.assertIn("precisión=", output)
 
 
+def _fake_global_analysis(content: str) -> PerplexityAnalysisResult:
+    mean_perplexity = 30.0 if "robótica" in content else 150.0
+    return PerplexityAnalysisResult(
+        ai_probability_percent=perplexity_module._logistic_score(
+            mean_perplexity,
+            midpoint=perplexity_module.PERPLEXITY_MIDPOINT,
+            scale=perplexity_module.PERPLEXITY_SCALE,
+        ),
+        mean_perplexity=mean_perplexity,
+        burstiness=None,
+        sentence_count=10,
+    )
+
+
+class EvaluateAIDetectionDirTests(SimpleTestCase):
+    """--dir: banco privado de tesis en humanos/ e ia/ (eval_ia/)."""
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from docx import Document as DocxDocument
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "humanos").mkdir()
+        (self.root / "ia").mkdir()
+
+        human = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+        ai = _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+
+        # Humano "sospechoso": 1 de 3 segmentos parece IA (~33 % >= 20).
+        docx = DocxDocument()
+        for paragraph in (human, ai, human):
+            docx.add_paragraph(paragraph)
+        docx.save(self.root / "humanos" / "tesis_mixta.docx")
+
+        # La bibliografía no debe llegar al detector.
+        (self.root / "humanos" / "tesis_limpia.txt").write_text(
+            f"{human}\n\n{human}\n\nREFERENCIAS BIBLIOGRÁFICAS\n\n"
+            "Pérez, J. (2020). La robótica educativa en el aula. Lima: Editorial Andina.",
+            encoding="utf-8",
+        )
+        (self.root / "humanos" / "notas.md").write_text("se ignora", encoding="utf-8")
+        (self.root / "ia" / "generado.txt").write_text(f"{ai}\n\n{ai}", encoding="utf-8")
+
+    def _run(self, *args: str) -> str:
+        stdout = StringIO()
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ), mock.patch(
+            "apps.analysis.management.commands.evaluate_ai_detection."
+            "SpanishPerplexityDetector.analyze",
+            side_effect=_fake_global_analysis,
+        ):
+            call_command(
+                "evaluate_ai_detection",
+                f"--dir={self.root}",
+                *args,
+                stdout=stdout,
+                stderr=StringIO(),
+            )
+        return stdout.getvalue()
+
+    def test_summary_per_midpoint_with_fp_recall_and_medians(self) -> None:
+        output = self._run()
+
+        rows = {
+            tuple(line.split()[:2]): line.split()[2:]
+            for line in output.splitlines()
+            if re.match(r"\s*\d+ (global|segments) ", line)
+        }
+        self.assertEqual(
+            sorted({midpoint for midpoint, _ in rows}, key=int),
+            ["55", "70", "80", "90"],
+        )
+        # segments: el DOCX mixto es falso positivo; global solo ve el inicio.
+        fp, recall, human_median, ai_median = rows[("55", "segments")]
+        self.assertEqual(fp, "1/2=0.50")
+        self.assertEqual(recall, "1/1=1.00")
+        self.assertEqual(ai_median, "100.00")
+        self.assertEqual(rows[("55", "global")][0], "1/2=0.50")
+
+    def test_csv_detail_per_file(self) -> None:
+        import csv
+
+        self._run("--midpoints=55,90")
+
+        with (self.root / "resultados_ia.csv").open(encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+
+        self.assertEqual(
+            [(row["archivo"], row["esperado"]) for row in rows],
+            [
+                ("tesis_limpia.txt", "humano"),
+                ("tesis_mixta.docx", "humano"),
+                ("generado.txt", "IA"),
+            ],
+        )
+        self.assertIn("pct_global_90", rows[0])
+        self.assertIn("pct_segments_90", rows[0])
+        self.assertEqual(rows[0]["pct_segments_55"], "0.00")
+        self.assertEqual(rows[2]["pct_segments_55"], "100.00")
+
+    def test_top_humans_list_their_most_ai_segments(self) -> None:
+        output = self._run("--top-humans=1")
+
+        top = output.split("Humanos con mayor % IA")[1]
+        self.assertIn("tesis_mixta.docx", top)
+        self.assertNotIn("tesis_limpia.txt", top)
+        self.assertEqual(top.count("ppl="), 2)
+        self.assertIn("ppl=30.0", top)
+        self.assertIn("…", top)
+
+    def test_samples_use_analysis_filter(self) -> None:
+        from apps.analysis.management.commands.evaluate_ai_detection import Command
+
+        samples = Command(stderr=StringIO())._file_samples(self.root / "humanos", "humano")
+
+        self.assertEqual([s.name for s in samples], ["tesis_limpia.txt", "tesis_mixta.docx"])
+        self.assertNotIn("Pérez, J. (2020)", samples[0].content)
+        self.assertIn("\n\n", samples[1].content)
+
+    def test_dir_without_subfolders_fails(self) -> None:
+        with self.assertRaises(CommandError):
+            call_command("evaluate_ai_detection", f"--dir={self.root / 'humanos'}")
+
+
 def _paragraph(*sentences: str) -> str:
     return " ".join(sentences)
 

@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
 from apps.analysis.engines import ai_segments
+from apps.analysis.engines import binoculars_detector as binoculars_module
 from apps.analysis.engines import perplexity_detector as perplexity_module
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.perplexity_detector import PerplexityAnalysisResult
@@ -3531,3 +3532,254 @@ class WebSearchProbeCommandTests(TestCase):
     def test_unknown_document_raises_command_error(self) -> None:
         with self.assertRaises(CommandError):
             call_command("web_search_probe", str(uuid4()), "--dry-run", stdout=StringIO())
+
+
+class BinocularsStatisticsTests(SimpleTestCase):
+    """
+    La matemática de Binoculars con un Qwen2 diminuto (sin descargar los
+    modelos reales): la pasada por bloques de vocabulario debe dar lo
+    mismo que los logits completos.
+    """
+
+    def _tiny_qwen(self, seed: int):
+        import torch
+        from transformers import Qwen2Config, Qwen2ForCausalLM
+
+        torch.manual_seed(seed)
+        config = Qwen2Config(
+            vocab_size=101,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            max_position_embeddings=64,
+            tie_word_embeddings=True,
+        )
+        return Qwen2ForCausalLM(config).eval()
+
+    def test_chunked_statistics_match_full_logits(self) -> None:
+        import torch
+        from torch.nn import functional as F
+
+        observer, performer = self._tiny_qwen(0), self._tiny_qwen(1)
+        input_ids = torch.randint(0, 101, (1, 30))
+
+        with torch.no_grad():
+            observer_hidden = binoculars_module._final_hidden_states(observer, input_ids)[0, :-1]
+            performer_hidden = binoculars_module._final_hidden_states(performer, input_ids)[0, :-1]
+            log_ppl, log_x_ppl = binoculars_module._segment_statistics(
+                observer_hidden,
+                performer_hidden,
+                input_ids[0, 1:],
+                observer.lm_head.weight,
+                performer.lm_head.weight,
+                vocab_chunk=17,
+            )
+            observer_logits = observer(input_ids).logits[0, :-1]
+            performer_logits = performer(input_ids).logits[0, :-1]
+
+        expected_ppl = F.cross_entropy(performer_logits, input_ids[0, 1:]).item()
+        expected_x_ppl = (
+            (F.softmax(observer_logits, -1) * -F.log_softmax(performer_logits, -1))
+            .sum(-1)
+            .mean()
+            .item()
+        )
+        self.assertAlmostEqual(log_ppl, expected_ppl, places=4)
+        self.assertAlmostEqual(log_x_ppl, expected_x_ppl, places=4)
+
+    def test_bf16_weights_compute_in_float32(self) -> None:
+        import torch
+        from torch import nn
+
+        linear = nn.Linear(4, 3).to(torch.bfloat16)
+        linear.forward = binoculars_module._upcast_linear_forward(linear)
+
+        output = linear(torch.ones(2, 4))
+
+        self.assertEqual(output.dtype, torch.float32)
+        self.assertEqual(linear.weight.dtype, torch.bfloat16)
+
+    def test_score_texts_loads_one_model_at_a_time(self) -> None:
+        import torch
+        from torch.nn import functional as F
+
+        models = {
+            binoculars_module.PERFORMER_MODEL_NAME: self._tiny_qwen(1),
+            binoculars_module.OBSERVER_MODEL_NAME: self._tiny_qwen(0),
+        }
+        loaded = []
+
+        def fake_load(name):
+            loaded.append(name)
+            return models[name]
+
+        def fake_tokenizer(text, **kwargs):
+            ids = [(ord(char) * 7) % 101 for char in text]
+            return {"input_ids": torch.tensor([ids])}
+
+        with mock.patch.object(binoculars_module, "_load_model", side_effect=fake_load), \
+                mock.patch.object(binoculars_module, "_get_tokenizer", return_value=fake_tokenizer), \
+                mock.patch.object(binoculars_module, "TEXTS_PER_PASS", 2):
+            scores = binoculars_module.score_texts(["texto uno", "x", "otro texto", "tres"])
+
+        self.assertIsNone(scores[1])  # 1 token: no hay nada que predecir
+        self.assertEqual(
+            loaded,
+            [binoculars_module.PERFORMER_MODEL_NAME, binoculars_module.OBSERVER_MODEL_NAME] * 2,
+        )
+
+        ids = fake_tokenizer("otro texto")["input_ids"]
+        with torch.no_grad():
+            performer_logits = models[binoculars_module.PERFORMER_MODEL_NAME](ids).logits[0, :-1]
+            observer_logits = models[binoculars_module.OBSERVER_MODEL_NAME](ids).logits[0, :-1]
+        log_ppl = F.cross_entropy(performer_logits, ids[0, 1:]).item()
+        log_x_ppl = (
+            (F.softmax(observer_logits, -1) * -F.log_softmax(performer_logits, -1))
+            .sum(-1)
+            .mean()
+            .item()
+        )
+        self.assertAlmostEqual(scores[2].score, log_ppl / log_x_ppl, places=4)
+        self.assertEqual(scores[2].tokens, ids.shape[1])
+
+
+def _fake_binoculars_scores(texts: list[str], **kwargs):
+    # "robótica" marca el texto de IA (score bajo); el resto es humano.
+    scores = [0.70 if "robótica" in text else 0.95 for text in texts]
+    return [
+        binoculars_module.BinocularsScore(
+            score=score, log_ppl=score * 3, log_x_ppl=3.0, tokens=len(text.split())
+        )
+        for score, text in zip(scores, texts)
+    ]
+
+
+class BinocularsDetectorTests(SimpleTestCase):
+    def test_percent_counts_only_evaluable_words_below_threshold(self) -> None:
+        human = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+        ai = _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+        items = "\n".join("- Ítem breve de la lista" for _ in range(40))
+        other_human = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+        content = f"{human}\n\n{ai}\n\n{items}\n\n{other_human}"
+
+        with mock.patch.object(
+            binoculars_module, "score_texts", side_effect=_fake_binoculars_scores
+        ) as score_texts:
+            result = binoculars_module.BinocularsDetector().analyze(
+                content, threshold=0.80
+            )
+
+        evaluable = [s for s in result.segments if s.evaluable]
+        self.assertEqual(len(evaluable), 3)
+        self.assertEqual(len(score_texts.call_args.args[0]), 3)
+        self.assertTrue(any(s.excluded_reason for s in result.segments))
+        ai_words = sum(
+            s.evaluable_word_count
+            for s, score in zip(result.segments, result.scores)
+            if score and score.score < 0.80
+        )
+        self.assertEqual(
+            result.ai_probability_percent,
+            (Decimal(ai_words) * 100 / sum(s.evaluable_word_count for s in evaluable)).quantize(
+                Decimal("0.01")
+            ),
+        )
+        self.assertGreater(result.ai_probability_percent, Decimal("30"))
+        self.assertLess(result.ai_probability_percent, Decimal("40"))
+
+    def test_segment_without_score_is_not_evaluable(self) -> None:
+        content = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+
+        with mock.patch.object(binoculars_module, "score_texts", return_value=[None]):
+            result = binoculars_module.BinocularsDetector().analyze(content)
+
+        self.assertEqual(result.ai_probability_percent, Decimal("0.00"))
+        self.assertEqual(
+            [s.excluded_reason for s in result.segments],
+            [ai_segments.REASON_NO_PERPLEXITY],
+        )
+
+
+class EvaluateBinocularsCommandTests(SimpleTestCase):
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        def human():
+            return _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+
+        def ai():
+            return _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+
+        # El .txt de humanos/ no cuenta: del instituto solo se evalúan DOCX.
+        for subdir, count, kinds in (
+            ("humanos_pre2022", 4, (human, human)),
+            ("humanos_upeu_2022plus", 1, (human, ai)),
+            ("humanos", 1, (human, human)),
+            ("ia", 2, (ai, ai)),
+        ):
+            (self.root / subdir).mkdir()
+            for index in range(count):
+                body = "\n\n".join(kind() for kind in kinds)
+                (self.root / subdir / f"doc_{index}.txt").write_text(body, encoding="utf-8")
+
+    def _call(self, *args) -> str:
+        stdout = StringIO()
+        with mock.patch.object(
+            binoculars_module, "score_texts", side_effect=_fake_binoculars_scores
+        ), mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ):
+            call_command(
+                "evaluate_binoculars", f"--dir={self.root}", *args,
+                stdout=stdout, stderr=StringIO(),
+            )
+        return stdout.getvalue()
+
+    def test_reports_both_engines_on_the_same_segments(self) -> None:
+        output = self._call()
+
+        self.assertIn("2 tesis UPeU pre-2022 de calibración, 2 de prueba", output)
+        self.assertNotRegex(output, r"(?m)^instituto")
+        self.assertRegex(output, r"binoculars\s+score < 0\.9500")
+        self.assertRegex(output, r"gpt2\s+ppl < 150\.0000")
+        self.assertRegex(output, r"Binoculars\s+1\.000")
+        self.assertRegex(output, r"GPT-2 ppl\s+1\.000")
+        self.assertRegex(output, r"ia\s+2 binoculars\s+100\.0\s+100%")
+        self.assertRegex(output, r"upeu_2022plus\s+1 gpt2\s+(49|50)\.\d\s+100%")
+        self.assertTrue((self.root / "binoculars_segmentos.json").exists())
+
+    def test_cached_scores_are_not_recomputed(self) -> None:
+        self._call("--engine=binoculars")
+
+        with mock.patch.object(binoculars_module, "score_texts") as score_texts:
+            output = self._call("--engine=binoculars")
+
+        score_texts.assert_not_called()
+        self.assertIn("AUROC", output)
+
+    def test_calibration_split_and_threshold(self) -> None:
+        from apps.analysis.management.commands import evaluate_binoculars
+
+        calibration, test = evaluate_binoculars.split_calibration(
+            [f"d{i}" for i in range(20)], seed=2026
+        )
+        self.assertEqual((len(calibration), len(test)), (10, 10))
+        self.assertFalse(calibration & test)
+        self.assertEqual(
+            (calibration, test),
+            evaluate_binoculars.split_calibration([f"d{i}" for i in range(20)], seed=2026),
+        )
+
+        values = [i / 100 for i in range(200)]
+        threshold = evaluate_binoculars.calibrate_threshold(values, 0.01)
+        self.assertEqual(sum(1 for v in values if v < threshold), 2)
+        self.assertAlmostEqual(evaluate_binoculars.auroc([1, 2], [0, 0.5]), 1.0)
+        self.assertAlmostEqual(evaluate_binoculars.auroc([1, 2], [1, 2]), 0.5)

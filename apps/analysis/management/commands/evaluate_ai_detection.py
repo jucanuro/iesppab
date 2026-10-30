@@ -263,44 +263,7 @@ class Command(BaseCommand):
         self._write_dir_csv(csv_path, results, midpoints)
 
     def _file_samples(self, directory: Path, label: str) -> list[Sample]:
-        """
-        Mismo texto que analiza el servicio: extracción con
-        `DocumentTextExtractor`, `filter_for_similarity` (sin portada ni
-        bibliografía) y las citas entre comillas como rangos excluidos.
-        """
-        if not directory.is_dir():
-            return []
-
-        extractor = DocumentTextExtractor()
-        text_filter = AcademicTextFilter()
-        samples = []
-
-        for path in sorted(directory.iterdir()):
-            suffix = path.suffix.lower()
-            if not path.is_file() or suffix not in {*DIR_MIME_TYPES, ".txt"}:
-                continue
-
-            try:
-                if suffix == ".txt":
-                    raw = path.read_text(encoding="utf-8")
-                else:
-                    raw = extractor.extract(_FileDocument(path)).content
-            except (TextExtractionError, UnicodeDecodeError) as exc:
-                self.stderr.write(f"Se omite '{path.name}': {exc}")
-                continue
-
-            content = text_filter.filter_for_similarity(content=raw).content or raw
-            samples.append(
-                Sample(
-                    name=path.name,
-                    label=label,
-                    group=GROUP_DOCUMENT,
-                    content=content,
-                    excluded_ranges=text_filter.find_quoted_ranges(content),
-                )
-            )
-
-        return samples
+        return load_file_samples(directory, label, stderr=self.stderr)
 
     def _print_dir_summary(
         self,
@@ -630,6 +593,48 @@ def _median(values: list[Decimal]) -> str:
 def _snippet(text: str) -> str:
     text = " ".join(text.split())
     return text if len(text) <= SNIPPET_CHARS else text[:SNIPPET_CHARS].rstrip() + "…"
+
+
+def load_file_samples(directory: Path, label: str, *, stderr=None) -> list[Sample]:
+    """
+    Mismo texto que analiza el servicio: extracción con
+    `DocumentTextExtractor`, `filter_for_similarity` (sin portada ni
+    bibliografía) y las citas entre comillas como rangos excluidos.
+    """
+    if not directory.is_dir():
+        return []
+
+    extractor = DocumentTextExtractor()
+    text_filter = AcademicTextFilter()
+    samples = []
+
+    for path in sorted(directory.iterdir()):
+        suffix = path.suffix.lower()
+        if not path.is_file() or suffix not in {*DIR_MIME_TYPES, ".txt"}:
+            continue
+
+        try:
+            if suffix == ".txt":
+                raw = path.read_text(encoding="utf-8")
+            else:
+                raw = extractor.extract(_FileDocument(path)).content
+        except (TextExtractionError, UnicodeDecodeError) as exc:
+            if stderr is not None:
+                stderr.write(f"Se omite '{path.name}': {exc}")
+            continue
+
+        content = text_filter.filter_for_similarity(content=raw).content or raw
+        samples.append(
+            Sample(
+                name=path.name,
+                label=label,
+                group=GROUP_DOCUMENT,
+                content=content,
+                excluded_ranges=text_filter.find_quoted_ranges(content),
+            )
+        )
+
+    return samples
 
 
 class _FileDocument(SimpleNamespace):

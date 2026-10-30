@@ -39,6 +39,11 @@ from apps.reports.models import AI_ESTIMATE_DISCLAIMER, AnalysisReport, ReportRi
 
 logger = logging.getLogger(__name__)
 
+# Niveles de riesgo con los que no se emite certificado.
+CERTIFICATE_BLOCKING_RISK_LEVELS = frozenset(
+    {ReportRiskLevel.HIGH, ReportRiskLevel.CRITICAL}
+)
+
 
 class CertificateGenerationError(Exception):
     """
@@ -157,7 +162,7 @@ class CertificateGenerationService:
                 "El documento debe estar completado antes de generar certificado."
             )
 
-        if report.risk_level in {ReportRiskLevel.HIGH, ReportRiskLevel.CRITICAL}:
+        if report.risk_level in CERTIFICATE_BLOCKING_RISK_LEVELS:
             raise ValidationError(
                 "No se puede emitir un certificado para un reporte con nivel "
                 "de riesgo alto o crítico. Revisa el documento y vuelve a analizarlo."

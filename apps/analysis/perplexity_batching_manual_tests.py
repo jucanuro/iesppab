@@ -72,7 +72,7 @@ class BurstinessAdaptiveBatchingIdentityTests(SimpleTestCase):
         # y auto-provocar el mismo OOM que este cambio busca evitar.
         large_batch_result = pd.SpanishPerplexityDetector().analyze(self.sample_text)
         # 1 byte: ni la oración más corta cabe, así que
-        # `_pack_indices_by_memory_budget` cae en su mínimo absoluto de 1
+        # `_iter_batches_by_memory_budget` cae en su mínimo absoluto de 1
         # oración por lote en cada paso.
         minimum_batch_result = self._analyze_with_forced_budget(1)
 

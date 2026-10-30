@@ -59,39 +59,70 @@ FRAGMENT_WORD_SIZE = InternalSimilarityEngine.CHUNK_WORD_SIZE
 # burstiness fuera de rango tras este clip.
 MAX_SENTENCE_PERPLEXITY_FOR_BURSTINESS = 400.0
 
-# Batching adaptativo por presupuesto de memoria para el forward pass de
-# compute_burstiness(). Un batch_size fijo (el diseño anterior usaba 16) es
-# seguro solo mientras las oraciones de ese lote sean cortas: como las
-# oraciones se ordenan por longitud antes de agrupar (bucketing), las más
-# largas —típicamente texto mal extraído de PDF/DOCX: tablas, listas sin
-# puntuación, párrafos pegados— terminan juntas en los últimos lotes. Se
-# midió que 16 oraciones cercanas a MAX_TOKENS=900 disparan un pico de
-# ~4.4-4.6GB (tensor de logits + matrices de atención de las 12 capas) en
-# un solo forward pass, sin relación con el tamaño total del documento —
-# suficiente para tumbar un worker en un servidor de 2-4GB.
+# Batching adaptativo por presupuesto de memoria para los forward pass de
+# `_batch_sequence_perplexities` (burstiness del modo global y segmentos
+# del modo segments). Un batch_size fijo (el diseño anterior usaba 16) es
+# seguro solo mientras las secuencias de ese lote sean cortas: como se
+# ordenan por longitud antes de agrupar (bucketing), las más largas
+# terminan juntas en los últimos lotes y el pico depende del producto
+# batch_size × longitud (activaciones) y batch_size × longitud² (atención),
+# no solo de la cantidad de secuencias.
 #
-# En su lugar, cada lote se arma dinámicamente para que su forward pass
-# estimado (`_estimate_forward_pass_bytes`) quepa en una fracción de la RAM
-# libre en ese momento (`psutil.virtual_memory().available`), recalculada
-# lote a lote. Esto acota el pico real de memoria (que depende del producto
-# batch_size × longitud², no solo de la cantidad de oraciones) en vez de
-# acotar un conteo fijo que ignora la longitud.
+# Cada lote se arma justo antes de su forward pass (`_iter_batches_by_memory_budget`)
+# para que su pico estimado (`_estimate_forward_pass_bytes`) quepa en el
+# MENOR de: una fracción de la RAM libre en ese momento y un techo
+# absoluto (`BATCH_MEMORY_MAX_BYTES`).
 BURSTINESS_BATCH_MEMORY_FRACTION = 0.5
 
-# Margen sobre la estimación teórica de `_estimate_forward_pass_bytes`: esa
-# fórmula solo modela los dos tensores dominantes (logits y atención) y
-# omite overhead menor (embeddings, estados ocultos intermedios, activaciones
-# de las capas feed-forward). La validación empírica de FASE 0 (predicho
-# ~4.4GB, medido ~4.6GB de pico real) ya está dentro de este margen.
-BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR = 1.2
+# Techo absoluto del pico de un lote, sin importar cuánta RAM libre
+# reporte la máquina. El modelo cargado (con Django, torch y transformers)
+# ocupa ~620-940MB de RSS según el entorno, así que con este techo un
+# worker queda en ~1.5GB aunque analice una tesis de 30k palabras (servidor
+# de 2GB). Sin techo, una máquina con 7GB libres armaba lotes de varios GB
+# y el kernel mataba el proceso (OOM medido en WSL con una tesis de 28.8k
+# palabras en modo segments: 7.2GB de RSS).
+BATCH_MEMORY_MAX_BYTES = 512 * 1024 * 1024
 
-# Techo de seguridad final: un lote de 1 oración SIEMPRE se procesa, exceda
-# o no el presupuesto estimado, para que el documento nunca deje de
-# analizarse por falta de RAM "de sobra" — ver `_pack_indices_by_memory_budget`.
+# Margen sobre `_estimate_forward_pass_bytes`. El pico de RSS de un mismo
+# lote varió hasta ±300MB entre corridas idénticas (el allocator no
+# devuelve la memoria liberada de inmediato), así que la fórmula se ajustó
+# para quedar por encima del MÁXIMO medido, no del promedio.
+BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR = 1.3
+
+# Posiciones que se proyectan al vocabulario a la vez al calcular la
+# pérdida. Los logits de un lote completo (batch × longitud × 50257 × 4
+# bytes, más las copias de `shift_logits.contiguous()` y de `log_softmax`
+# dentro de `cross_entropy`, ~3x) eran el pico real: ~550MB por cada
+# secuencia de 900 tokens. Por trozos, ese costo queda fijo (~150MB) e
+# independiente del tamaño del lote.
+LOSS_CHUNK_TOKENS = 256
+
+# Copias simultáneas, en float32, de cada tensor estimado. Valores
+# calibrados midiendo el pico de RSS de `_mean_token_losses` en procesos
+# limpios (batch × longitud de 1×100 a 128×30 y 8×900; DeepESP/gpt2-spanish
+# en CPU, torch 2.13):
+#  - activaciones (múltiplos de batch × longitud × n_embd): residual,
+#    LayerNorm, qkv, MLP (4 × n_embd antes y después de GELU) y buffers
+#    de los kernels; con lotes de muchas secuencias cortas (32×100,
+#    128×30) es el término dominante.
+#  - atención (batch × cabezas × longitud²): scores, máscara, softmax.
+#    Con no_grad solo vive la de UNA capa a la vez, no la de las 12 como
+#    suponía la fórmula anterior.
+#  - logits de un trozo de pérdida (LOSS_CHUNK_TOKENS × vocab): logits,
+#    log_softmax y el gather de `cross_entropy`.
+#  - fijo: buffers de los hilos de torch (~70MB medidos con 1×100).
+_ACTIVATION_COPIES = 32
+_ATTENTION_COPIES = 4
+_LOSS_LOGITS_COPIES = 3
+_FIXED_OVERHEAD_BYTES = 64 * 1024 * 1024
+
+# Techo de seguridad final: un lote de 1 secuencia SIEMPRE se procesa,
+# exceda o no el presupuesto estimado, para que el documento nunca deje de
+# analizarse por falta de RAM "de sobra" — ver `_iter_batches_by_memory_budget`.
 # Si ni siquiera ese lote mínimo cabe en la memoria física real, el
 # try/except alrededor del forward pass en `_batch_sequence_perplexities`
-# lo detecta y degrada con gracia (se omite esa oración, no se revienta el
-# proceso).
+# lo detecta y degrada con gracia (se omite esa secuencia, no se revienta
+# el proceso).
 MIN_BURSTINESS_BATCH_SIZE = 1
 
 _load_lock = threading.Lock()
@@ -182,26 +213,30 @@ def _is_out_of_memory_error(exc: Exception) -> bool:
 
 def _estimate_forward_pass_bytes(batch_size: int, seq_len: int, model) -> int:
     """
-    Estimación conservadora del pico de memoria (bytes) de un forward pass
-    batched de GPT-2, dominado por dos tensores: `logits`
-    (batch × seq_len × vocab_size × 4 bytes) y las matrices de atención de
-    TODAS las capas (num_layers × batch × num_heads × seq_len² × 4 bytes).
-
-    Validada empíricamente en la auditoría de FASE 0: para batch=16,
-    seq_len≈900 con este modelo (12 capas, 12 cabezas, vocab≈50257) la
-    fórmula predice ~4.4GB; el pico real medido sobre un documento grande
-    fue ~4.6GB por encima del baseline del modelo cargado — dentro del
-    margen de `BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR`.
+    Estimación conservadora del pico de memoria (bytes, por encima del
+    modelo cargado) de `_batch_sequence_perplexities` para un lote: las
+    activaciones de una capa del transformer, las matrices de atención de
+    UNA capa (con no_grad cada capa libera las suyas antes de la
+    siguiente) y los logits de un trozo de `LOSS_CHUNK_TOKENS` posiciones
+    (ver `_mean_token_losses`). Ver `_ACTIVATION_COPIES` y compañía para
+    el detalle de las copias y la calibración.
     """
     config = model.config
-    vocab_size = config.vocab_size
-    num_layers = config.n_layer
-    num_heads = config.n_head
+    float_bytes = 4
 
-    logits_bytes = batch_size * seq_len * vocab_size * 4
-    attention_bytes = num_layers * batch_size * num_heads * seq_len * seq_len * 4
+    activation_bytes = (
+        _ACTIVATION_COPIES * batch_size * seq_len * config.n_embd * float_bytes
+    )
+    attention_bytes = (
+        _ATTENTION_COPIES * batch_size * config.n_head * seq_len * seq_len * float_bytes
+    )
+    loss_tokens = min(LOSS_CHUNK_TOKENS, batch_size * seq_len)
+    loss_bytes = _LOSS_LOGITS_COPIES * loss_tokens * config.vocab_size * float_bytes
 
-    return int((logits_bytes + attention_bytes) * BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR)
+    return int(
+        (activation_bytes + attention_bytes + loss_bytes + _FIXED_OVERHEAD_BYTES)
+        * BURSTINESS_BATCH_MEMORY_SAFETY_FACTOR
+    )
 
 
 def _cgroup_memory_limit_and_usage_bytes() -> tuple[int, int] | None:
@@ -245,8 +280,8 @@ def _cgroup_memory_limit_and_usage_bytes() -> tuple[int, int] | None:
 def _available_batch_memory_budget_bytes() -> int:
     """
     Fracción de la memoria libre AHORA MISMO (no un valor fijo de arranque)
-    que un solo lote de compute_burstiness puede usar. Se recalcula en cada
-    lote nuevo porque la memoria disponible fluctúa entre lotes (otras
+    que un solo lote puede usar, con techo `BATCH_MEMORY_MAX_BYTES`. Se
+    recalcula en cada lote nuevo porque la memoria disponible fluctúa entre lotes (otras
     peticiones, otros procesos del servidor). Toma el MÍNIMO entre la RAM
     libre del host (`psutil`) y la memoria libre dentro del cgroup actual,
     si el proceso corre bajo un límite de contenedor — ver
@@ -261,18 +296,25 @@ def _available_batch_memory_budget_bytes() -> int:
         limit, usage = cgroup_info
         available = min(available, max(0, limit - usage))
 
-    return int(available * BURSTINESS_BATCH_MEMORY_FRACTION)
+    return min(
+        int(available * BURSTINESS_BATCH_MEMORY_FRACTION),
+        BATCH_MEMORY_MAX_BYTES,
+    )
 
 
-def _pack_indices_by_memory_budget(
+def _iter_batches_by_memory_budget(
     order: list[int],
     lengths: list[int],
     model,
-) -> list[list[int]]:
+):
     """
     Agrupa índices (ya ordenados por longitud en `order`) en lotes cuyo
-    forward pass estimado no exceda el presupuesto de memoria disponible en
-    ese momento. El presupuesto se recalcula al empezar cada lote nuevo.
+    forward pass estimado no exceda el presupuesto de memoria. Es un
+    generador a propósito: cada lote se arma recién cuando el consumidor
+    pide el siguiente, es decir, DESPUÉS de procesar (y liberar) el
+    anterior, así que el presupuesto refleja la RAM libre de ese momento.
+    Antes los lotes se armaban todos de una vez al principio, con la misma
+    lectura de RAM libre para todos.
 
     Techo de seguridad: un lote de tamaño 1 SIEMPRE se acepta así exceda el
     presupuesto estimado (`MIN_BURSTINESS_BATCH_SIZE`), para que el
@@ -281,33 +323,29 @@ def _pack_indices_by_memory_budget(
     real, el try/except alrededor del forward pass en
     `_batch_sequence_perplexities` es quien degrada con gracia.
     """
-    batches: list[list[int]] = []
-    current: list[int] = []
-    current_max_len = 0
-    budget = _available_batch_memory_budget_bytes()
+    position = 0
 
-    for idx in order:
-        length = lengths[idx]
-        candidate_max_len = max(current_max_len, length)
-        candidate_size = len(current) + 1
+    while position < len(order):
+        budget = _available_batch_memory_budget_bytes()
+        current = [order[position]]
+        current_max_len = lengths[order[position]]
+        position += 1
 
-        if (
-            current
-            and _estimate_forward_pass_bytes(candidate_size, candidate_max_len, model)
-            > budget
-        ):
-            batches.append(current)
-            current = [idx]
-            current_max_len = length
-            budget = _available_batch_memory_budget_bytes()
-        else:
+        while position < len(order):
+            idx = order[position]
+            candidate_max_len = max(current_max_len, lengths[idx])
+
+            if (
+                _estimate_forward_pass_bytes(len(current) + 1, candidate_max_len, model)
+                > budget
+            ):
+                break
+
             current.append(idx)
             current_max_len = candidate_max_len
+            position += 1
 
-    if current:
-        batches.append(current)
-
-    return batches
+        yield current
 
 
 def _sentence_split(text: str) -> list[str]:
@@ -408,13 +446,12 @@ def _batch_sequence_perplexities(
     una oración de 8 tokens con una de 300 en el mismo lote forzaría
     paddear la corta a 300, desperdiciando memoria y cómputo. Los lotes se
     arman por PRESUPUESTO DE MEMORIA, no por una cantidad fija de oraciones
-    (ver `_pack_indices_by_memory_budget`): el pico de RAM depende del
+    (ver `_iter_batches_by_memory_budget`): el pico de RAM depende del
     producto batch_size × longitud², así que un lote con oraciones largas
     debe ser más chico que uno con oraciones cortas para que el pico total
     se mantenga acotado sin importar el tamaño del documento.
     """
     import torch
-    from torch.nn import functional as F
 
     if not texts:
         return []
@@ -428,9 +465,7 @@ def _batch_sequence_perplexities(
     order = sorted(range(len(texts)), key=lambda i: lengths[i])
     results: list[float | None] = [None] * len(texts)
 
-    batches = _pack_indices_by_memory_budget(order, lengths, model)
-
-    for chunk_indices in batches:
+    for chunk_indices in _iter_batches_by_memory_budget(order, lengths, model):
         chunk_texts = [texts[i] for i in chunk_indices]
 
         encoding = tokenizer(
@@ -445,46 +480,30 @@ def _batch_sequence_perplexities(
 
         try:
             with torch.no_grad():
-                output = model(input_ids, attention_mask=attention_mask)
+                losses, token_counts = _mean_token_losses(
+                    model, input_ids, attention_mask
+                )
         except (MemoryError, RuntimeError) as exc:
             if not _is_out_of_memory_error(exc):
                 raise
             logger.error(
-                "Lote de burstiness omitido por falta de memoria (%d oraciones, "
+                "Lote de perplejidad omitido por falta de memoria (%d secuencias, "
                 "máx %d tokens en el lote): %s",
                 len(chunk_indices),
                 max(lengths[i] for i in chunk_indices),
                 exc,
             )
             continue
-
-        # Sin `labels=` en la llamada al modelo porque la pérdida interna de
-        # `transformers` promedia sobre TODAS las posiciones desplazadas,
-        # incluyendo el padding — eso contaminaría la perplejidad de las
-        # oraciones cortas del lote. En su lugar se calcula la pérdida por
-        # token manualmente y se enmascara con `attention_mask` antes de
-        # promediar, para que cada oración se evalúe solo sobre sus propios
-        # tokens reales (igual que hacía `_sequence_perplexity` sin batching).
-        shift_logits = output.logits[..., :-1, :].contiguous()
-        shift_labels = input_ids[..., 1:].contiguous()
-        shift_mask = attention_mask[..., 1:].contiguous().float()
-
-        per_token_loss = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1),
-            reduction="none",
-        ).view(shift_labels.shape)
-
-        masked_loss = per_token_loss * shift_mask
-        token_counts = shift_mask.sum(dim=1)
+        finally:
+            # El generador arma el siguiente lote con la RAM libre de ese
+            # momento: los tensores de este lote no deben seguir vivos.
+            del encoding, input_ids, attention_mask
 
         for row, idx in enumerate(chunk_indices):
-            real_token_count = token_counts[row].item()
-
-            if real_token_count < 1:
+            if token_counts[row].item() < 1:
                 continue
 
-            mean_loss = (masked_loss[row].sum() / token_counts[row]).item()
+            mean_loss = losses[row].item()
 
             if math.isnan(mean_loss) or math.isinf(mean_loss):
                 continue
@@ -492,6 +511,49 @@ def _batch_sequence_perplexities(
             results[idx] = min(math.exp(mean_loss), MAX_CLAMPED_PERPLEXITY)
 
     return results
+
+
+def _mean_token_losses(model, input_ids, attention_mask):
+    """
+    Pérdida media por secuencia (sobre sus tokens reales) y cantidad de
+    tokens predichos de cada una, SIN materializar los logits del lote
+    completo: se corre el transformer sin la cabeza de lenguaje y
+    `lm_head` se aplica por trozos de `LOSS_CHUNK_TOKENS` posiciones
+    reales (el padding ni se proyecta).
+
+    Sin `labels=` en la llamada al modelo porque la pérdida interna de
+    `transformers` promedia sobre TODAS las posiciones desplazadas,
+    incluyendo el padding — eso contaminaría la perplejidad de las
+    secuencias cortas del lote. Cada secuencia se evalúa solo sobre sus
+    propios tokens reales, igual que `_sequence_perplexity`.
+    """
+    import torch
+    from torch.nn import functional as F
+
+    hidden = model.transformer(
+        input_ids,
+        attention_mask=attention_mask,
+    ).last_hidden_state
+
+    # La posición t predice el token t + 1.
+    shift_mask = attention_mask[:, 1:].bool()
+    shift_hidden = hidden[:, :-1, :][shift_mask]
+    shift_labels = input_ids[:, 1:][shift_mask]
+    rows = torch.arange(input_ids.shape[0]).unsqueeze(1).expand_as(shift_mask)[shift_mask]
+    del hidden
+
+    loss_sums = torch.zeros(input_ids.shape[0], dtype=torch.float32)
+
+    for start in range(0, shift_labels.shape[0], LOSS_CHUNK_TOKENS):
+        end = start + LOSS_CHUNK_TOKENS
+        logits = model.lm_head(shift_hidden[start:end])
+        token_losses = F.cross_entropy(logits, shift_labels[start:end], reduction="none")
+        loss_sums.index_add_(0, rows[start:end], token_losses)
+        del logits, token_losses
+
+    token_counts = shift_mask.sum(dim=1)
+
+    return loss_sums / token_counts.clamp(min=1), token_counts
 
 
 # --- Calibración de la señal combinada (perplejidad + burstiness -> score 0-100) ---
@@ -610,7 +672,7 @@ class SpanishPerplexityDetector:
         decenas de oraciones, procesarlas una por una es el cuello de botella
         dominante de todo el análisis. El tamaño de cada lote se decide de
         forma adaptativa según la RAM libre en ese momento (ver
-        `_pack_indices_by_memory_budget`), no un conteo fijo de oraciones, para
+        `_iter_batches_by_memory_budget`), no un conteo fijo de oraciones, para
         que el pico de memoria se mantenga acotado sin importar el tamaño del
         documento ni cuánta RAM tenga el servidor. El batching se hace sobre
         todas las oraciones del documento a la vez (no por fragmento) para no

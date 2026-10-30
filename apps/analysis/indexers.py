@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import hashlib
 import re
 import unicodedata
@@ -7,8 +8,17 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
-from apps.analysis.engines.fingerprint import compute_fingerprints
-from apps.analysis.models import DocumentFingerprint, DocumentKnowledgeChunk
+from apps.analysis.engines.fingerprint import (
+    compute_fingerprint_positions,
+    compute_fingerprints,
+)
+from apps.analysis.models import (
+    SOURCE_TYPE_OAI_FULLTEXT,
+    DocumentFingerprint,
+    DocumentKnowledgeChunk,
+    OaiFullTextChunk,
+    OaiRecord,
+)
 from apps.documents.models import DocumentText
 
 
@@ -150,3 +160,80 @@ class DocumentKnowledgeIndexer:
         text = re.sub(r"[^a-z0-9ñü\s]", " ", text)
         text = re.sub(r"\s+", " ", text)
         return text.strip()
+
+
+class OaiFullTextIndexer:
+    """
+    Indexa el texto completo de un registro OAI en bloques contiguos sin
+    solape. Cada huella se guarda una sola vez por tesis, en el bloque de su
+    primera aparición: así el índice ocupa la mitad que con fragmentos
+    solapados y la documento-frecuencia cuenta tesis, no fragmentos. Una
+    coincidencia que cruza dos bloques se recupera porque
+    `CandidateRetriever` carga también los bloques vecinos.
+    """
+
+    BLOCK_WORD_SIZE = 170
+
+    def __init__(self) -> None:
+        self.text_indexer = DocumentKnowledgeIndexer()
+
+    @transaction.atomic
+    def index(self, record: OaiRecord, *, content: str) -> tuple[int, int]:
+        """Devuelve (bloques, huellas) guardados."""
+        self.clear(record)
+
+        blocks = self._build_blocks(content=content)
+        objects = [
+            OaiFullTextChunk(record=record, position=position, text=text)
+            for position, text in enumerate(blocks)
+        ]
+        OaiFullTextChunk.objects.bulk_create(objects, batch_size=500)
+
+        block_starts: list[int] = []
+        normalized_blocks: list[str] = []
+        word_total = 0
+
+        for text in blocks:
+            normalized = self.text_indexer._normalize(text)
+            block_starts.append(word_total)
+            normalized_blocks.append(normalized)
+            word_total += len(normalized.split())
+
+        positions = compute_fingerprint_positions(" ".join(normalized_blocks))
+        fingerprint_objects = [
+            DocumentFingerprint(
+                hash=fingerprint_hash,
+                source_type=SOURCE_TYPE_OAI_FULLTEXT,
+                source_id=objects[bisect.bisect_right(block_starts, word) - 1].id,
+            )
+            for fingerprint_hash, word in positions.items()
+        ]
+        DocumentFingerprint.objects.bulk_create(
+            fingerprint_objects,
+            batch_size=1000,
+            ignore_conflicts=True,
+        )
+
+        return len(objects), len(fingerprint_objects)
+
+    def clear(self, record: OaiRecord) -> None:
+        chunk_ids = list(
+            OaiFullTextChunk.objects.filter(record=record).values_list(
+                "id",
+                flat=True,
+            )
+        )
+        DocumentFingerprint.objects.filter(
+            source_type=SOURCE_TYPE_OAI_FULLTEXT,
+            source_id__in=chunk_ids,
+        ).delete()
+        OaiFullTextChunk.objects.filter(record=record).delete()
+
+    def _build_blocks(self, content: str) -> list[str]:
+        words = self.text_indexer._words_with_offsets(content=content)
+        starts = [word[1] for word in words[:: self.BLOCK_WORD_SIZE]]
+
+        return [
+            content[start:end]
+            for start, end in zip(starts, starts[1:] + [len(content)])
+        ]

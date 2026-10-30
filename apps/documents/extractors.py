@@ -236,6 +236,14 @@ def normalize_pdf_pages(pages_text: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
+def read_pdf_pages(file_obj) -> list[str]:
+    """
+    Texto crudo de cada página. Lo comparten la extracción de documentos y
+    la cosecha de texto completo OAI, para que ambas lean el PDF igual.
+    """
+    return [page.extract_text() or "" for page in PdfReader(file_obj).pages]
+
+
 class TextExtractionError(Exception):
     """
     Error controlado durante extracción de texto.
@@ -319,14 +327,7 @@ class DocumentTextExtractor:
     def _extract_pdf(self, document: Document) -> str:
         try:
             with document.original_file.open("rb") as file_obj:
-                reader = PdfReader(file_obj)
-                pages_text: list[str] = []
-
-                for page in reader.pages:
-                    page_text = page.extract_text() or ""
-                    pages_text.append(page_text)
-
-                return normalize_pdf_pages(pages_text)
+                return normalize_pdf_pages(read_pdf_pages(file_obj))
 
         except Exception as exc:
             logger.exception(

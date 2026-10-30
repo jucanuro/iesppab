@@ -21,8 +21,10 @@ from apps.analysis.engines.span_similarity import (
     SpanSource,
 )
 from apps.analysis.models import (
+    SOURCE_TYPE_OAI_FULLTEXT,
     DocumentFingerprint,
     DocumentKnowledgeChunk,
+    OaiFullTextChunk,
     OaiRecord,
 )
 from apps.documents.models import Document
@@ -32,6 +34,8 @@ logger = logging.getLogger(__name__)
 # Cantidad de parámetros por consulta `IN (...)`. SQLite admite 32766 desde
 # 3.32 pero versiones viejas solo 999; con lotes de 900 ambas funcionan.
 QUERY_BATCH_SIZE = 900
+
+_normalizer = InternalSimilarityEngine()
 
 
 def compute_query_fingerprints(
@@ -69,6 +73,8 @@ class RetrievedSource:
     # Internos: fragmentos con huellas raras en común, ordenados por offset.
     chunks: list[DocumentKnowledgeChunk] = field(default_factory=list)
     oai_record: OaiRecord | None = None
+    # OAI: bloques de texto completo con huellas en común y sus vecinos.
+    oai_chunks: list[OaiFullTextChunk] = field(default_factory=list)
 
 
 @dataclass
@@ -107,6 +113,19 @@ class RetrievalResult:
                             normalized_text=record.normalized_text,
                         ),
                     )
+                )
+                ranked.extend(
+                    (
+                        source.shared_rare_hashes,
+                        CandidateKnowledgeChunk(
+                            document_id=record.id,
+                            title=record.title,
+                            owner_name=record.repository_name,
+                            text_excerpt=chunk.text,
+                            normalized_text=_normalizer._normalize(chunk.text),
+                        ),
+                    )
+                    for chunk in source.oai_chunks
                 )
                 continue
 
@@ -147,7 +166,11 @@ class RetrievalResult:
                         # inventar un tramo que cruce de uno al otro.
                         segments=tuple(
                             segment
-                            for segment in (record.title, record.text_excerpt)
+                            for segment in (
+                                record.title,
+                                record.text_excerpt,
+                                *_merge_oai_blocks(source.oai_chunks),
+                            )
                             if segment
                         ),
                     )
@@ -198,6 +221,24 @@ def _merge_chunk_texts(chunks: list[DocumentKnowledgeChunk]) -> list[str]:
 
     if current:
         segments.append(current)
+
+    return segments
+
+
+def _merge_oai_blocks(chunks: list[OaiFullTextChunk]) -> list[str]:
+    """
+    Une los bloques de posiciones seguidas: son contiguos en la tesis.
+    """
+    segments: list[str] = []
+    previous_position: int | None = None
+
+    for chunk in sorted(chunks, key=lambda item: item.position):
+        if previous_position is not None and chunk.position == previous_position + 1:
+            segments[-1] += chunk.text
+        else:
+            segments.append(chunk.text)
+
+        previous_position = chunk.position
 
     return segments
 
@@ -257,12 +298,15 @@ class CandidateRetriever:
 
         hashes_by_chunk: dict[UUID, set[int]] = defaultdict(set)
         hashes_by_oai: dict[UUID, set[int]] = defaultdict(set)
+        hashes_by_block: dict[UUID, set[int]] = defaultdict(set)
 
         for batch in _batches(sorted(rare_hashes)):
             postings = DocumentFingerprint.objects.filter(hash__in=batch)
 
             if not oai_enabled:
-                postings = postings.exclude(source_type="oai")
+                postings = postings.exclude(
+                    source_type__in=("oai", SOURCE_TYPE_OAI_FULLTEXT),
+                )
 
             for hash_value, source_type, source_id in postings.values_list(
                 "hash",
@@ -271,6 +315,8 @@ class CandidateRetriever:
             ):
                 if source_type == "internal":
                     hashes_by_chunk[source_id].add(hash_value)
+                elif source_type == SOURCE_TYPE_OAI_FULLTEXT:
+                    hashes_by_block[source_id].add(hash_value)
                 else:
                     hashes_by_oai[source_id].add(hash_value)
 
@@ -278,6 +324,11 @@ class CandidateRetriever:
             document=document,
             chunk_ids=list(hashes_by_chunk),
         )
+        block_locations = self._block_locations(list(hashes_by_block))
+
+        for block_id, (record_id, _) in block_locations.items():
+            hashes_by_oai[record_id].update(hashes_by_block[block_id])
+
         active_oai_ids = self._active_oai_ids(list(hashes_by_oai))
 
         hashes_by_source: dict[tuple[str, UUID], set[int]] = defaultdict(set)
@@ -313,6 +364,10 @@ class CandidateRetriever:
             ]
         )
         oai_records_by_id = self._load_oai_records(selected_oai)
+        oai_chunks_by_record = self._load_oai_chunks(
+            block_locations=block_locations,
+            record_ids=set(selected_oai),
+        )
 
         sources: list[RetrievedSource] = []
 
@@ -331,6 +386,7 @@ class CandidateRetriever:
                         title=record.title,
                         owner_name=record.repository_name,
                         oai_record=record,
+                        oai_chunks=oai_chunks_by_record.get(source_id, []),
                     )
                 )
                 continue
@@ -354,12 +410,13 @@ class CandidateRetriever:
 
         logger.info(
             "Recuperación de candidatos. document_id=%s huellas=%s raras=%s "
-            "fragmentos_internos=%s registros_oai=%s fuentes=%s",
+            "fragmentos_internos=%s registros_oai=%s bloques_oai=%s fuentes=%s",
             document.id,
             len(fingerprints),
             len(rare_hashes),
             len(chunk_document_ids),
             len(active_oai_ids),
+            len(block_locations),
             len(sources),
         )
 
@@ -455,6 +512,50 @@ class CandidateRetriever:
             chunks.sort(key=lambda chunk: chunk.start_offset)
 
         return chunks_by_document
+
+    def _block_locations(
+        self,
+        block_ids: list[UUID],
+    ) -> dict[UUID, tuple[UUID, int]]:
+        locations: dict[UUID, tuple[UUID, int]] = {}
+
+        for batch in _batches(block_ids):
+            for block_id, record_id, position in OaiFullTextChunk.objects.filter(
+                id__in=batch,
+            ).values_list("id", "record_id", "position"):
+                locations[block_id] = (record_id, position)
+
+        return locations
+
+    def _load_oai_chunks(
+        self,
+        block_locations: dict[UUID, tuple[UUID, int]],
+        record_ids: set[UUID],
+    ) -> dict[UUID, list[OaiFullTextChunk]]:
+        """
+        Bloques con huellas raras y sus dos vecinos: una huella se guarda
+        solo en el bloque de su primera aparición, así que una coincidencia
+        puede seguir en el bloque contiguo sin que este tenga huella propia.
+        """
+        positions_by_record: dict[UUID, set[int]] = defaultdict(set)
+
+        for record_id, position in block_locations.values():
+            if record_id in record_ids:
+                positions_by_record[record_id].update(
+                    (position - 1, position, position + 1)
+                )
+
+        chunks_by_record: dict[UUID, list[OaiFullTextChunk]] = {}
+
+        for record_id, positions in positions_by_record.items():
+            chunks_by_record[record_id] = list(
+                OaiFullTextChunk.objects.filter(
+                    record_id=record_id,
+                    position__in=positions,
+                ).order_by("position")
+            )
+
+        return chunks_by_record
 
     def _load_oai_records(self, record_ids: list[UUID]) -> dict[UUID, OaiRecord]:
         records: dict[UUID, OaiRecord] = {}

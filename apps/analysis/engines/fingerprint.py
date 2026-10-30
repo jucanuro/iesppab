@@ -26,6 +26,39 @@ def hash_shingle(shingle: str) -> int:
     return value % _SIGNED_64BIT_MAX
 
 
+def compute_fingerprint_positions(
+    normalized_text: str,
+    window_size: int = 4,
+) -> dict[int, int]:
+    """
+    Las mismas huellas de `compute_fingerprints`, cada una con el índice de
+    la primera palabra de su primera aparición en el texto.
+    """
+    shingles = _shingle_engine._build_shingle_sequence(normalized_text)
+    hashes = [hash_shingle(shingle) for shingle in shingles]
+
+    if len(hashes) < window_size:
+        positions: dict[int, int] = {}
+
+        for index, value in enumerate(hashes):
+            positions.setdefault(value, index)
+
+        return positions
+
+    selected: dict[int, int] = {}
+
+    for start in range(len(hashes) - window_size + 1):
+        window = hashes[start : start + window_size]
+        min_value = min(window)
+        rightmost_index = max(
+            index for index, value in enumerate(window) if value == min_value
+        )
+        position = start + rightmost_index
+        selected[min_value] = min(selected.get(min_value, position), position)
+
+    return selected
+
+
 def compute_fingerprints(normalized_text: str, window_size: int = 4) -> set[int]:
     """
     Calcula las huellas digitales de un texto mediante Winnowing
@@ -56,20 +89,4 @@ def compute_fingerprints(normalized_text: str, window_size: int = 4) -> set[int]
     4. Devuelve el conjunto de hashes únicos seleccionados: las huellas
        finales del documento.
     """
-    shingles = _shingle_engine._build_shingle_sequence(normalized_text)
-    hashes = [hash_shingle(shingle) for shingle in shingles]
-
-    if len(hashes) < window_size:
-        return set(hashes)
-
-    selected: set[int] = set()
-
-    for start in range(len(hashes) - window_size + 1):
-        window = hashes[start : start + window_size]
-        min_value = min(window)
-        rightmost_index = max(
-            index for index, value in enumerate(window) if value == min_value
-        )
-        selected.add(window[rightmost_index])
-
-    return selected
+    return set(compute_fingerprint_positions(normalized_text, window_size))

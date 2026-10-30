@@ -51,6 +51,7 @@ from apps.analysis.models import (
     AnalysisJob,
     AnalysisJobStatus,
     AnalysisType,
+    SOURCE_TYPE_OAI_FULLTEXT,
     DocumentFingerprint,
     DocumentKnowledgeChunk,
     OaiRecord,
@@ -1047,8 +1048,12 @@ class DocumentAnalysisService:
             ).values_list("id", flat=True)
         )
 
+        # El texto completo OAI solo lo usa CandidateRetriever: aquí esas
+        # huellas ocuparían cupos del top-40 sin resolverse a ningún candidato.
         fingerprint_queryset = DocumentFingerprint.objects.filter(
             hash__in=fingerprints,
+        ).exclude(
+            source_type=SOURCE_TYPE_OAI_FULLTEXT,
         )
 
         if own_chunk_ids:

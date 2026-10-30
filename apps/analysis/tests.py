@@ -24,7 +24,20 @@ from apps.analysis.engines import ai_segments
 from apps.analysis.engines import perplexity_detector as perplexity_module
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.perplexity_detector import PerplexityAnalysisResult
-from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.fingerprint import (
+    compute_fingerprint_positions,
+    compute_fingerprints,
+)
+from apps.analysis.engines.oai_fulltext import (
+    FetchedResponse,
+    FullTextFetchError,
+    OaiFullTextHarvester,
+    PoliteClient,
+    RepositoryThrottled,
+    ResponseTooLarge,
+    RobotsUnavailable,
+)
+from apps.analysis.engines.oai_harvester import OaiRepositoryConfig
 from apps.analysis.engines.span_similarity import (
     MATCH_TYPE_EXACT,
     MATCH_TYPE_FUZZY,
@@ -46,15 +59,20 @@ from apps.analysis.engines.web_similarity import (
     WebSimilarityAnalysisResult,
     WebSimilarityMatch,
 )
-from apps.analysis.indexers import DocumentKnowledgeIndexer
+from apps.analysis.indexers import DocumentKnowledgeIndexer, OaiFullTextIndexer
 from apps.analysis.management.commands.benchmark_similarity import (
     Command as BenchmarkCommand,
 )
 from apps.analysis.models import (
+    SOURCE_TYPE_OAI_FULLTEXT,
     AnalysisJob,
     AnalysisJobStatus,
     DocumentFingerprint,
     DocumentKnowledgeChunk,
+    OaiFullText,
+    OaiFullTextChunk,
+    OaiFullTextStatus,
+    OaiRecord,
 )
 from apps.analysis.retrieval import CandidateRetriever, compute_query_fingerprints
 from apps.analysis.services import (
@@ -3531,3 +3549,652 @@ class WebSearchProbeCommandTests(TestCase):
     def test_unknown_document_raises_command_error(self) -> None:
         with self.assertRaises(CommandError):
             call_command("web_search_probe", str(uuid4()), "--dry-run", stdout=StringIO())
+
+
+_UPEU_REPOSITORY = OaiRepositoryConfig(
+    name="Repositorio UPeU",
+    domain="repositorio.upeu.edu.pe",
+    base_url="https://repositorio.upeu.edu.pe/server/oai/request",
+)
+_UPEU_SETTINGS = [
+    {
+        "name": _UPEU_REPOSITORY.name,
+        "domain": _UPEU_REPOSITORY.domain,
+        "base_url": _UPEU_REPOSITORY.base_url,
+    }
+]
+
+
+def _oai_record(number: int = 1, title: str = "Tesis de educación") -> OaiRecord:
+    return OaiRecord.objects.create(
+        repository_name=_UPEU_REPOSITORY.name,
+        repository_domain=_UPEU_REPOSITORY.domain,
+        oai_identifier=f"oai:repositorio.upeu.edu.pe:20.500.12840/{number}",
+        title=title,
+        source_url=f"https://hdl.handle.net/20.500.12840/{number}",
+        text_excerpt="Resumen breve de la tesis.",
+        normalized_text="resumen breve de la tesis",
+        harvested_at=timezone.now(),
+    )
+
+
+class FingerprintPositionTests(SimpleTestCase):
+    def test_positions_have_the_same_fingerprints(self) -> None:
+        text = _synthetic_text(1, 300)
+
+        self.assertEqual(
+            set(compute_fingerprint_positions(text)),
+            compute_fingerprints(text),
+        )
+
+    def test_short_text_keeps_the_same_fingerprints(self) -> None:
+        for text in ("uno dos", "uno dos tres cuatro cinco"):
+            self.assertEqual(
+                set(compute_fingerprint_positions(text)),
+                compute_fingerprints(text),
+            )
+
+    def test_position_is_the_first_appearance(self) -> None:
+        repeated = _synthetic_text(2, 40)
+        text = f"{repeated} {_synthetic_text(3, 40)} {repeated}"
+        limit = len(text.split()) - 40
+
+        positions = compute_fingerprint_positions(text)
+
+        for hash_value in compute_fingerprints(repeated):
+            self.assertLess(positions[hash_value], limit)
+
+
+class OaiFullTextIndexerTests(TestCase):
+    def test_blocks_rebuild_the_text(self) -> None:
+        text = _synthetic_text(4, 500)
+
+        chunks, _ = OaiFullTextIndexer().index(_oai_record(), content=text)
+
+        stored = OaiFullTextChunk.objects.order_by("position")
+        self.assertEqual(chunks, 3)
+        self.assertEqual("".join(chunk.text for chunk in stored), text)
+
+    def test_each_fingerprint_is_stored_once_per_record(self) -> None:
+        phrase = _synthetic_text(5, 60)
+        text = f"{phrase} {_synthetic_text(6, 300)} {phrase}"
+        expected = compute_fingerprints(text)
+
+        OaiFullTextIndexer().index(_oai_record(), content=text)
+
+        rows = DocumentFingerprint.objects.filter(
+            source_type=SOURCE_TYPE_OAI_FULLTEXT,
+        ).values_list("hash", flat=True)
+        self.assertEqual(len(rows), len(expected))
+        self.assertEqual(set(rows), expected)
+
+    def test_reindexing_replaces_previous_rows(self) -> None:
+        record = _oai_record()
+        indexer = OaiFullTextIndexer()
+        indexer.index(record, content=_synthetic_text(7, 400))
+
+        _, fingerprints = indexer.index(record, content=_synthetic_text(8, 200))
+
+        self.assertEqual(OaiFullTextChunk.objects.count(), 2)
+        self.assertEqual(
+            DocumentFingerprint.objects.filter(
+                source_type=SOURCE_TYPE_OAI_FULLTEXT,
+            ).count(),
+            fingerprints,
+        )
+
+
+class OaiFullTextRetrievalTests(TestCase):
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = User.objects.create_user(
+            username="alumno1",
+            email="alumno1@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+        self.current = make_test_document(
+            self.institution,
+            self.student,
+            title="Documento actual",
+        )
+        self.text = _synthetic_text(11, 2000)
+        self.record = _oai_record()
+        OaiFullTextIndexer().index(self.record, content=self.text)
+
+    def _span_percent(self, content: str) -> Decimal:
+        retrieved = CandidateRetriever().retrieve(self.current, content)
+        return (
+            SpanSimilarityEngine(min_match_words=8, max_gap_words=2)
+            .analyze(content, retrieved.to_span_sources())
+            .similarity_percent
+        )
+
+    def test_full_copy_matches_one_source_at_100_percent(self) -> None:
+        retrieved = CandidateRetriever().retrieve(self.current, self.text)
+
+        self.assertEqual(
+            [source.source_id for source in retrieved.sources],
+            [self.record.id],
+        )
+        self.assertEqual(self._span_percent(self.text), Decimal("100.00"))
+
+    def test_only_blocks_with_hits_and_neighbours_are_loaded(self) -> None:
+        words = self.text.split()
+        content = " ".join(words[900:950])
+
+        source = CandidateRetriever().retrieve(self.current, content).sources[0]
+
+        self.assertLessEqual(len(source.oai_chunks), 4)
+        self.assertLess(len(source.oai_chunks), OaiFullTextChunk.objects.count())
+
+    def test_match_crossing_two_blocks_is_found(self) -> None:
+        words = self.text.split()
+        boundary = OaiFullTextIndexer.BLOCK_WORD_SIZE * 4
+        content = " ".join(words[boundary - 10 : boundary + 10])
+
+        self.assertEqual(self._span_percent(content), Decimal("100.00"))
+
+    def test_document_frequency_counts_each_thesis_once(self) -> None:
+        phrase = _synthetic_text(12, 50)
+        record = _oai_record(2)
+        OaiFullTextIndexer().index(
+            record,
+            content=f"{phrase} {_synthetic_text(13, 400)} {phrase}",
+        )
+
+        retrieved = CandidateRetriever(max_document_frequency=1).retrieve(
+            self.current,
+            phrase,
+        )
+
+        self.assertEqual(
+            [source.source_id for source in retrieved.sources],
+            [record.id],
+        )
+
+    def test_inactive_record_is_ignored(self) -> None:
+        OaiRecord.objects.filter(id=self.record.id).update(is_active=False)
+
+        self.assertEqual(
+            CandidateRetriever().retrieve(self.current, self.text).sources,
+            [],
+        )
+
+    @override_settings(OAI_HARVEST_ENABLED=False)
+    def test_oai_disabled_ignores_full_text(self) -> None:
+        self.assertEqual(
+            CandidateRetriever().retrieve(self.current, self.text).sources,
+            [],
+        )
+
+    def test_chunk_engine_receives_the_blocks(self) -> None:
+        retrieved = CandidateRetriever().retrieve(self.current, self.text)
+
+        candidates = retrieved.to_chunk_candidates(max_candidates=500)
+
+        self.assertIn(
+            OaiFullTextIndexer().text_indexer._normalize(
+                OaiFullTextChunk.objects.get(
+                    record=self.record,
+                    position=2,
+                ).text
+            ),
+            [candidate.normalized_text for candidate in candidates],
+        )
+
+    def test_old_retrieval_ignores_full_text_fingerprints(self) -> None:
+        candidates, records = DocumentAnalysisService(
+            requested_by=self.student,
+        )._get_fingerprint_candidates(
+            document=self.current,
+            analysis_content=self.text,
+        )
+
+        self.assertEqual(candidates, [])
+        self.assertEqual(records, {})
+
+
+class _FakeHttpResponse:
+    def __init__(self, status_code=200, body=b"", headers=None) -> None:
+        self.status_code = status_code
+        self.body = body
+        self.headers = headers or {}
+        self.is_redirect = False
+        self.closed = False
+
+    def iter_content(self, chunk_size):
+        for start in range(0, len(self.body), chunk_size):
+            yield self.body[start : start + chunk_size]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeSession:
+    def __init__(self, routes) -> None:
+        self.routes = routes
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.routes[url]
+
+
+class PoliteClientTests(SimpleTestCase):
+    HOST = "https://repo.test"
+
+    def _client(self, routes, robots=b"User-agent: *\nDisallow: /privado\n"):
+        self.now = 100.0
+        self.sleeps = []
+
+        def sleep(seconds):
+            self.sleeps.append(seconds)
+            self.now += seconds
+
+        routes.setdefault(
+            f"{self.HOST}/robots.txt",
+            _FakeHttpResponse(body=robots),
+        )
+        session = _FakeSession(routes)
+        return PoliteClient(session=session, sleep=sleep, clock=lambda: self.now), session
+
+    def test_requests_are_spaced_and_identified(self) -> None:
+        client, session = self._client(
+            {
+                f"{self.HOST}/a": _FakeHttpResponse(body=b"a"),
+                f"{self.HOST}/b": _FakeHttpResponse(body=b"b"),
+            }
+        )
+
+        client.get(f"{self.HOST}/a", max_bytes=10)
+        client.get(f"{self.HOST}/b", max_bytes=10)
+
+        self.assertEqual(self.sleeps, [3.0, 3.0])
+        self.assertTrue(
+            all(
+                "IESPPAB" in kwargs["headers"]["User-Agent"]
+                for _, kwargs in session.calls
+            )
+        )
+
+    def test_robots_is_fetched_once_per_host(self) -> None:
+        client, session = self._client(
+            {
+                f"{self.HOST}/a": _FakeHttpResponse(body=b"a"),
+                f"{self.HOST}/b": _FakeHttpResponse(body=b"b"),
+            }
+        )
+
+        client.get(f"{self.HOST}/a", max_bytes=10)
+        client.get(f"{self.HOST}/b", max_bytes=10)
+
+        urls = [url for url, _ in session.calls]
+        self.assertEqual(urls.count(f"{self.HOST}/robots.txt"), 1)
+
+    def test_disallowed_url_is_not_requested(self) -> None:
+        client, session = self._client({})
+
+        with self.assertRaises(FullTextFetchError):
+            client.get(f"{self.HOST}/privado/x", max_bytes=10)
+
+        self.assertNotIn(f"{self.HOST}/privado/x", [url for url, _ in session.calls])
+
+    def test_redirect_to_disallowed_url_is_not_followed(self) -> None:
+        client, session = self._client(
+            {
+                f"{self.HOST}/a": _FakeHttpResponse(
+                    status_code=302,
+                    headers={"Location": "/privado/x"},
+                ),
+            }
+        )
+
+        with self.assertRaises(FullTextFetchError):
+            client.get(f"{self.HOST}/a", max_bytes=10)
+
+        self.assertNotIn(f"{self.HOST}/privado/x", [url for url, _ in session.calls])
+
+    def test_each_redirect_counts_as_a_spaced_request(self) -> None:
+        client, _ = self._client(
+            {
+                f"{self.HOST}/a": _FakeHttpResponse(
+                    status_code=301,
+                    headers={"Location": "/b"},
+                ),
+                f"{self.HOST}/b": _FakeHttpResponse(body=b"ok"),
+            }
+        )
+
+        response = client.get(f"{self.HOST}/a", max_bytes=10)
+
+        self.assertEqual(response.url, f"{self.HOST}/b")
+        self.assertEqual(self.sleeps, [3.0, 3.0])
+
+    def test_declared_size_over_limit_is_not_read(self) -> None:
+        response = _FakeHttpResponse(body=b"x", headers={"Content-Length": "999"})
+        client, _ = self._client({f"{self.HOST}/a": response})
+
+        with self.assertRaises(ResponseTooLarge):
+            client.get(f"{self.HOST}/a", max_bytes=10)
+
+        self.assertTrue(response.closed)
+
+    def test_real_size_over_limit_stops_reading(self) -> None:
+        client, _ = self._client(
+            {f"{self.HOST}/a": _FakeHttpResponse(body=b"x" * 100)}
+        )
+        client.CHUNK_BYTES = 8
+
+        with self.assertRaises(ResponseTooLarge):
+            client.get(f"{self.HOST}/a", max_bytes=10)
+
+    def test_throttling_stops_the_harvest(self) -> None:
+        client, _ = self._client({f"{self.HOST}/a": _FakeHttpResponse(status_code=429)})
+
+        with self.assertRaises(RepositoryThrottled):
+            client.get(f"{self.HOST}/a", max_bytes=10)
+
+    def test_unreadable_robots_blocks_everything(self) -> None:
+        client, session = self._client(
+            {f"{self.HOST}/robots.txt": _FakeHttpResponse(status_code=500)}
+        )
+
+        with self.assertRaises(RobotsUnavailable):
+            client.get(f"{self.HOST}/a", max_bytes=10)
+
+        self.assertEqual(len(session.calls), 1)
+
+    def test_missing_robots_allows_access(self) -> None:
+        client, _ = self._client(
+            {
+                f"{self.HOST}/robots.txt": _FakeHttpResponse(status_code=404),
+                f"{self.HOST}/a": _FakeHttpResponse(body=b"ok"),
+            }
+        )
+
+        self.assertEqual(client.get(f"{self.HOST}/a", max_bytes=10).content, b"ok")
+
+
+class _FakeHarvestClient:
+    PDF_URL = "https://repositorio.upeu.edu.pe/bitstreams/abc/download"
+
+    def __init__(
+        self,
+        *,
+        pdf_url=PDF_URL,
+        rights=("http://creativecommons.org/licenses/by-nc-sa/4.0/",),
+        dates=(),
+        pdf_error=None,
+    ) -> None:
+        self.pdf_url = pdf_url
+        self.rights = rights
+        self.dates = dates
+        self.pdf_error = pdf_error
+        self.urls = []
+
+    def get(self, url, *, max_bytes, params=None):
+        self.urls.append(url)
+
+        if url == self.PDF_URL:
+            if self.pdf_error:
+                raise self.pdf_error
+            return FetchedResponse(200, url, b"%PDF-1.7 contenido")
+
+        if params:
+            items = "".join(
+                f"<dc:rights>{value}</dc:rights>" for value in self.rights
+            ) + "".join(f"<dc:date>{value}</dc:date>" for value in self.dates)
+            xml = (
+                '<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" '
+                'xmlns:dc="http://purl.org/dc/elements/1.1/">'
+                f"<GetRecord><record><metadata>{items}</metadata></record>"
+                "</GetRecord></OAI-PMH>"
+            )
+            return FetchedResponse(200, url, xml.encode())
+
+        meta = (
+            f'<meta name="citation_pdf_url" content="{self.pdf_url}">'
+            if self.pdf_url
+            else ""
+        )
+        html = (
+            f'<html><head>{meta}<meta name="citation_publication_date" '
+            'content="2021-07-03"></head><body></body></html>'
+        )
+        return FetchedResponse(200, url, html.encode())
+
+
+class OaiFullTextHarvesterTests(TestCase):
+    def setUp(self) -> None:
+        self.record = _oai_record()
+
+    def _harvest(self, client, pages=None, filtered_words=2000):
+        pages = pages if pages is not None else ["uno dos tres cuatro " * 50] * 40
+        harvester = OaiFullTextHarvester(_UPEU_REPOSITORY, client=client)
+        filtered = SimpleNamespace(content=_synthetic_text(21, filtered_words))
+
+        with (
+            mock.patch(
+                "apps.analysis.engines.oai_fulltext.read_pdf_pages",
+                return_value=pages,
+            ),
+            mock.patch.object(
+                harvester.text_filter,
+                "filter_for_similarity",
+                return_value=filtered,
+            ),
+        ):
+            return harvester.harvest(self.record)
+
+    def test_ok_stores_metadata_and_indexes(self) -> None:
+        full_text = self._harvest(_FakeHarvestClient())
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.OK)
+        self.assertEqual(full_text.publication_year, 2021)
+        self.assertEqual(
+            full_text.rights,
+            "http://creativecommons.org/licenses/by-nc-sa/4.0/",
+        )
+        self.assertEqual(full_text.pdf_url, _FakeHarvestClient.PDF_URL)
+        self.assertEqual(full_text.word_count, 2000)
+        self.assertEqual(self.record.full_text_chunks.count(), 12)
+
+    def test_handle_is_resolved_in_the_repository(self) -> None:
+        client = _FakeHarvestClient()
+
+        self._harvest(client)
+
+        self.assertEqual(
+            client.urls[0],
+            "https://repositorio.upeu.edu.pe/handle/20.500.12840/1",
+        )
+
+    def test_without_pdf_meta_is_sin_pdf(self) -> None:
+        client = _FakeHarvestClient(pdf_url="")
+
+        full_text = self._harvest(client)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.SIN_PDF)
+        self.assertEqual(full_text.publication_year, 2021)
+        self.assertEqual(self.record.full_text_chunks.count(), 0)
+
+    def test_image_pdf_is_escaneado(self) -> None:
+        full_text = self._harvest(_FakeHarvestClient(), pages=["Portada"] + [""] * 80)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.ESCANEADO)
+        self.assertEqual(self.record.full_text_chunks.count(), 0)
+
+    def test_short_pdf_is_not_indexed(self) -> None:
+        full_text = self._harvest(_FakeHarvestClient(), filtered_words=400)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.TEXTO_INSUFICIENTE)
+        self.assertEqual(self.record.full_text_chunks.count(), 0)
+
+    def test_active_embargo_does_not_download_the_pdf(self) -> None:
+        next_year = timezone.now().year + 1
+        client = _FakeHarvestClient(
+            rights=("info:eu-repo/semantics/embargoedAccess",),
+            dates=(f"info:eu-repo/date/embargoEnd/{next_year}-01-01",),
+        )
+
+        full_text = self._harvest(client)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.EMBARGADO)
+        self.assertNotIn(_FakeHarvestClient.PDF_URL, client.urls)
+
+    def test_expired_embargo_is_harvested(self) -> None:
+        client = _FakeHarvestClient(
+            rights=("info:eu-repo/semantics/embargoedAccess",),
+            dates=("info:eu-repo/date/embargoEnd/2020-01-01",),
+        )
+
+        self.assertEqual(self._harvest(client).status, OaiFullTextStatus.OK)
+
+    def test_restricted_without_date_is_not_downloaded(self) -> None:
+        client = _FakeHarvestClient(
+            rights=("info:eu-repo/semantics/restrictedAccess",),
+        )
+
+        self.assertEqual(self._harvest(client).status, OaiFullTextStatus.EMBARGADO)
+        self.assertNotIn(_FakeHarvestClient.PDF_URL, client.urls)
+
+    def test_oversized_pdf_is_not_retried(self) -> None:
+        client = _FakeHarvestClient(pdf_error=ResponseTooLarge("30 MB"))
+
+        full_text = self._harvest(client)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.SIN_PDF)
+        self.assertIn("20 MB", full_text.error_message)
+
+    def test_network_error_is_recorded(self) -> None:
+        client = _FakeHarvestClient(pdf_error=FullTextFetchError("Error de red"))
+
+        full_text = self._harvest(client)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.ERROR)
+        self.assertIn("Error de red", full_text.error_message)
+
+    def test_throttling_propagates_without_saving(self) -> None:
+        client = _FakeHarvestClient(pdf_error=RepositoryThrottled("429"))
+
+        with self.assertRaises(RepositoryThrottled):
+            self._harvest(client)
+
+        self.assertFalse(OaiFullText.objects.exists())
+
+    def test_retry_replaces_previous_state(self) -> None:
+        self._harvest(_FakeHarvestClient(pdf_error=FullTextFetchError("Error de red")))
+
+        full_text = self._harvest(_FakeHarvestClient())
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.OK)
+        self.assertEqual(full_text.attempts, 2)
+        self.assertEqual(full_text.error_message, "")
+
+
+@override_settings(OAI_HARVEST_REPOSITORIES=_UPEU_SETTINGS)
+class HarvestOaiFullTextCommandTests(TestCase):
+    def setUp(self) -> None:
+        self.records = [
+            _oai_record(number, title=f"Tesis de educación {number}")
+            for number in range(1, 5)
+        ]
+        _oai_record(9, title="Tesis de ingeniería")
+
+    def _call(self, outcomes=None, **options) -> tuple[list[str], str]:
+        """Devuelve los identificadores procesados y la salida del comando."""
+        output = StringIO()
+        seen: list[str] = []
+        outcomes = iter(outcomes or [])
+
+        def harvest(harvester, record):
+            seen.append(record.oai_identifier)
+            status, attempts_error = next(outcomes, (OaiFullTextStatus.SIN_PDF, None))
+
+            if attempts_error is not None:
+                raise attempts_error
+
+            previous = OaiFullText.objects.filter(record=record).first()
+            full_text, _ = OaiFullText.objects.update_or_create(
+                record=record,
+                defaults={
+                    "status": status,
+                    "attempts": previous.attempts + 1 if previous else 1,
+                },
+            )
+            return full_text
+
+        with mock.patch.object(OaiFullTextHarvester, "harvest", harvest):
+            call_command(
+                "harvest_oai_fulltext",
+                repositorio="UPeU",
+                filtro_titulo="educaci[oó]n",
+                stdout=output,
+                **options,
+            )
+
+        return seen, output.getvalue()
+
+    def test_dry_run_does_not_touch_network_or_database(self) -> None:
+        with mock.patch("requests.sessions.Session.send") as send:
+            seen, output = self._call(limite=2, dry_run=True)
+
+        send.assert_not_called()
+        self.assertEqual(seen, [])
+        self.assertIn("2 por procesar", output)
+        self.assertFalse(OaiFullText.objects.exists())
+
+    def test_title_filter_and_limit_are_applied(self) -> None:
+        seen, _ = self._call(limite=2)
+
+        self.assertEqual(len(seen), 2)
+        self.assertNotIn("/9", "".join(seen))
+
+    def test_rerun_continues_up_to_the_same_total(self) -> None:
+        first, _ = self._call(limite=2)
+        repeated, _ = self._call(limite=2)
+        second, _ = self._call(limite=3)
+
+        self.assertEqual(repeated, [])
+        self.assertEqual(len(second), 1)
+        self.assertNotIn(second[0], first)
+
+    def test_errors_are_retried_up_to_three_times(self) -> None:
+        error = (OaiFullTextStatus.ERROR, None)
+
+        for _ in range(3):
+            seen, _ = self._call([error], limite=1)
+            self.assertEqual(len(seen), 1)
+
+        seen, _ = self._call(limite=1)
+
+        self.assertEqual(seen, [])
+
+    def test_throttling_stops_and_keeps_progress(self) -> None:
+        outcomes = [
+            (OaiFullTextStatus.SIN_PDF, None),
+            (None, RepositoryThrottled("429")),
+        ]
+
+        with self.assertRaises(CommandError):
+            self._call(outcomes, limite=4)
+
+        self.assertEqual(OaiFullText.objects.count(), 1)
+
+    def test_consecutive_errors_stop_the_run(self) -> None:
+        for number in range(10, 14):
+            _oai_record(number, title=f"Tesis de educación {number}")
+
+        with self.assertRaises(CommandError):
+            self._call([(OaiFullTextStatus.ERROR, None)] * 8, limite=8)
+
+        self.assertEqual(OaiFullText.objects.count(), 5)
+
+    def test_unknown_repository_fails(self) -> None:
+        with self.assertRaises(CommandError):
+            call_command("harvest_oai_fulltext", repositorio="UCV", limite=1)

@@ -10,7 +10,7 @@ from docx import Document as DocxDocument
 
 from apps.accounts.models import User, UserRole
 from apps.core.models import Institution
-from apps.documents.extractors import DocumentTextExtractor
+from apps.documents.extractors import DocumentTextExtractor, normalize_pdf_pages
 from apps.documents.models import Document, DocumentKind
 
 DOCX_MIME = DocumentTextExtractor.DOCX_MIME
@@ -103,3 +103,105 @@ class DocxParagraphSeparationTests(DocxDocumentTestMixin, TestCase):
 
         self.assertNotIn("\n\n\n", result.content)
         self.assertEqual(len(result.content.split("\n\n")), 3)
+
+
+class PdfTextNormalizationTests(TestCase):
+    """
+    `normalize_pdf_pages` reconstruye párrafos a partir de las líneas
+    visuales que devuelve pypdf (una entrada por página).
+    """
+
+    HEADER = "Instituto de Educación Superior Pedagógico Público ABL"
+
+    def _page(self, number: int, body: str) -> str:
+        return f"{self.HEADER} \n{body}\n{number} "
+
+    def test_lines_of_a_paragraph_are_joined_and_hyphens_removed(self) -> None:
+        page = (
+            "       El juego simbólico favorece la expresión oral de los niños \n"
+            "porque les permite ensayar roles y negociar significados con sus \n"
+            "pares en situaciones cotidianas del aula, según la investi-\n"
+            "gación revisada en este capítulo. \n"
+            "       Además, la docente cumple un rol mediador clave."
+        )
+
+        text = normalize_pdf_pages([page])
+
+        self.assertEqual(
+            text.split("\n\n"),
+            [
+                "El juego simbólico favorece la expresión oral de los niños porque les "
+                "permite ensayar roles y negociar significados con sus pares en "
+                "situaciones cotidianas del aula, según la investigación revisada en "
+                "este capítulo.",
+                "Además, la docente cumple un rol mediador clave.",
+            ],
+        )
+
+    def test_page_numbers_and_running_headers_are_removed(self) -> None:
+        topics = ["la lectura", "la escritura", "el cálculo", "la oralidad", "el arte", "la ciencia"]
+        pages = [
+            self._page(
+                number,
+                f"En esta página se describe {topic} como parte del trabajo docente \n"
+                f"cotidiano en el aula, y se explica {topic} con ejemplos concretos \n"
+                "de la práctica pedagógica que se observó durante el periodo escolar.",
+            )
+            for number, topic in zip(range(10, 16), topics)
+        ]
+
+        text = normalize_pdf_pages(pages)
+
+        self.assertNotIn(self.HEADER, text)
+        self.assertNotRegex(text, r"(?m)^\s*1[0-5]\s*$")
+        self.assertIn("trabajo docente cotidiano en el aula", text)
+
+    def test_paragraph_continuing_on_next_page_is_joined(self) -> None:
+        pages = [
+            self._page(n, body)
+            for n, body in enumerate(
+                [
+                    "Los resultados muestran que la estrategia aplicada mejoró el\n"
+                    "nivel de comprensión lectora de los estudiantes del grupo",
+                    "experimental frente al grupo de control en todas las dimensiones.",
+                    "Texto de relleno de la tercera página con una oración completa.",
+                    "Texto de relleno de la cuarta página con una oración completa.",
+                ],
+                start=20,
+            )
+        ]
+
+        text = normalize_pdf_pages(pages)
+
+        self.assertIn("estudiantes del grupo experimental frente al grupo", text)
+
+    def test_heading_leads_its_section_and_short_lines_stay_together(self) -> None:
+        page = (
+            "Dedicatoria \n"
+            "A mis padres, por su apoyo incondicional durante todos estos años de \n"
+            "estudio y por enseñarme el valor del esfuerzo y la constancia diaria. \n"
+            "\n"
+            "Índice \n"
+            "1. Introducción ........................ 5 \n"
+            "2. Marco teórico ....................... 9 \n"
+            "3. Metodología ......................... 21 "
+        )
+
+        blocks = normalize_pdf_pages([page]).split("\n\n")
+
+        self.assertTrue(blocks[0].startswith("Dedicatoria\nA mis padres, por su apoyo"))
+        self.assertEqual(blocks[1].split("\n")[0], "Índice")
+        self.assertEqual(len(blocks[1].split("\n")), 4)
+
+    def test_numbered_items_start_new_blocks(self) -> None:
+        page = (
+            "Los objetivos específicos de la investigación son los siguientes y se \n"
+            "detallan a continuación en el orden en que fueron evaluados. \n"
+            "1. Identificar el nivel de expresión oral antes de la intervención. \n"
+            "2. Identificar el nivel de expresión oral después de la intervención."
+        )
+
+        text = normalize_pdf_pages([page])
+
+        self.assertIn("\n1. Identificar", text.replace("\n\n", "\n"))
+        self.assertIn("\n2. Identificar", text)

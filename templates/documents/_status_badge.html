@@ -14,7 +14,7 @@ muestra sin un documento real.
 {% if st == "COMPLETED" %}
     {% if risk == "HIGH" %}
         <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700"
-              title="Análisis terminado con riesgo alto de similitud o IA.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_probability_percent }}%.{% endif %} Revisión requerida.">
+              title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_probability_percent }}%.{% endif %} Revisión requerida.">
             <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
             Riesgo alto
         </span>

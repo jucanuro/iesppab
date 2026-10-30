@@ -35,9 +35,14 @@ from reportlab.platypus import (
 from apps.accounts.models import User
 from apps.certificates.models import Certificate
 from apps.documents.models import DocumentStatus
-from apps.reports.models import AnalysisReport, ReportRiskLevel
+from apps.reports.models import AI_ESTIMATE_DISCLAIMER, AnalysisReport, ReportRiskLevel
 
 logger = logging.getLogger(__name__)
+
+# Niveles de riesgo con los que no se emite certificado.
+CERTIFICATE_BLOCKING_RISK_LEVELS = frozenset(
+    {ReportRiskLevel.HIGH, ReportRiskLevel.CRITICAL}
+)
 
 
 class CertificateGenerationError(Exception):
@@ -157,7 +162,7 @@ class CertificateGenerationService:
                 "El documento debe estar completado antes de generar certificado."
             )
 
-        if report.risk_level in {ReportRiskLevel.HIGH, ReportRiskLevel.CRITICAL}:
+        if report.risk_level in CERTIFICATE_BLOCKING_RISK_LEVELS:
             raise ValidationError(
                 "No se puede emitir un certificado para un reporte con nivel "
                 "de riesgo alto o crítico. Revisa el documento y vuelve a analizarlo."
@@ -391,7 +396,14 @@ class CertificateGenerationService:
         )
         metrics_table.setStyle(self._metrics_table_style())
         story.append(metrics_table)
-        story.append(Spacer(1, 0.6 * cm))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(
+            Paragraph(
+                f"<b>IA estimada:</b> {AI_ESTIMATE_DISCLAIMER}",
+                styles["small"],
+            )
+        )
+        story.append(Spacer(1, 0.45 * cm))
 
         technical_table = Table(
             [

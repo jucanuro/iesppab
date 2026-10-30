@@ -84,3 +84,5 @@ yarn-error.log*
 
 # Dumps de base de datos
 *.dump
+# Banco privado de tesis para evaluar la detección de IA (no se sube)
+eval_ia/

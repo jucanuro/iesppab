@@ -16,6 +16,12 @@ PERCENTAGE_VALIDATORS = [
     MaxValueValidator(Decimal("100.00")),
 ]
 
+# Aviso que acompaña siempre al % de IA (reporte web, PDF, certificado).
+AI_ESTIMATE_DISCLAIMER = (
+    "Estimación indicativa. La detección de IA no es concluyente y no "
+    "constituye prueba; debe ser revisada por el docente."
+)
+
 
 class ReportRiskLevel(models.TextChoices):
     LOW = "LOW", _("Bajo")
@@ -28,6 +34,8 @@ class AnalysisReport(TimeStampedModel):
     """
     Resultado final consolidado del análisis.
     """
+
+    AI_DISCLAIMER = AI_ESTIMATE_DISCLAIMER
 
     document = models.OneToOneField(
         "documents.Document",

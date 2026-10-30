@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import importlib.util
+import itertools
 import random
 import re
 from datetime import timedelta
 from decimal import Decimal
 from io import StringIO
-from unittest import mock
+from types import SimpleNamespace
+from unittest import mock, skipUnless
 from uuid import uuid4
 
 from celery.exceptions import SoftTimeLimitExceeded
@@ -2589,9 +2592,37 @@ SEGMENT_HUMAN_SENTENCE = "El estudio revisa la práctica docente en escuelas rur
 SEGMENT_AI_SENTENCE = "La propuesta robótica fortalece la gestión pedagógica de manera integral."
 
 
+_SEGMENT_UNIQUE_COUNTER = itertools.count()
+
+
+def _segment_unique_word() -> str:
+    # Palabra distinta en cada llamada, solo letras (los dígitos cuentan
+    # como ruido técnico).
+    number = next(_SEGMENT_UNIQUE_COUNTER)
+    letters = ""
+    while True:
+        letters = chr(ord("a") + number % 26) + letters
+        number //= 26
+        if not number:
+            return f"vari{letters}"
+
+
 def _segment_paragraph(sentence: str, words: int) -> str:
-    per_sentence = len(sentence.split())
-    return " ".join([sentence] * max(1, words // per_sentence))
+    """
+    Repite `sentence` hasta ~`words` palabras, intercalando dos palabras
+    únicas por oración para que ningún 8-grama se repita (si no, el
+    segmento quedaría excluido como "repetido").
+    """
+    base = sentence.split()
+    sentences = []
+
+    for _ in range(max(1, words // (len(base) + 2))):
+        varied = list(base)
+        varied.insert(2, _segment_unique_word())
+        varied.insert(8, _segment_unique_word())
+        sentences.append(" ".join(varied))
+
+    return " ".join(sentences)
 
 
 def _fake_perplexities(texts: list[str]) -> list[float]:
@@ -2741,7 +2772,7 @@ class SegmentedPerplexityDetectorTests(SimpleTestCase):
             {
                 "start", "end", "words", "evaluable_words", "perplexity",
                 "sentence_median_perplexity", "burstiness", "noise_ratio",
-                "score", "evaluable", "excluded_reason",
+                "repeated_ratio", "score", "evaluable", "excluded_reason",
             },
         )
         self.assertEqual(first["sentence_median_perplexity"], 150.0)
@@ -2760,6 +2791,263 @@ class SegmentedPerplexityDetectorTests(SimpleTestCase):
 
         self.assertEqual(result.segments[0].excluded_reason, ai_segments.REASON_NO_PERPLEXITY)
         self.assertEqual(result.ai_probability_percent, Decimal("0.00"))
+
+
+class AISegmentsProseOnlyTests(SimpleTestCase):
+    """Solo cuenta la prosa corrida: repetición, listas, tablas y planes no."""
+
+    def _reasons(self, *blocks: str) -> list[str]:
+        return [
+            segment.excluded_reason
+            for segment in ai_segments.build_segments("\n\n".join(blocks))
+        ]
+
+    def test_repeated_segment_is_not_evaluable_but_first_occurrence_is(self) -> None:
+        original = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+        other = _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+
+        segments = ai_segments.build_segments("\n\n".join([original, other, original]))
+
+        self.assertEqual(
+            [segment.excluded_reason for segment in segments],
+            ["", "", ai_segments.REASON_REPEATED],
+        )
+        self.assertEqual(segments[2].repeated_ratio, 1.0)
+        self.assertEqual(segments[0].repeated_ratio, 0.0)
+
+    def test_near_duplicate_objectives_are_repeated_or_list(self) -> None:
+        dimensions = ["la oralidad", "la escritura", "la comprensión lectora", "el cálculo"]
+        objectives = "\n\n".join(
+            "Determinar la influencia del aprendizaje basado en problemas en "
+            f"{dimension} de los estudiantes de cuarto grado de la institución "
+            "educativa del distrito de San Pablo durante el periodo escolar."
+            for dimension in dimensions * 2
+        )
+
+        reasons = self._reasons(objectives)
+
+        self.assertTrue(reasons)
+        self.assertTrue(
+            all(
+                reason in {ai_segments.REASON_REPEATED, ai_segments.REASON_LIST}
+                for reason in reasons
+            ),
+            reasons,
+        )
+
+    def test_hypotheses_and_uppercase_competencies_are_list(self) -> None:
+        block = "\n".join(
+            [
+                "Ho: El juego no mejora la expresión oral de los niños de cinco años.",
+                "H1: El juego mejora la expresión oral de los niños de cinco años.",
+                "SE COMUNICA ORALMENTE EN SU LENGUA MATERNA y adecua sus ideas.",
+                "LEE DIVERSOS TIPOS DE TEXTOS ESCRITOS en su lengua materna.",
+                "ESCRIBE DIVERSOS TIPOS DE TEXTOS en su lengua materna con claridad.",
+                "• Obtiene información del texto oral que escucha con atención.",
+                "• Infiere e interpreta información del texto oral en clase.",
+                "• Reflexiona sobre la forma y el contexto del texto oral.",
+                "Capacidades del área",
+                "Desempeños precisados",
+            ]
+        )
+
+        self.assertEqual(self._reasons(block), [ai_segments.REASON_LIST])
+
+    def test_session_plan_is_not_evaluable(self) -> None:
+        plan = "\n".join(
+            [
+                "INICIO",
+                "(15 min) La docente saluda a los estudiantes y presenta el propósito "
+                "de la sesión mediante una pregunta retadora sobre el cuento leído.",
+                "DESARROLLO",
+                "(60 min) Los estudiantes forman equipos, leen el texto en voz alta y "
+                "comentan las emociones que transmite cada personaje del relato.",
+                "CIERRE",
+                "(15 min) Se reflexiona con los estudiantes sobre lo aprendido y se "
+                "registra el avance de cada equipo en la lista de cotejo del aula.",
+            ]
+        )
+
+        self.assertEqual(self._reasons(plan), [ai_segments.REASON_SESSION_PLAN])
+
+    def test_table_rows_are_not_evaluable(self) -> None:
+        rows = "\n".join(
+            ["Tabla 4", "Resultados del pretest y postest por dimensión"]
+            + [
+                f"Dimensión {name} del grupo experimental en el nivel logrado 12 45"
+                for name in ("fluidez", "claridad", "coherencia", "volumen", "postura")
+            ]
+            + ["Nota. Elaboración propia con datos del instrumento aplicado en aula."]
+        )
+
+        self.assertEqual(self._reasons(rows), [ai_segments.REASON_TABLE])
+
+    def test_long_labeled_prose_paragraph_is_still_prose(self) -> None:
+        prose = "A. Dimensión física: " + _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 180)
+
+        self.assertEqual(self._reasons(prose), [""])
+
+    def test_excluded_words_do_not_count_and_reason_is_in_breakdown(self) -> None:
+        prose = _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+        content = "\n\n".join([prose, prose])
+
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ):
+            result = ai_segments.SegmentedPerplexityDetector().analyze(content)
+
+        breakdown = result.to_breakdown()
+        self.assertEqual(result.ai_probability_percent, Decimal("100.00"))
+        self.assertEqual(breakdown["evaluable_words"], len(prose.split()))
+        self.assertEqual(breakdown["total_words"], len(content.split()))
+        self.assertEqual(
+            breakdown["excluded_words_by_reason"],
+            {ai_segments.REASON_REPEATED: len(prose.split())},
+        )
+        self.assertEqual(
+            breakdown["segments"][1]["excluded_reason"],
+            ai_segments.REASON_REPEATED,
+        )
+
+
+@skipUnless(importlib.util.find_spec("torch"), "torch no está instalado")
+class PerplexityBatchMemoryBudgetTests(SimpleTestCase):
+    """
+    Presupuesto de memoria de `_batch_sequence_perplexities` con un GPT-2
+    diminuto (sin descargar el modelo real) para las identidades, y la
+    config real de DeepESP/gpt2-spanish para las cuentas del presupuesto.
+    """
+
+    REAL_CONFIG = SimpleNamespace(
+        config=SimpleNamespace(n_embd=768, n_head=12, n_layer=12, vocab_size=50257)
+    )
+
+    def _tiny_model(self):
+        import torch
+        from transformers import GPT2Config, GPT2LMHeadModel
+
+        torch.manual_seed(0)
+        model = GPT2LMHeadModel(
+            GPT2Config(n_layer=2, n_head=2, n_embd=16, vocab_size=97, n_positions=64)
+        )
+        return model.eval()
+
+    def test_chunked_losses_match_full_logits(self) -> None:
+        import torch
+        from torch.nn import functional as F
+
+        model = self._tiny_model()
+        input_ids = torch.randint(0, 97, (3, 40))
+        attention_mask = torch.ones_like(input_ids)
+        attention_mask[1, 25:] = 0
+        attention_mask[2, 9:] = 0
+
+        with mock.patch.object(perplexity_module, "LOSS_CHUNK_TOKENS", 7), torch.no_grad():
+            losses, counts = perplexity_module._mean_token_losses(
+                model, input_ids, attention_mask
+            )
+            logits = model(input_ids, attention_mask=attention_mask).logits
+
+        for row in range(3):
+            real = int(attention_mask[row].sum())
+            expected = F.cross_entropy(logits[row, : real - 1], input_ids[row, 1:real])
+            self.assertEqual(int(counts[row]), real - 1)
+            self.assertAlmostEqual(float(losses[row]), float(expected), places=4)
+
+    def test_lm_head_never_sees_more_than_one_chunk(self) -> None:
+        import torch
+
+        model = self._tiny_model()
+        seen_rows = []
+        original_head = model.lm_head.forward
+
+        def spy(hidden):
+            seen_rows.append(hidden.shape[0])
+            return original_head(hidden)
+
+        model.lm_head.forward = spy
+        input_ids = torch.randint(0, 97, (4, 50))
+
+        with mock.patch.object(perplexity_module, "LOSS_CHUNK_TOKENS", 32), torch.no_grad():
+            perplexity_module._mean_token_losses(model, input_ids, torch.ones_like(input_ids))
+
+        self.assertEqual(sum(seen_rows), 4 * 49)
+        self.assertLessEqual(max(seen_rows), 32)
+
+    def test_budget_is_capped_even_with_lots_of_free_ram(self) -> None:
+        with mock.patch("psutil.virtual_memory") as virtual_memory, mock.patch.object(
+            perplexity_module, "_cgroup_memory_limit_and_usage_bytes", return_value=None
+        ):
+            virtual_memory.return_value.available = 64 * 1024**3
+            budget = perplexity_module._available_batch_memory_budget_bytes()
+
+        self.assertEqual(budget, perplexity_module.BATCH_MEMORY_MAX_BYTES)
+
+    def test_estimate_counts_one_layer_of_attention_and_a_fixed_loss_chunk(self) -> None:
+        estimate = perplexity_module._estimate_forward_pass_bytes
+
+        # Los logits ya no crecen con el lote (trozo fijo de pérdida):
+        # duplicar el lote no duplica la estimación.
+        self.assertLess(
+            estimate(2, 300, self.REAL_CONFIG),
+            1.25 * estimate(1, 300, self.REAL_CONFIG),
+        )
+        # Picos medidos (MB sobre el modelo cargado, máximo de varias
+        # corridas): la estimación debe quedar por encima.
+        for batch, length, measured_mb in ((1, 900, 292), (4, 600, 684), (16, 300, 746), (32, 100, 604), (128, 30, 571)):
+            self.assertGreater(estimate(batch, length, self.REAL_CONFIG), measured_mb * 1024**2)
+
+    def test_thirty_thousand_word_thesis_fits_in_budget(self) -> None:
+        # Tesis de ~30k palabras en modo segments: ~150 segmentos de ~200
+        # palabras (~330 tokens) y ~1500 oraciones de ~30 tokens.
+        lengths = [330] * 150 + [30] * 1500
+        order = sorted(range(len(lengths)), key=lambda i: lengths[i])
+        cap = perplexity_module.BATCH_MEMORY_MAX_BYTES
+
+        with mock.patch.object(
+            perplexity_module, "_available_batch_memory_budget_bytes", return_value=cap
+        ):
+            batches = list(
+                perplexity_module._iter_batches_by_memory_budget(order, lengths, self.REAL_CONFIG)
+            )
+
+        self.assertEqual(sorted(i for batch in batches for i in batch), list(range(len(lengths))))
+        for batch in batches:
+            peak = perplexity_module._estimate_forward_pass_bytes(
+                len(batch), max(lengths[i] for i in batch), self.REAL_CONFIG
+            )
+            self.assertTrue(len(batch) == 1 or peak <= cap)
+        # El modelo cargado ronda 620-940MB de RSS: lote + modelo <= ~1.5GB.
+        self.assertLessEqual(cap, 600 * 1024**2)
+
+    def test_budget_is_read_again_before_each_batch(self) -> None:
+        # Primer lote con 1 byte de presupuesto (lote mínimo de 1), el
+        # segundo con RAM de sobra: el resto entra junto. El presupuesto se
+        # lee al pedir cada lote, no todo al principio.
+        lengths = [100] * 6
+        budgets = iter([1, 10**12])
+        calls = []
+
+        def budget():
+            calls.append(None)
+            return next(budgets)
+
+        with mock.patch.object(
+            perplexity_module, "_available_batch_memory_budget_bytes", side_effect=budget
+        ):
+            batches = perplexity_module._iter_batches_by_memory_budget(
+                list(range(6)), lengths, self.REAL_CONFIG
+            )
+            first = next(batches)
+            self.assertEqual(len(calls), 1)
+            second = next(batches)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(list(batches), [])
+
+        self.assertEqual(first, [0])
+        self.assertEqual(second, [1, 2, 3, 4, 5])
 
 
 class AIDetectionModeServiceTests(TestCase):
@@ -2813,7 +3101,7 @@ class AIDetectionModeServiceTests(TestCase):
 
     @override_settings(PERPLEXITY_AI_DETECTION_ENABLED=True, AI_DETECTION_MODE="segments")
     def test_segments_mode_stores_segments_and_skips_quotes(self) -> None:
-        quoted = (0, len(SEGMENT_HUMAN_SENTENCE))
+        quoted = (0, self.content.index(".") + 1)
 
         with mock.patch.object(
             perplexity_module,
@@ -2836,7 +3124,7 @@ class AIDetectionModeServiceTests(TestCase):
         # La primera oración (citada) no cuenta como palabra evaluable.
         self.assertEqual(
             breakdown["segments"][0]["evaluable_words"],
-            breakdown["segments"][0]["words"] - len(SEGMENT_HUMAN_SENTENCE.split()),
+            breakdown["segments"][0]["words"] - len(self.content[: quoted[1]].split()),
         )
         self.assertEqual(breakdown["perplexity_ai_score"], str(percent))
         self.assertGreater(percent, Decimal("40.00"))
@@ -2907,6 +3195,137 @@ class EvaluateAIDetectionCommandTests(TestCase):
         self.assertIn("humano_tesis_01.txt", output)
         self.assertIn("Barrido de MIDPOINT", output)
         self.assertIn("precisión=", output)
+
+
+def _fake_global_analysis(content: str) -> PerplexityAnalysisResult:
+    mean_perplexity = 30.0 if "robótica" in content else 150.0
+    return PerplexityAnalysisResult(
+        ai_probability_percent=perplexity_module._logistic_score(
+            mean_perplexity,
+            midpoint=perplexity_module.PERPLEXITY_MIDPOINT,
+            scale=perplexity_module.PERPLEXITY_SCALE,
+        ),
+        mean_perplexity=mean_perplexity,
+        burstiness=None,
+        sentence_count=10,
+    )
+
+
+class EvaluateAIDetectionDirTests(SimpleTestCase):
+    """--dir: banco privado de tesis en humanos/ e ia/ (eval_ia/)."""
+
+    def setUp(self) -> None:
+        import tempfile
+        from pathlib import Path
+
+        from docx import Document as DocxDocument
+
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "humanos").mkdir()
+        (self.root / "ia").mkdir()
+
+        human = _segment_paragraph(SEGMENT_HUMAN_SENTENCE, 200)
+        ai = _segment_paragraph(SEGMENT_AI_SENTENCE, 200)
+
+        # Humano "sospechoso": 1 de 3 segmentos parece IA (~33 % >= 20).
+        docx = DocxDocument()
+        for paragraph in (human, ai, human):
+            docx.add_paragraph(paragraph)
+        docx.save(self.root / "humanos" / "tesis_mixta.docx")
+
+        # La bibliografía no debe llegar al detector.
+        (self.root / "humanos" / "tesis_limpia.txt").write_text(
+            f"{human}\n\n{human}\n\nREFERENCIAS BIBLIOGRÁFICAS\n\n"
+            "Pérez, J. (2020). La robótica educativa en el aula. Lima: Editorial Andina.",
+            encoding="utf-8",
+        )
+        (self.root / "humanos" / "notas.md").write_text("se ignora", encoding="utf-8")
+        (self.root / "ia" / "generado.txt").write_text(f"{ai}\n\n{ai}", encoding="utf-8")
+
+    def _run(self, *args: str) -> str:
+        stdout = StringIO()
+        with mock.patch.object(
+            perplexity_module,
+            "_batch_sequence_perplexities",
+            side_effect=_fake_perplexities,
+        ), mock.patch(
+            "apps.analysis.management.commands.evaluate_ai_detection."
+            "SpanishPerplexityDetector.analyze",
+            side_effect=_fake_global_analysis,
+        ):
+            call_command(
+                "evaluate_ai_detection",
+                f"--dir={self.root}",
+                *args,
+                stdout=stdout,
+                stderr=StringIO(),
+            )
+        return stdout.getvalue()
+
+    def test_summary_per_midpoint_with_fp_recall_and_medians(self) -> None:
+        output = self._run()
+
+        rows = {
+            tuple(line.split()[:2]): line.split()[2:]
+            for line in output.splitlines()
+            if re.match(r"\s*\d+ (global|segments) ", line)
+        }
+        self.assertEqual(
+            sorted({midpoint for midpoint, _ in rows}, key=int),
+            ["55", "70", "80", "90"],
+        )
+        # segments: el DOCX mixto es falso positivo; global solo ve el inicio.
+        fp, recall, human_median, ai_median = rows[("55", "segments")]
+        self.assertEqual(fp, "1/2=0.50")
+        self.assertEqual(recall, "1/1=1.00")
+        self.assertEqual(ai_median, "100.00")
+        self.assertEqual(rows[("55", "global")][0], "1/2=0.50")
+
+    def test_csv_detail_per_file(self) -> None:
+        import csv
+
+        self._run("--midpoints=55,90")
+
+        with (self.root / "resultados_ia.csv").open(encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+
+        self.assertEqual(
+            [(row["archivo"], row["esperado"]) for row in rows],
+            [
+                ("tesis_limpia.txt", "humano"),
+                ("tesis_mixta.docx", "humano"),
+                ("generado.txt", "IA"),
+            ],
+        )
+        self.assertIn("pct_global_90", rows[0])
+        self.assertIn("pct_segments_90", rows[0])
+        self.assertEqual(rows[0]["pct_segments_55"], "0.00")
+        self.assertEqual(rows[2]["pct_segments_55"], "100.00")
+
+    def test_top_humans_list_their_most_ai_segments(self) -> None:
+        output = self._run("--top-humans=1")
+
+        top = output.split("Humanos con mayor % IA")[1]
+        self.assertIn("tesis_mixta.docx", top)
+        self.assertNotIn("tesis_limpia.txt", top)
+        self.assertEqual(top.count("ppl="), 2)
+        self.assertIn("ppl=30.0", top)
+        self.assertIn("…", top)
+
+    def test_samples_use_analysis_filter(self) -> None:
+        from apps.analysis.management.commands.evaluate_ai_detection import Command
+
+        samples = Command(stderr=StringIO())._file_samples(self.root / "humanos", "humano")
+
+        self.assertEqual([s.name for s in samples], ["tesis_limpia.txt", "tesis_mixta.docx"])
+        self.assertNotIn("Pérez, J. (2020)", samples[0].content)
+        self.assertIn("\n\n", samples[1].content)
+
+    def test_dir_without_subfolders_fails(self) -> None:
+        with self.assertRaises(CommandError):
+            call_command("evaluate_ai_detection", f"--dir={self.root / 'humanos'}")
 
 
 def _paragraph(*sentences: str) -> str:

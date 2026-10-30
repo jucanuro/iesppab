@@ -43,6 +43,49 @@ MIN_SENTENCE_WORDS = 5
 REASON_NOISE = "ruido"
 REASON_FEW_WORDS = "pocas-palabras"
 REASON_NO_PERPLEXITY = "sin-perplejidad"
+REASON_REPEATED = "repetido"
+REASON_SESSION_PLAN = "plan-de-sesion"
+REASON_TABLE = "tabla"
+REASON_LIST = "lista"
+
+# --- Solo cuenta la prosa corrida ---
+#
+# En las tesis del instituto, los segmentos con más "IA" eran sobre todo
+# texto que no es prosa: objetivos reformulados casi idénticos, filas de
+# tablas de DOCX con celdas combinadas repetidas ("COMPETENCIA COMPETENCIA
+# ..."), competencias del MINEDU copiadas en mayúsculas y planes de
+# sesión. Ese texto es predecible para GPT-2 (perplejidad baja) sin que
+# nadie lo haya generado con IA, así que no entra ni en el numerador ni
+# en el denominador.
+
+# Un segmento con más de esta fracción de sus 8-gramas ya vistos antes en
+# el documento (o antes dentro del mismo segmento) es repetición.
+REPEATED_NGRAM_SIZE = 8
+MAX_REPEATED_NGRAM_RATIO = 0.50
+
+# Lista/enumeración: al menos esta fracción de las palabras del segmento
+# está en líneas con forma de ítem (ver `_is_list_line`).
+MIN_LIST_WORD_RATIO = 0.50
+
+# Tabla: esta fracción de las palabras en filas cortas sin puntuación final
+# o con muchos números, si el segmento trae un rótulo "Tabla N"; o, sin
+# rótulo, esta otra fracción en filas con muchos números.
+MIN_TABLE_WORD_RATIO_WITH_LABEL = 0.50
+MIN_TABLE_WORD_RATIO = 0.40
+TABLE_ROW_MIN_NUMERIC_RATIO = 0.15
+
+# Plan de sesión: al menos esta cantidad de rótulos distintos de
+# `_SESSION_PLAN_MARKERS` (en mayúsculas o al inicio de línea).
+MIN_SESSION_PLAN_MARKERS = 3
+
+# Líneas de menos palabras que esto y sin puntuación final son títulos o
+# celdas, no prosa.
+SHORT_LINE_WORDS = 8
+
+# Un ítem (objetivo, pregunta, viñeta) no pasa de este largo: un párrafo de
+# prosa rotulado "A. Dimensión física: ..." con 100+ palabras sigue
+# siendo prosa.
+LIST_ITEM_MAX_WORDS = 60
 
 # Abreviaturas tras las cuales un punto NO cierra la oración. Sin esto,
 # "García Flores et al. (2022) señalan..." se cortaba en "et al." y daba
@@ -79,6 +122,44 @@ _ENGLISH_WORDS = frozenset(
 )
 _ENGLISH_SENTENCE_RATIO = 0.20
 
+# Verbos con los que empiezan los objetivos ("Determinar la influencia...").
+_OBJECTIVE_VERBS = frozenset(
+    "determinar identificar analizar establecer describir evaluar conocer "
+    "comparar explicar demostrar proponer diseñar aplicar mejorar desarrollar "
+    "fortalecer promover verificar medir relacionar precisar valorar elaborar "
+    "implementar reconocer fomentar contribuir estimar examinar comprobar "
+    "caracterizar indagar".split()
+)
+_LIST_MARKER_RE = re.compile(
+    r"^(?:[•●▪◦■□➢►✓✔*\-–—\uf000-\uf8ff]|\d+(?:\.\d+)*[.)]|[a-zA-Z][.)]\s|"
+    r"[IVX]+[.)]\s|¿)"
+)
+_HYPOTHESIS_RE = re.compile(
+    r"^(?:H[oaie0-9]{1,2}|Hipótesis\s+(?:nula|alterna|general|específica)\w*)\s*[:.]",
+    re.IGNORECASE,
+)
+_UPPERCASE_WORD_RE = re.compile(r"^[A-ZÁÉÍÓÚÑÜ]{2,}[.,:;]?$")
+_LINE_END_PUNCTUATION = (".", ":", ";", "?", "!", "»", "”", '"')
+
+# Rótulos de un plan/sesión de aprendizaje (formato MINEDU).
+_SESSION_PLAN_MARKERS = (
+    "inicio", "desarrollo", "cierre", "momentos", "materiales", "recursos",
+    "competencia", "competencias", "capacidades", "desempeño", "desempeños",
+    "criterios de evaluación", "evidencia", "instrumento de evaluación",
+    "enfoque transversal", "propósito", "sesión de aprendizaje",
+    "retroalimentación", "acciones observables", "secuencia didáctica",
+    "título de la sesión", "área curricular",
+)
+_SESSION_PLAN_MARKER_RE = re.compile(
+    r"(?:^|\n)[ \t]*(" + "|".join(re.escape(m) for m in _SESSION_PLAN_MARKERS) + r")\b",
+    re.IGNORECASE,
+)
+_SESSION_PLAN_UPPER_RE = re.compile(
+    r"\b(" + "|".join(re.escape(m.upper()) for m in _SESSION_PLAN_MARKERS) + r")\b"
+)
+_SESSION_TIME_RE = re.compile(r"\(\s*\d+\s*(?:min|minutos)\b", re.IGNORECASE)
+_NGRAM_WORD_RE = re.compile(r"\w+")
+
 _SIGLA_RE = re.compile(r"^[A-ZÁÉÍÓÚÑ]{2,10}[0-9]*s?$")
 _BOOLEAN_WORDS = frozenset({"AND", "OR", "NOT"})
 _LETTER_RE = re.compile(r"[A-Za-zÁÉÍÓÚÑáéíóúñü]")
@@ -97,6 +178,7 @@ class TextSegment:
     perplexity: float | None = None
     sentence_median_perplexity: float | None = None
     burstiness: float | None = None
+    repeated_ratio: float = 0.0
     excluded_reason: str = ""
 
     @property
@@ -146,16 +228,26 @@ class SegmentedAIAnalysisResult:
                     ),
                     "burstiness": _round(segment.burstiness),
                     "noise_ratio": round(segment.noise_ratio, 3),
+                    "repeated_ratio": round(segment.repeated_ratio, 3),
                     "score": str(score) if score is not None else None,
                     "evaluable": segment.evaluable,
                     "excluded_reason": segment.excluded_reason,
                 }
             )
 
+        excluded_words: dict[str, int] = {}
+        for segment in self.segments:
+            if not segment.evaluable:
+                excluded_words[segment.excluded_reason] = (
+                    excluded_words.get(segment.excluded_reason, 0) + segment.word_count
+                )
+
         return {
             "segment_count": len(self.segments),
             "evaluable_segment_count": len(self.evaluable_segments),
             "evaluable_words": self.evaluable_word_count,
+            "total_words": sum(segment.word_count for segment in self.segments),
+            "excluded_words_by_reason": excluded_words,
             "midpoint": self.midpoint,
             "scale": self.scale,
             "threshold": str(SEGMENT_AI_THRESHOLD),
@@ -338,6 +430,100 @@ def noise_ratio(sentences: list[str]) -> float:
     return noisy / total if total else 0.0
 
 
+def repeated_ngram_ratio(text: str, seen: set[tuple[str, ...]]) -> float:
+    """
+    Fracción de los 8-gramas de `text` que ya estaban en `seen` (texto
+    anterior del documento) o que aparecieron antes en el mismo `text`.
+    Agrega los 8-gramas de `text` a `seen`.
+    """
+    words = _NGRAM_WORD_RE.findall(text.lower())
+    size = REPEATED_NGRAM_SIZE
+    total = repeated = 0
+
+    for index in range(len(words) - size + 1):
+        ngram = tuple(words[index:index + size])
+        total += 1
+        if ngram in seen:
+            repeated += 1
+        else:
+            seen.add(ngram)
+
+    return repeated / total if total else 0.0
+
+
+def _ends_like_prose(line: str) -> bool:
+    return line.endswith(_LINE_END_PUNCTUATION)
+
+
+def _is_list_line(line: str) -> bool:
+    """
+    Línea con forma de ítem: viñeta o numeración, pregunta, objetivo
+    ("Determinar..."), hipótesis ("Ho:", "H1:"), rótulo en MAYÚSCULAS
+    (competencias del MINEDU) o línea corta sin puntuación final.
+    """
+    words = line.split()
+    if not words or len(words) > LIST_ITEM_MAX_WORDS:
+        return False
+
+    if _LIST_MARKER_RE.match(line) or _HYPOTHESIS_RE.match(line):
+        return True
+    if words[0].strip(_STRIP_PUNCT).lower() in _OBJECTIVE_VERBS:
+        return True
+    if len(words) >= 3 and all(_UPPERCASE_WORD_RE.match(w) for w in words[:3]):
+        return True
+    return len(words) < SHORT_LINE_WORDS and not _ends_like_prose(line)
+
+
+def _is_table_row(line: str) -> bool:
+    words = line.split()
+    if not words:
+        return False
+
+    numeric = sum(1 for word in words if any(char.isdigit() for char in word))
+    return numeric / len(words) >= TABLE_ROW_MIN_NUMERIC_RATIO
+
+
+def _share_of_words(lines: list[str], predicate) -> float:
+    total = sum(len(line.split()) for line in lines)
+    if not total:
+        return 0.0
+    return sum(len(line.split()) for line in lines if predicate(line)) / total
+
+
+def structure_reason(raw_text: str) -> str:
+    """
+    Motivo por el que un segmento no es prosa corrida (plan de sesión,
+    tabla o lista), o "" si lo es. `raw_text` es el texto del segmento con
+    sus saltos de línea originales.
+    """
+    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+    if not lines:
+        return ""
+
+    markers = {m.group(1).lower() for m in _SESSION_PLAN_MARKER_RE.finditer(raw_text)}
+    markers |= {m.group(1).lower() for m in _SESSION_PLAN_UPPER_RE.finditer(raw_text)}
+    if _SESSION_TIME_RE.search(raw_text):
+        markers.add("tiempo")
+    if len(markers) >= MIN_SESSION_PLAN_MARKERS:
+        return REASON_SESSION_PLAN
+
+    has_table_label = bool(
+        _FIGURE_LABEL_RE.search(raw_text) or _FIGURE_INLINE_RE.search(raw_text)
+    )
+    if has_table_label and _share_of_words(
+        lines,
+        lambda line: _is_table_row(line) or not _ends_like_prose(line),
+    ) >= MIN_TABLE_WORD_RATIO_WITH_LABEL:
+        return REASON_TABLE
+    if _share_of_words(lines, _is_table_row) >= MIN_TABLE_WORD_RATIO:
+        return REASON_TABLE
+
+    if _share_of_words(lines, _is_list_line) >= MIN_LIST_WORD_RATIO:
+        return REASON_LIST
+
+    return ""
+
+
 def build_segments(
     content: str,
     *,
@@ -350,6 +536,7 @@ def build_segments(
     y los títulos de tablas/figuras se descuentan del texto evaluable.
     """
     excluded = list(excluded_ranges or []) + _figure_title_ranges(content)
+    seen_ngrams: set[tuple[str, ...]] = set()
     segments = []
 
     for start, end, words in _group_units(_units(content)):
@@ -357,13 +544,19 @@ def build_segments(
         sentences = split_sentences(text)
         evaluable_words = len(text.split())
         ratio = noise_ratio(sentences)
+        # Siempre se calcula, aunque el segmento ya quede excluido por
+        # otro motivo: su texto cuenta como "ya visto" para los siguientes.
+        repeated = repeated_ngram_ratio(text, seen_ngrams)
 
         if ratio > MAX_NOISE_RATIO:
             reason = REASON_NOISE
-        elif evaluable_words < MIN_EVALUABLE_WORDS:
-            reason = REASON_FEW_WORDS
+        elif repeated > MAX_REPEATED_NGRAM_RATIO:
+            reason = REASON_REPEATED
         else:
-            reason = ""
+            reason = structure_reason(content[start:end])
+
+        if not reason and evaluable_words < MIN_EVALUABLE_WORDS:
+            reason = REASON_FEW_WORDS
 
         segments.append(
             TextSegment(
@@ -374,6 +567,7 @@ def build_segments(
                 evaluable_word_count=evaluable_words,
                 noise_ratio=ratio,
                 sentences=sentences,
+                repeated_ratio=repeated,
                 excluded_reason=reason,
             )
         )

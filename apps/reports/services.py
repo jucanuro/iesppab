@@ -41,6 +41,7 @@ from apps.analysis.engines.text_filters import AcademicTextFilter
 from apps.certificates.models import Certificate
 from apps.documents.models import Document
 from apps.reports.models import (
+    AI_ESTIMATE_DISCLAIMER,
     AnalysisReport,
     FindingType,
     ReportFinding,
@@ -52,17 +53,19 @@ from apps.reports.models import (
 logger = logging.getLogger(__name__)
 
 
-def resolve_risk_level(
-    similarity_percent: Decimal,
-    ai_probability_percent: Decimal,
-) -> str:
-    if similarity_percent >= Decimal("50.00") or ai_probability_percent >= Decimal("80.00"):
+def resolve_risk_level(similarity_percent: Decimal) -> str:
+    """
+    El riesgo (y con él el bloqueo del certificado) depende solo de la
+    similitud. El % de IA es una estimación indicativa, no concluyente, y se
+    muestra aparte para revisión del docente sin afectar este nivel.
+    """
+    if similarity_percent >= Decimal("50.00"):
         return ReportRiskLevel.CRITICAL
 
-    if similarity_percent >= Decimal("30.00") or ai_probability_percent >= Decimal("60.00"):
+    if similarity_percent >= Decimal("30.00"):
         return ReportRiskLevel.HIGH
 
-    if similarity_percent >= Decimal("15.00") or ai_probability_percent >= Decimal("35.00"):
+    if similarity_percent >= Decimal("15.00"):
         return ReportRiskLevel.MEDIUM
 
     return ReportRiskLevel.LOW
@@ -197,7 +200,6 @@ class SpanReportWriter:
         report.web_similarity_percent = result.percent_for((SOURCE_KIND_WEB,))
         report.risk_level = resolve_risk_level(
             similarity_percent=report.similarity_percent,
-            ai_probability_percent=report.ai_probability_percent,
         )
         report.save(
             update_fields=[
@@ -681,7 +683,14 @@ class _HighlightedDocumentPdfBuilder:
         story.append(Spacer(1, 0.35 * cm))
 
         story.append(self._build_metrics_row(styles=styles))
-        story.append(Spacer(1, 0.5 * cm))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(
+            Paragraph(
+                f"<b>IA estimada:</b> {AI_ESTIMATE_DISCLAIMER}",
+                styles["legend_note"],
+            )
+        )
+        story.append(Spacer(1, 0.4 * cm))
 
         findings = list(
             self.report.findings.select_related("source").order_by(

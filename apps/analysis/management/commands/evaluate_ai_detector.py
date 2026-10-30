@@ -18,8 +18,8 @@ DEFAULT_AI_DIR = FIXTURES_DIR / "ai_samples"
 DEFAULT_HUMAN_DIR = FIXTURES_DIR / "human_samples"
 DEFAULT_CSV_PATH = FIXTURES_DIR.parent / "benchmark_results.csv"
 
-# Umbral con el que producción ya marca un documento como riesgo MEDIO por IA
-# (ver ReportRiskLevel._resolve_risk_level en apps/analysis/services.py).
+# Umbral de referencia histórico (antes marcaba riesgo MEDIO por IA; hoy el
+# riesgo depende solo de la similitud, ver resolve_risk_level).
 DEFAULT_HEURISTIC_THRESHOLD = Decimal("35.00")
 SWEEP_THRESHOLDS = [Decimal(str(value)) for value in range(5, 100, 5)]
 

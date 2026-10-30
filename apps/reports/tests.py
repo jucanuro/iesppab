@@ -27,6 +27,7 @@ from apps.documents.models import (
     DocumentText,
 )
 from apps.reports.models import (
+    AI_ESTIMATE_DISCLAIMER,
     AnalysisReport,
     FindingType,
     ReportRiskLevel,
@@ -40,6 +41,7 @@ from apps.reports.services import (
     _HighlightedDocumentPdfBuilder,
     build_highlighted_document_pdf,
     resolve_analyzed_content,
+    resolve_risk_level,
     resubmission_warning_sources,
 )
 
@@ -849,6 +851,7 @@ class SourceExclusionTestMixin:
         self,
         copied_words: int,
         web_pages: list[WebPageContent] = (),
+        ai_percent: Decimal = Decimal("0.00"),
     ) -> AnalysisReport:
         """
         Misma persistencia que `DocumentAnalysisService.execute` con el
@@ -871,7 +874,7 @@ class SourceExclusionTestMixin:
             total_similarity_percent=similarity.total_similarity_percent,
             internal_similarity_percent=similarity.internal_result.similarity_percent,
             web_similarity_percent=similarity.web_result.web_similarity_percent,
-            ai_probability_percent=Decimal("0.00"),
+            ai_probability_percent=ai_percent,
             ai_detector="spanish-heuristic-v1",
             excluded_sections=[],
             analyzed_content=content,
@@ -1354,3 +1357,87 @@ class ResubmissionWarningTests(SourceExclusionTestMixin, TestCase):
             ],
             ["Trabajo completo"],
         )
+
+
+class RiskLevelIgnoresAiTests(SourceExclusionTestMixin, TestCase):
+    """El riesgo depende solo de la similitud; el % de IA no lo altera."""
+
+    def test_resolve_risk_level_uses_only_similarity(self) -> None:
+        cases = [
+            (Decimal("0.00"), ReportRiskLevel.LOW),
+            (Decimal("14.99"), ReportRiskLevel.LOW),
+            (Decimal("15.00"), ReportRiskLevel.MEDIUM),
+            (Decimal("30.00"), ReportRiskLevel.HIGH),
+            (Decimal("50.00"), ReportRiskLevel.CRITICAL),
+        ]
+        for similarity, expected in cases:
+            with self.subTest(similarity=similarity):
+                self.assertEqual(resolve_risk_level(similarity), expected)
+
+    def test_high_ai_with_no_similarity_is_low_risk(self) -> None:
+        report = self._analyze(copied_words=0, ai_percent=Decimal("95.00"))
+
+        self.assertEqual(report.ai_probability_percent, Decimal("95.00"))
+        self.assertEqual(report.similarity_percent, Decimal("0.00"))
+        self.assertEqual(report.risk_level, ReportRiskLevel.LOW)
+
+    def test_ai_does_not_raise_risk_above_similarity_level(self) -> None:
+        report = self._analyze(
+            copied_words=40,
+            web_pages=[self._web_page(self.copied[:40])],
+            ai_percent=Decimal("100.00"),
+        )
+
+        self.assertEqual(report.similarity_percent, Decimal("20.00"))
+        self.assertEqual(report.risk_level, ReportRiskLevel.MEDIUM)
+
+    def test_recalculation_after_exclusion_ignores_ai(self) -> None:
+        report = self._analyze(
+            copied_words=100,
+            web_pages=[self._web_page(self.copied[:100])],
+            ai_percent=Decimal("90.00"),
+        )
+        self.assertEqual(report.risk_level, ReportRiskLevel.CRITICAL)
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=self._source(report, "Página web").id,
+            reason="Documento de prueba",
+        )
+
+        report.refresh_from_db()
+        self.assertEqual(report.ai_probability_percent, Decimal("90.00"))
+        self.assertEqual(report.risk_level, ReportRiskLevel.LOW)
+
+    def test_high_ai_low_similarity_report_can_be_certified(self) -> None:
+        report = self._analyze(copied_words=0, ai_percent=Decimal("95.00"))
+        self.document.status = DocumentStatus.COMPLETED
+        self.document.save(update_fields=["status"])
+
+        certificate = CertificateGenerationService(
+            issued_by=self.teacher,
+            absolute_base_url="http://testserver/",
+        ).execute(document_id=self.document.id)
+
+        self.assertEqual(certificate.report_id, report.id)
+
+
+class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
+    def test_detail_shows_ai_disclaimer(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+
+        self.assertContains(response, AI_ESTIMATE_DISCLAIMER)
+
+    def test_pdf_shows_ai_disclaimer(self) -> None:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        pdf_bytes = build_highlighted_document_pdf(report=self.report)
+        text = " ".join(
+            page.extract_text() for page in PdfReader(BytesIO(pdf_bytes)).pages
+        )
+
+        self.assertIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))

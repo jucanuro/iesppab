@@ -1161,7 +1161,6 @@ class DocumentAnalysisService:
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
             similarity_percent=total_similarity_percent,
-            ai_probability_percent=ai_probability_percent,
         )
 
         report, _ = AnalysisReport.objects.update_or_create(
@@ -1426,9 +1425,7 @@ class DocumentAnalysisService:
     def _resolve_risk_level(
         self,
         similarity_percent: Decimal,
-        ai_probability_percent: Decimal,
     ) -> str:
         return resolve_risk_level(
             similarity_percent=similarity_percent,
-            ai_probability_percent=ai_probability_percent,
         )

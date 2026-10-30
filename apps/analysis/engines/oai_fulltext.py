@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 import requests
 from bs4 import BeautifulSoup
 from django.db import transaction
+from django.utils import timezone
 
 from apps.analysis.engines.oai_harvester import (
     DC_NS,
@@ -77,6 +78,7 @@ class FullTextOutcome:
     publication_year: int | None = None
     rights: str = ""
     pdf_url: str = ""
+    embargo_end: date | None = None
     content: str = ""
     error_message: str = ""
 
@@ -295,6 +297,7 @@ class OaiFullTextHarvester:
                     "publication_year": outcome.publication_year,
                     "rights": outcome.rights[:255],
                     "pdf_url": outcome.pdf_url,
+                    "embargo_end": outcome.embargo_end,
                     "word_count": (
                         word_count if outcome.status == OaiFullTextStatus.OK else 0
                     ),
@@ -326,7 +329,12 @@ class OaiFullTextHarvester:
 
         rights_values, embargo_end = self._oai_rights(record)
         rights = self._pick_license(rights_values) or self._page_license(page.text)
-        base = {"publication_year": year, "rights": rights, "pdf_url": pdf_url}
+        base = {
+            "publication_year": year,
+            "rights": rights,
+            "pdf_url": pdf_url,
+            "embargo_end": embargo_end,
+        }
 
         if self._is_restricted(rights_values, embargo_end):
             return FullTextOutcome(
@@ -448,11 +456,8 @@ class OaiFullTextHarvester:
         rights: list[str],
         embargo_end: date | None,
     ) -> bool:
-        if embargo_end is not None and embargo_end > date.today():
-            return True
-
         if embargo_end is not None:
-            return False
+            return embargo_end > timezone.localdate()
 
         return any(marker in value for value in rights for marker in _RESTRICTED_RIGHTS)
 

@@ -7,6 +7,7 @@ from collections import Counter
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q, QuerySet
+from django.utils import timezone
 
 from apps.analysis.engines.oai_fulltext import (
     OaiFullTextHarvester,
@@ -34,7 +35,8 @@ class Command(BaseCommand):
         "Descarga el PDF de los registros OAI de un repositorio y guarda su "
         "texto en bloques con huellas, sin conservar el PDF. Es reanudable: "
         "--limite es el total deseado, y al repetir el mismo comando sigue "
-        "donde quedó y reintenta los errores hasta 3 veces."
+        "donde quedó, reintenta los errores hasta 3 veces y los embargos "
+        "ya vencidos."
     )
 
     def add_arguments(self, parser) -> None:
@@ -55,6 +57,20 @@ class Command(BaseCommand):
             help="Expresión regular sobre el título (sin distinguir mayúsculas).",
         )
         parser.add_argument(
+            "--excluir-titulo",
+            default="",
+            help="Expresión regular de títulos que se dejan fuera.",
+        )
+        parser.add_argument(
+            "--excluir-id",
+            nargs="+",
+            default=[],
+            help=(
+                "Identificadores OAI que no deben entrar al corpus (p. ej. "
+                "tesis de control). Falla si alguno no existe o ya está."
+            ),
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Muestra qué se procesaría, sin red y sin escribir nada.",
@@ -63,19 +79,35 @@ class Command(BaseCommand):
     def handle(self, *args, **options) -> None:
         repository = self._repository(options["repositorio"])
         title_filter = options["filtro_titulo"]
+        title_exclusion = options["excluir_titulo"]
+        excluded_ids = options["excluir_id"]
 
-        if title_filter:
+        for pattern in (title_filter, title_exclusion):
             try:
-                re.compile(title_filter)
+                re.compile(pattern)
             except re.error as exc:
-                raise CommandError(f"--filtro-titulo inválido: {exc}") from exc
+                raise CommandError(f"Expresión inválida {pattern!r}: {exc}") from exc
 
-        queryset = self._queryset(repository, title_filter)
+        self._check_excluded_ids(excluded_ids)
+
+        queryset = self._queryset(repository, title_filter).exclude(
+            oai_identifier__in=excluded_ids,
+        )
+
+        if title_exclusion:
+            queryset = queryset.exclude(title__iregex=title_exclusion)
+
         retryable = Q(
             full_text__status=OaiFullTextStatus.ERROR,
             full_text__attempts__lt=MAX_ATTEMPTS,
         )
-        pending = queryset.filter(Q(full_text__isnull=True) | retryable)
+        embargo_expired = Q(
+            full_text__status=OaiFullTextStatus.EMBARGADO,
+            full_text__embargo_end__lte=timezone.localdate(),
+        )
+        pending = queryset.filter(
+            Q(full_text__isnull=True) | retryable | embargo_expired
+        )
         finished_count = queryset.count() - pending.count()
         quota = max(options["limite"] - finished_count, 0)
         records = list(pending.order_by("oai_identifier")[:quota])
@@ -150,6 +182,33 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Bloques: {chunks}. Huellas de texto completo: {fingerprints}."
         )
+
+    def _check_excluded_ids(self, excluded_ids: list[str]) -> None:
+        """
+        Un identificador mal escrito dejaría pasar la tesis sin aviso, y una
+        de control dentro del corpus invalida la medición.
+        """
+        existing = set(
+            OaiRecord.objects.filter(oai_identifier__in=excluded_ids).values_list(
+                "oai_identifier",
+                flat=True,
+            )
+        )
+        unknown = sorted(set(excluded_ids) - existing)
+
+        if unknown:
+            raise CommandError(f"--excluir-id no existe: {', '.join(unknown)}")
+
+        indexed = sorted(
+            OaiFullTextChunk.objects.filter(
+                record__oai_identifier__in=excluded_ids,
+            )
+            .values_list("record__oai_identifier", flat=True)
+            .distinct()
+        )
+
+        if indexed:
+            raise CommandError(f"--excluir-id ya indexado: {', '.join(indexed)}")
 
     def _queryset(
         self,

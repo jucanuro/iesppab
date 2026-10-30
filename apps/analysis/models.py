@@ -287,6 +287,11 @@ class OaiFullText(TimeStampedModel):
         default="",
         verbose_name=_("URL del PDF"),
     )
+    embargo_end = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Fin del embargo"),
+    )
     word_count = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Palabras indexadas"),

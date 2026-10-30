@@ -4,7 +4,7 @@ import importlib.util
 import itertools
 import random
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from io import StringIO
 from types import SimpleNamespace
@@ -4045,6 +4045,7 @@ class OaiFullTextHarvesterTests(TestCase):
         full_text = self._harvest(client)
 
         self.assertEqual(full_text.status, OaiFullTextStatus.EMBARGADO)
+        self.assertEqual(full_text.embargo_end, date(next_year, 1, 1))
         self.assertNotIn(_FakeHarvestClient.PDF_URL, client.urls)
 
     def test_expired_embargo_is_harvested(self) -> None:
@@ -4194,6 +4195,52 @@ class HarvestOaiFullTextCommandTests(TestCase):
             self._call([(OaiFullTextStatus.ERROR, None)] * 8, limite=8)
 
         self.assertEqual(OaiFullText.objects.count(), 5)
+
+    def test_title_exclusion_is_applied(self) -> None:
+        _oai_record(20, title="Educación para la salud")
+
+        seen, _ = self._call(limite=10, excluir_titulo="salud")
+
+        self.assertEqual(len(seen), 4)
+        self.assertNotIn(self.records[0].oai_identifier.replace("/1", "/20"), seen)
+
+    def test_excluded_id_is_never_processed(self) -> None:
+        excluded = self.records[0].oai_identifier
+
+        seen, _ = self._call(limite=10, excluir_id=[excluded])
+
+        self.assertEqual(len(seen), 3)
+        self.assertNotIn(excluded, seen)
+
+    def test_unknown_excluded_id_fails(self) -> None:
+        with self.assertRaises(CommandError):
+            self._call(limite=1, excluir_id=["oai:no-existe:1"])
+
+    def test_already_indexed_excluded_id_fails(self) -> None:
+        OaiFullTextIndexer().index(self.records[0], content=_synthetic_text(31, 200))
+
+        with self.assertRaises(CommandError):
+            self._call(limite=1, excluir_id=[self.records[0].oai_identifier])
+
+    def test_expired_embargo_is_retried_and_future_one_is_not(self) -> None:
+        today = timezone.localdate()
+
+        for record, end in zip(
+            self.records,
+            (today, today + timedelta(days=1), None),
+        ):
+            OaiFullText.objects.create(
+                record=record,
+                status=OaiFullTextStatus.EMBARGADO,
+                embargo_end=end,
+            )
+
+        seen, _ = self._call(limite=4)
+
+        self.assertEqual(
+            seen,
+            [self.records[0].oai_identifier, self.records[3].oai_identifier],
+        )
 
     def test_unknown_repository_fails(self) -> None:
         with self.assertRaises(CommandError):

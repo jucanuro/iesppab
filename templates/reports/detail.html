@@ -312,6 +312,12 @@
                             <span class="rounded-full border border-[#236bfd]/30 px-3 py-1 text-[11px] font-bold text-[#123f9e]" style="background-color:#eef3ff;">
                                 Azul: IA
                             </span>
+
+                            {% if report.common_text_ranges %}
+                                <span class="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600">
+                                    Gris: texto común, no cuenta en el %
+                                </span>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -359,6 +365,9 @@
                             {% elif segment.finding_type == "AI_GENERATED" %}
                                 <span data-mark="ai" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 text-[#123f9e] ring-1 ring-[#236bfd]/30" style="background-color:#e3ecff;"
                                       title="IA {{ segment.confidence_percent }}%">{{ segment.text }}</span>
+                            {% elif segment.finding_type == "COMMON_TEXT" %}
+                                <span class="rounded-sm bg-slate-200 px-1 py-0.5 text-slate-600"
+                                      title="Texto común: lo repiten muchos documentos y no cuenta en el %">{{ segment.text }}</span>
                             {% else %}
                                 {{ segment.text }}
                             {% endif %}

@@ -205,6 +205,18 @@ class AnalysisReport(TimeStampedModel):
         ]
 
     @property
+    def common_text_ranges(self) -> list[tuple[int, int]]:
+        """
+        Rangos de `analyzed_content` marcados como texto común: no suman al %
+        y el visor y el PDF los muestran en gris (salvo que otra fuente los
+        cuente dentro de un tramo propio).
+        """
+        return [
+            (int(start), int(end))
+            for _, _, start, end in (self.span_alignment or {}).get("common_text", [])
+        ]
+
+    @property
     def similarity_level(self) -> str:
         if self.similarity_percent < Decimal("15.00"):
             return "bajo"

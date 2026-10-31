@@ -4,7 +4,7 @@ import heapq
 import re
 import unicodedata
 from bisect import bisect_right
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from uuid import UUID
@@ -133,6 +133,9 @@ class SpanAlignment:
     # Solo las fuentes con alguna palabra cubierta, en el orden en que se
     # alinearon (desempata la atribución).
     sources: list[SourceAlignment] = field(default_factory=list)
+    # Tramos (primera, última palabra) quitados de la cobertura por ser texto
+    # común. No cuentan para el %, pero el reporte los muestra en gris.
+    common_runs: list[tuple[int, int]] = field(default_factory=list)
 
 
 def _percent(part: int, total: int) -> Decimal:
@@ -303,6 +306,92 @@ class SpanSimilarityEngine:
 
         return alignment
 
+    def coverage_runs(self, aligned: SourceAlignment) -> list[tuple[int, int]]:
+        return self._runs(sorted(aligned.coverage))
+
+    def common_text_runs(self, aligned: SourceAlignment) -> list[tuple[int, int]]:
+        """
+        Tramos que se evalúan como texto común: los idénticos antes de unirlos
+        por huecos, porque dos fórmulas distintas separadas por dos palabras
+        forman un tramo que ningún otro documento repite entero. Un bloque con
+        paráfrasis va entero: sus trozos pueden ser de 4 palabras, una sola
+        huella, y cualquiera de esos trozos parecería común.
+        """
+        runs: list[tuple[int, int]] = []
+
+        for first, last in self.coverage_runs(aligned):
+            words = range(first, last + 1)
+
+            if any(index in aligned.fuzzy_words for index in words):
+                runs.append((first, last))
+            else:
+                runs.extend(
+                    self._runs(
+                        [
+                            index
+                            for index in words
+                            if aligned.coverage[index] is not None
+                        ]
+                    )
+                )
+
+        return runs
+
+    def remove_common_text(
+        self,
+        alignment: SpanAlignment,
+        is_common: Callable[[int, int], bool],
+    ) -> None:
+        """
+        Quita de la cobertura de cada fuente los tramos de `common_text_runs`
+        que `is_common` (primera, última palabra) marca como texto común. La
+        decisión es por fuente: si otra fuente cubre esas palabras dentro de
+        un tramo que no es común, ahí sí cuentan. Una fuente sin cobertura
+        sale de la alineación.
+
+        Un hueco es común si lo son los tramos de ambos lados. Con solo uno
+        también sale de la cobertura, sin mostrarse en gris: une dos tramos
+        que ya no están juntos.
+        """
+        common_words: set[int] = set()
+        remaining: list[SourceAlignment] = []
+
+        for aligned in alignment.sources:
+            evaluated = self.common_text_runs(aligned)
+            common = {
+                index
+                for first, last in evaluated
+                if is_common(first, last)
+                for index in range(first, last + 1)
+            }
+            evaluated_words = {
+                index
+                for first, last in evaluated
+                for index in range(first, last + 1)
+            }
+            orphan_gaps: set[int] = set()
+
+            for first, last in self._runs(sorted(set(aligned.coverage) - evaluated_words)):
+                gap = range(first, last + 1)
+                sides = (first - 1 in common) + (last + 1 in common)
+
+                if sides == 2:
+                    common.update(gap)
+                elif sides == 1:
+                    orphan_gaps.update(gap)
+
+            for index in common | orphan_gaps:
+                del aligned.coverage[index]
+                aligned.fuzzy_words.discard(index)
+
+            common_words |= common
+
+            if aligned.coverage:
+                remaining.append(aligned)
+
+        alignment.sources = remaining
+        alignment.common_runs = self._runs(sorted(common_words))
+
     def attribute(
         self,
         content: str,
@@ -417,7 +506,7 @@ class SpanSimilarityEngine:
         """
         return sum(
             self._run_count(aligned, first, last)[1]
-            for first, last in self._runs(sorted(aligned.coverage))
+            for first, last in self.coverage_runs(aligned)
         )
 
     def _run_count(
@@ -861,13 +950,16 @@ class SpanSimilarityEngine:
         extracto de la fuente de cada tramo cubierto. Las posiciones de las
         palabras no se guardan: se recalculan desde `analyzed_content`.
         `details` son metadatos por clave de fuente (OAI, reenvío...).
+        `common_text` son los tramos de texto común como (primera palabra,
+        última palabra, inicio, fin): el visor pinta por offsets y no
+        vuelve a separar el texto en palabras.
         """
         details = details or {}
         sources = []
 
         for aligned in alignment.sources:
             source = aligned.source
-            covered_runs = self._runs(sorted(aligned.coverage))
+            covered_runs = self.coverage_runs(aligned)
             sources.append(
                 {
                     "key": source.key,
@@ -904,6 +996,10 @@ class SpanSimilarityEngine:
             "min_match_words": alignment.min_match_words,
             "countable_word_count": alignment.countable_word_count,
             "sources": sources,
+            "common_text": [
+                [first, last, alignment.words[first][1], alignment.words[last][2]]
+                for first, last in alignment.common_runs
+            ],
         }
 
     def alignment_from_json(

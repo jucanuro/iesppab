@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -240,6 +242,116 @@ class OaiRecord(TimeStampedModel):
         return f"{self.repository_name} - {self.title[:60]}"
 
 
+class OaiFullTextStatus(models.TextChoices):
+    OK = "ok", _("Texto indexado")
+    SIN_PDF = "sin_pdf", _("Sin PDF descargable")
+    ERROR = "error", _("Error")
+    ESCANEADO = "escaneado", _("PDF escaneado")
+    TEXTO_INSUFICIENTE = "texto_insuficiente", _("Texto insuficiente")
+    EMBARGADO = "embargado", _("Con embargo o acceso restringido")
+
+
+class OaiFullText(TimeStampedModel):
+    """
+    Resultado de cosechar el texto completo de un registro OAI. Hay una fila
+    por registro intentado: es lo que permite reanudar la cosecha. El PDF no
+    se guarda; el texto va en `OaiFullTextChunk`.
+    """
+
+    record = models.OneToOneField(
+        OaiRecord,
+        on_delete=models.CASCADE,
+        related_name="full_text",
+        verbose_name=_("Registro OAI"),
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=OaiFullTextStatus.choices,
+        db_index=True,
+        verbose_name=_("Estado"),
+    )
+    publication_year = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Año de publicación"),
+    )
+    rights = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name=_("Licencia"),
+    )
+    pdf_url = models.URLField(
+        max_length=500,
+        blank=True,
+        default="",
+        verbose_name=_("URL del PDF"),
+    )
+    embargo_end = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Fin del embargo"),
+    )
+    word_count = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("Palabras indexadas"),
+    )
+    attempts = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name=_("Intentos"),
+    )
+    error_message = models.TextField(
+        blank=True,
+        default="",
+        verbose_name=_("Detalle"),
+    )
+
+    class Meta:
+        verbose_name = _("Texto completo OAI")
+        verbose_name_plural = _("Textos completos OAI")
+
+    def __str__(self) -> str:
+        return f"{self.record_id} - {self.status}"
+
+
+class OaiFullTextChunk(models.Model):
+    """
+    Bloque contiguo y sin solape del texto completo de un registro OAI: al
+    unir los bloques de posiciones seguidas se recupera el texto. No guarda
+    texto normalizado porque se puede recalcular, y ocuparía otro tanto.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record = models.ForeignKey(
+        OaiRecord,
+        on_delete=models.CASCADE,
+        related_name="full_text_chunks",
+        verbose_name=_("Registro OAI"),
+    )
+    position = models.PositiveIntegerField(
+        verbose_name=_("Posición"),
+    )
+    text = models.TextField(
+        verbose_name=_("Texto"),
+    )
+
+    class Meta:
+        verbose_name = _("Bloque de texto completo OAI")
+        verbose_name_plural = _("Bloques de texto completo OAI")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["record", "position"],
+                name="uniq_oai_chunk_position",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.record_id} - bloque {self.position}"
+
+
+SOURCE_TYPE_OAI_FULLTEXT = "oai_fulltext"
+
+
 class DocumentFingerprint(models.Model):
     """
     Índice invertido de huellas digitales (Winnowing) para búsqueda rápida
@@ -249,7 +361,11 @@ class DocumentFingerprint(models.Model):
     hash = models.BigIntegerField(db_index=True)
     source_type = models.CharField(
         max_length=20,
-        choices=[("internal", "internal"), ("oai", "oai")],
+        choices=[
+            ("internal", "internal"),
+            ("oai", "oai"),
+            (SOURCE_TYPE_OAI_FULLTEXT, SOURCE_TYPE_OAI_FULLTEXT),
+        ],
     )
     source_id = models.UUIDField()
 

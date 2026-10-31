@@ -309,30 +309,82 @@ class SpanSimilarityEngine:
     def coverage_runs(self, aligned: SourceAlignment) -> list[tuple[int, int]]:
         return self._runs(sorted(aligned.coverage))
 
+    def common_text_runs(self, aligned: SourceAlignment) -> list[tuple[int, int]]:
+        """
+        Tramos que se evalúan como texto común: los idénticos antes de unirlos
+        por huecos, porque dos fórmulas distintas separadas por dos palabras
+        forman un tramo que ningún otro documento repite entero. Un bloque con
+        paráfrasis va entero: sus trozos pueden ser de 4 palabras, una sola
+        huella, y cualquiera de esos trozos parecería común.
+        """
+        runs: list[tuple[int, int]] = []
+
+        for first, last in self.coverage_runs(aligned):
+            words = range(first, last + 1)
+
+            if any(index in aligned.fuzzy_words for index in words):
+                runs.append((first, last))
+            else:
+                runs.extend(
+                    self._runs(
+                        [
+                            index
+                            for index in words
+                            if aligned.coverage[index] is not None
+                        ]
+                    )
+                )
+
+        return runs
+
     def remove_common_text(
         self,
         alignment: SpanAlignment,
         is_common: Callable[[int, int], bool],
     ) -> None:
         """
-        Quita de la cobertura de cada fuente los tramos que `is_common`
-        (primera, última palabra) marca como texto común. La decisión es por
-        fuente: si otra fuente cubre esas palabras dentro de un tramo que no
-        es común, ahí sí cuentan. Una fuente sin cobertura sale de la
-        alineación.
+        Quita de la cobertura de cada fuente los tramos de `common_text_runs`
+        que `is_common` (primera, última palabra) marca como texto común. La
+        decisión es por fuente: si otra fuente cubre esas palabras dentro de
+        un tramo que no es común, ahí sí cuentan. Una fuente sin cobertura
+        sale de la alineación.
+
+        Un hueco es común si lo son los tramos de ambos lados. Con solo uno
+        también sale de la cobertura, sin mostrarse en gris: une dos tramos
+        que ya no están juntos.
         """
         common_words: set[int] = set()
         remaining: list[SourceAlignment] = []
 
         for aligned in alignment.sources:
-            for first, last in self.coverage_runs(aligned):
-                if not is_common(first, last):
-                    continue
+            evaluated = self.common_text_runs(aligned)
+            common = {
+                index
+                for first, last in evaluated
+                if is_common(first, last)
+                for index in range(first, last + 1)
+            }
+            evaluated_words = {
+                index
+                for first, last in evaluated
+                for index in range(first, last + 1)
+            }
+            orphan_gaps: set[int] = set()
 
-                for index in range(first, last + 1):
-                    del aligned.coverage[index]
-                    aligned.fuzzy_words.discard(index)
-                    common_words.add(index)
+            for first, last in self._runs(sorted(set(aligned.coverage) - evaluated_words)):
+                gap = range(first, last + 1)
+                sides = (first - 1 in common) + (last + 1 in common)
+
+                if sides == 2:
+                    common.update(gap)
+                elif sides == 1:
+                    orphan_gaps.update(gap)
+
+            for index in common | orphan_gaps:
+                del aligned.coverage[index]
+                aligned.fuzzy_words.discard(index)
+
+            common_words |= common
 
             if aligned.coverage:
                 remaining.append(aligned)

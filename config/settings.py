@@ -541,8 +541,9 @@ SIMILARITY_MAX_CANDIDATES = env_int("SIMILARITY_MAX_CANDIDATES", 1000)
 # Texto común (solo motor span): un tramo con al menos
 # SIMILARITY_COMMON_TEXT_MIN_RATIO de sus huellas presentes en
 # >= SIMILARITY_COMMON_TEXT_MIN_DOCS documentos distintos del corpus no cuenta
-# para el % y se muestra en gris. 0 lo apaga.
-SIMILARITY_COMMON_TEXT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_MIN_DOCS", 0)
+# para el % y se muestra en gris. Con 5 cae la plantilla de 7-10 tesis
+# (Cronbach, V de Aiken); con 20 casi nada. 0 lo apaga.
+SIMILARITY_COMMON_TEXT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_MIN_DOCS", 5)
 SIMILARITY_COMMON_TEXT_MIN_RATIO = float(
     os.getenv("SIMILARITY_COMMON_TEXT_MIN_RATIO", "0.7")
 )

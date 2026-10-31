@@ -2491,6 +2491,79 @@ class SpanCommonTextRemovalTests(SimpleTestCase):
         self.assertEqual(result.similarity_percent, Decimal("50.00"))
         self.assertEqual([item.source.key for item in result.sources], ["copia"])
 
+    def _gap_alignment(self):
+        self.left = _synthetic_text(41, 20)
+        self.right = _synthetic_text(42, 20)
+        self.gap_content = f"{self.left} en los {self.right} {_synthetic_text(43, 58)}"
+        engine = SpanSimilarityEngine(min_match_words=8, max_gap_words=2)
+        alignment = engine.align(
+            self.gap_content,
+            [_span_source(f"{self.left} sin hueco {self.right}")],
+        )
+
+        return engine, alignment
+
+    def test_runs_joined_by_a_gap_are_evaluated_apart(self) -> None:
+        engine, alignment = self._gap_alignment()
+
+        self.assertEqual(engine.coverage_runs(alignment.sources[0]), [(0, 41)])
+        self.assertEqual(
+            engine.common_text_runs(alignment.sources[0]),
+            [(0, 19), (22, 41)],
+        )
+
+    def test_gap_between_two_common_runs_is_common(self) -> None:
+        engine, alignment = self._gap_alignment()
+
+        engine.remove_common_text(alignment, lambda first, last: True)
+        result = engine.attribute(self.gap_content, alignment)
+
+        self.assertEqual(alignment.common_runs, [(0, 41)])
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+
+    def test_gap_next_to_one_common_run_leaves_without_counting(self) -> None:
+        engine, alignment = self._gap_alignment()
+
+        engine.remove_common_text(alignment, lambda first, last: first == 0)
+        result = engine.attribute(self.gap_content, alignment)
+
+        self.assertEqual(alignment.common_runs, [(0, 19)])
+        self.assertEqual(engine.coverage_runs(alignment.sources[0]), [(22, 41)])
+        self.assertEqual(result.similarity_percent, Decimal("20.00"))
+
+    def test_gap_between_runs_that_are_not_common_stays(self) -> None:
+        engine, alignment = self._gap_alignment()
+
+        engine.remove_common_text(alignment, lambda first, last: False)
+        result = engine.attribute(self.gap_content, alignment)
+
+        self.assertEqual(alignment.common_runs, [])
+        self.assertEqual(result.similarity_percent, Decimal("42.00"))
+
+    def test_paraphrase_block_is_evaluated_whole(self) -> None:
+        words = _synthetic_text(44, 28).split()
+        changed = list(words)
+
+        for index in range(5, 28, 6):
+            changed[index] = "cambiada"
+
+        content = f"{' '.join(changed)} {_synthetic_text(45, 72)}"
+        engine = SpanSimilarityEngine(
+            min_match_words=8,
+            max_gap_words=2,
+            min_short_run=4,
+            min_fuzzy_span=15,
+            min_fuzzy_ratio=0.7,
+        )
+        alignment = engine.align(content, [_span_source(" ".join(words))])
+        aligned = alignment.sources[0]
+
+        self.assertTrue(aligned.fuzzy_words)
+        self.assertEqual(
+            engine.common_text_runs(aligned),
+            engine.coverage_runs(aligned),
+        )
+
 
 class CommonTextFilterTests(TestCase):
     def setUp(self) -> None:
@@ -2598,6 +2671,68 @@ class CommonTextFilterTests(TestCase):
             [item.source.source_id for item in result.span_result.sources],
             [whole.id],
         )
+
+    def _run_on(self, content: str, min_documents: int):
+        self.content = content
+
+        return self._run(min_documents=min_documents)
+
+    def test_two_formulas_joined_by_a_gap_are_common(self) -> None:
+        # Tesis JASMIN: "la competencia resuelve problemas [...] en los niños
+        # y niñas de 4 años": ninguna fuente repite las dos fórmulas juntas,
+        # pero cada una está en muchas.
+        left = _synthetic_text(61, 20)
+        right = _synthetic_text(62, 20)
+        self._records_with(3, left, first_seed=300)
+        self._records_with(3, right, first_seed=310)
+        self._records_with(1, f"{left} sin hueco {right}", first_seed=320)
+
+        result = self._run_on(
+            f"{left} en los {right} {_synthetic_text(63, 58)}",
+            min_documents=3,
+        )
+
+        self.assertEqual(result.total_similarity_percent, Decimal("0.00"))
+        self.assertEqual(
+            [run[:2] for run in result.span_alignment["common_text"]],
+            [[0, 41]],
+        )
+
+    def test_passage_with_one_common_side_keeps_the_other_side(self) -> None:
+        left = _synthetic_text(61, 20)
+        right = _synthetic_text(62, 20)
+        self._records_with(3, left, first_seed=300)
+        source = self._records_with(1, f"{left} sin hueco {right}", first_seed=320)[0]
+
+        result = self._run_on(
+            f"{left} en los {right} {_synthetic_text(63, 58)}",
+            min_documents=3,
+        )
+
+        self.assertEqual(result.total_similarity_percent, Decimal("20.00"))
+        self.assertEqual(
+            [item.source.source_id for item in result.span_result.sources],
+            [source.id],
+        )
+
+    def test_copied_passage_with_a_changed_word_still_counts(self) -> None:
+        left = _synthetic_text(61, 20)
+        right = _synthetic_text(62, 20)
+        self._records_with(1, f"{left} sin hueco {right}", first_seed=320)
+
+        result = self._run_on(
+            f"{left} en los {right} {_synthetic_text(63, 58)}",
+            min_documents=3,
+        )
+
+        self.assertEqual(result.total_similarity_percent, Decimal("42.00"))
+        self.assertEqual(result.span_alignment["common_text"], [])
+
+    @override_settings()
+    def test_default_is_five_documents(self) -> None:
+        del settings.SIMILARITY_COMMON_TEXT_MIN_DOCS
+
+        self.assertEqual(CommonTextFilter().min_documents, 5)
 
     def test_ratio_allows_a_variation_inside_the_run(self) -> None:
         # Los demás documentos repiten el tramo con el final cambiado.

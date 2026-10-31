@@ -36,6 +36,10 @@ class CommonTextFilter:
     palabras: el título de una sola tesis puede tener todas sus huellas
     frecuentes sin que nadie más repita el título completo.
 
+    Los tramos son los de `SpanSimilarityEngine.common_text_runs`: dos fórmulas
+    unidas por un hueco se evalúan por separado, y si ambas son comunes el
+    tramo unido también.
+
     Winnowing elige una huella por ventana mirando solo esa ventana, así que
     las huellas del texto de un tramo son huellas indexadas de cualquier
     documento que contenga ese mismo texto.
@@ -54,7 +58,7 @@ class CommonTextFilter:
         self.min_documents = (
             min_documents
             if min_documents is not None
-            else getattr(settings, "SIMILARITY_COMMON_TEXT_MIN_DOCS", 0)
+            else getattr(settings, "SIMILARITY_COMMON_TEXT_MIN_DOCS", 5)
         )
         self.min_ratio = (
             min_ratio
@@ -80,7 +84,7 @@ class CommonTextFilter:
         hashes_by_run: dict[tuple[int, int], set[int]] = {}
 
         for aligned in alignment.sources:
-            for first, last in engine.coverage_runs(aligned):
+            for first, last in engine.common_text_runs(aligned):
                 if (first, last) not in hashes_by_run:
                     hashes_by_run[(first, last)] = self._run_hashes(
                         content[alignment.words[first][1] : alignment.words[last][2]]

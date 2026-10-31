@@ -20,6 +20,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
+from apps.analysis.common_text import CommonTextFilter
 from apps.analysis.engines import ai_segments
 from apps.analysis.engines import perplexity_detector as perplexity_module
 from apps.analysis.engines.exclusions import calculate_similarity_percent
@@ -2440,6 +2441,228 @@ class CandidateRetrieverTests(TestCase):
 
 
 @override_settings(OAI_HARVEST_ENABLED=False, WEB_ANALYSIS_ENABLED=False)
+class SpanCommonTextRemovalTests(SimpleTestCase):
+    def test_common_run_is_removed_and_kept_for_the_report(self) -> None:
+        template = _synthetic_text(41, 20)
+        copied = _synthetic_text(42, 20)
+        content = f"{template} {_synthetic_text(43, 20)} {copied}"
+        engine = SpanSimilarityEngine(min_match_words=8, max_gap_words=2)
+        alignment = engine.align(content, [_span_source(f"{template} x {copied}")])
+
+        engine.remove_common_text(alignment, lambda first, last: first == 0)
+        result = engine.attribute(content, alignment)
+
+        self.assertEqual(result.similarity_percent, Decimal("33.33"))
+        self.assertEqual(alignment.common_runs, [(0, 19)])
+        self.assertEqual(
+            engine.alignment_to_json(alignment)["common_text"],
+            [[0, 19, 0, len(template)]],
+        )
+
+    def test_source_with_only_common_text_leaves_the_alignment(self) -> None:
+        template = _synthetic_text(41, 20)
+        content = f"{template} {_synthetic_text(43, 20)}"
+        engine = SpanSimilarityEngine(min_match_words=8, max_gap_words=2)
+        alignment = engine.align(content, [_span_source(template)])
+
+        engine.remove_common_text(alignment, lambda first, last: True)
+        result = engine.attribute(content, alignment)
+
+        self.assertEqual(alignment.sources, [])
+        self.assertEqual(result.similarity_percent, Decimal("0.00"))
+        self.assertEqual(result.sources, [])
+
+    def test_other_source_still_counts_the_words_in_a_longer_run(self) -> None:
+        template = _synthetic_text(41, 20)
+        passage = f"{_synthetic_text(42, 80)} {template}"
+        content = f"{passage} {_synthetic_text(43, 100)}"
+        engine = SpanSimilarityEngine(min_match_words=8, max_gap_words=2)
+        alignment = engine.align(
+            content,
+            [
+                _span_source(template, key="plantilla"),
+                _span_source(passage, key="copia"),
+            ],
+        )
+
+        engine.remove_common_text(alignment, lambda first, last: first == 80)
+        result = engine.attribute(content, alignment)
+
+        self.assertEqual(result.similarity_percent, Decimal("50.00"))
+        self.assertEqual([item.source.key for item in result.sources], ["copia"])
+
+
+class CommonTextFilterTests(TestCase):
+    def setUp(self) -> None:
+        self.institution = Institution.objects.create(
+            name="Instituto de prueba",
+            slug="instituto-de-prueba",
+        )
+        self.student = self._user("alumno1")
+        self.current = make_test_document(
+            self.institution,
+            self.student,
+            title="Documento actual",
+        )
+        self.template = _synthetic_text(51, 40)
+        self.original = _synthetic_text(52, 60)
+        self.content = f"{self.template} {self.original}"
+
+    def _user(self, username: str) -> User:
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="clave-segura-123",
+            role=UserRole.STUDENT,
+            institution=self.institution,
+        )
+
+    def _records_with(self, count: int, text: str, first_seed: int = 100) -> list:
+        records = []
+
+        for offset in range(count):
+            seed = first_seed + offset
+            record = _oai_record(seed)
+            OaiFullTextIndexer().index(
+                record,
+                content=f"{_synthetic_text(seed, 100)} {text}",
+            )
+            records.append(record)
+
+        return records
+
+    def _internal_with(self, owner: User, text: str, title: str) -> None:
+        DocumentKnowledgeIndexer().index(
+            DocumentText(
+                document=make_test_document(self.institution, owner, title=title)
+            ),
+            content=f"{text} {_synthetic_text(sum(map(ord, title)), 100)}",
+        )
+
+    def _run(self, min_documents: int):
+        with override_settings(SIMILARITY_COMMON_TEXT_MIN_DOCS=min_documents):
+            service = DocumentAnalysisService(requested_by=self.student)
+
+        return service._run_similarity(
+            document=self.current,
+            analysis_content=self.content,
+            quoted_ranges=[],
+            collect_web_pages=list,
+            engine="span",
+        )
+
+    def test_text_shared_by_enough_documents_does_not_count(self) -> None:
+        self._records_with(3, self.template)
+
+        result = self._run(min_documents=3)
+
+        self.assertEqual(result.total_similarity_percent, Decimal("0.00"))
+        self.assertEqual(result.span_result.sources, [])
+        self.assertEqual(
+            result.span_alignment["common_text"],
+            [[0, 39, 0, len(self.template)]],
+        )
+
+    def test_text_shared_by_too_few_documents_counts(self) -> None:
+        self._records_with(2, self.template)
+
+        result = self._run(min_documents=3)
+
+        self.assertEqual(result.total_similarity_percent, Decimal("40.00"))
+        self.assertEqual(result.span_alignment["common_text"], [])
+
+    def test_zero_turns_the_filter_off(self) -> None:
+        self._records_with(3, self.template)
+
+        result = self._run(min_documents=0)
+
+        self.assertEqual(result.total_similarity_percent, Decimal("40.00"))
+        self.assertEqual(result.span_alignment["common_text"], [])
+
+    def test_frequent_fingerprints_spread_over_documents_are_not_common(self) -> None:
+        # Cada huella está en 3 documentos, pero solo la fuente tiene el
+        # tramo entero: es lo que le pasa al título de una tesis, hecho de
+        # 4-gramas frecuentes. Los trozos sí son comunes en sus fuentes, pero
+        # el tramo entero sigue contando para la fuente que lo tiene.
+        words = self.template.split()
+        whole = self._records_with(1, self.template)[0]
+
+        for index, start in enumerate((0, 13, 26)):
+            piece = " ".join(words[start : start + 14])
+            self._records_with(2, piece, first_seed=200 + 10 * index)
+
+        result = self._run(min_documents=3)
+
+        self.assertEqual(result.total_similarity_percent, Decimal("40.00"))
+        self.assertEqual(
+            [item.source.source_id for item in result.span_result.sources],
+            [whole.id],
+        )
+
+    def test_ratio_allows_a_variation_inside_the_run(self) -> None:
+        # Los demás documentos repiten el tramo con el final cambiado.
+        words = self.template.split()
+        self._records_with(1, self.template)
+        self._records_with(2, " ".join(words[:32]), first_seed=120)
+
+        result = self._run(min_documents=3)
+
+        self.assertEqual(result.total_similarity_percent, Decimal("0.00"))
+
+    def test_versions_of_one_owner_count_as_one_document(self) -> None:
+        other = self._user("alumno2")
+
+        for index in range(3):
+            self._internal_with(other, self.template, f"Versión {index}")
+
+        self.assertEqual(
+            self._run(min_documents=2).total_similarity_percent,
+            Decimal("40.00"),
+        )
+
+        self._internal_with(self._user("alumno3"), self.template, "Otra tesis")
+
+        self.assertEqual(
+            self._run(min_documents=2).total_similarity_percent,
+            Decimal("0.00"),
+        )
+
+    def test_own_documents_do_not_count(self) -> None:
+        self._records_with(1, self.template)
+        self._internal_with(self.student, self.template, "Versión anterior")
+
+        self.assertEqual(
+            self._run(min_documents=2).total_similarity_percent,
+            Decimal("40.00"),
+        )
+
+    def test_summary_and_full_text_of_a_record_are_one_document(self) -> None:
+        record = self._records_with(1, self.template)[0]
+        block_ids = record.full_text_chunks.values_list("id", flat=True)
+        DocumentFingerprint.objects.bulk_create(
+            DocumentFingerprint(hash=value, source_type="oai", source_id=record.id)
+            for value in DocumentFingerprint.objects.filter(
+                source_id__in=block_ids,
+            ).values_list("hash", flat=True)
+        )
+
+        self.assertEqual(
+            self._run(min_documents=2).total_similarity_percent,
+            Decimal("40.00"),
+        )
+
+    @override_settings(OAI_HARVEST_ENABLED=False)
+    def test_oai_does_not_count_when_it_is_disabled(self) -> None:
+        self._records_with(3, self.template)
+        other = self._user("alumno2")
+        self._internal_with(other, self.template, "Tesis interna")
+
+        self.assertEqual(
+            self._run(min_documents=2).total_similarity_percent,
+            Decimal("40.00"),
+        )
+
+
 class SpanEngineServiceTests(TestCase):
     def setUp(self) -> None:
         self.institution = Institution.objects.create(

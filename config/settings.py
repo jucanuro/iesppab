@@ -536,7 +536,16 @@ SIMILARITY_MAX_DOCUMENT_FREQUENCY = env_int(
 )
 
 # Documentos internos + registros OAI que pasan a la alineación.
-SIMILARITY_MAX_CANDIDATES = env_int("SIMILARITY_MAX_CANDIDATES", 200)
+SIMILARITY_MAX_CANDIDATES = env_int("SIMILARITY_MAX_CANDIDATES", 1000)
+
+# Texto común (solo motor span): un tramo con al menos
+# SIMILARITY_COMMON_TEXT_MIN_RATIO de sus huellas presentes en
+# >= SIMILARITY_COMMON_TEXT_MIN_DOCS documentos distintos del corpus no cuenta
+# para el % y se muestra en gris. 0 lo apaga.
+SIMILARITY_COMMON_TEXT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_MIN_DOCS", 0)
+SIMILARITY_COMMON_TEXT_MIN_RATIO = float(
+    os.getenv("SIMILARITY_COMMON_TEXT_MIN_RATIO", "0.7")
+)
 
 # Repositorios con endpoint OAI-PMH confirmado manualmente (verb=Identify
 # respondió con <Identify> o <error> válido, probado en este orden:

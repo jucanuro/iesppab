@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from apps.accounts.models import User, UserRole
@@ -1170,6 +1170,86 @@ class SourceExclusionRecalculationTests(SourceExclusionTestMixin, TestCase):
 
         self.assertIn("FUENTES EXCLUIDAS: 1", text)
         self.assertIn("Motivo: Documento de prueba", text)
+
+
+class CommonTextReportTests(SourceExclusionTestMixin, TestCase):
+    """
+    50 palabras repetidas por dos fuentes (texto común con N=2) y 50 más
+    copiadas de una sola.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        template, copied = self.copied[:50], self.copied[50:100]
+        self._internal_source(template, "Fuente de plantilla")
+        other_author = self._user("alumno3", UserRole.STUDENT, self.institution)
+        source = self._internal_source(template, "Otra plantilla")
+        source.owner = other_author
+        source.save(update_fields=["owner"])
+        self._internal_source(copied, "Fuente copiada")
+
+    def _common_report(self) -> AnalysisReport:
+        with override_settings(SIMILARITY_COMMON_TEXT_MIN_DOCS=2):
+            return self._analyze(copied_words=100)
+
+    def test_common_text_is_left_out_and_stored(self) -> None:
+        report = self._common_report()
+        end = len(" ".join(self.copied[:50]))
+
+        self.assertEqual(report.similarity_percent, Decimal("25.00"))
+        self.assertEqual(report.common_text_ranges, [(0, end)])
+        self.assertEqual(
+            list(report.sources.values_list("title", flat=True)),
+            ["Fuente copiada"],
+        )
+
+    def test_recalculation_does_not_bring_common_text_back(self) -> None:
+        report = self._common_report()
+        source = self._source(report, "Fuente copiada")
+
+        ReportSourceExclusionService(requested_by=self.teacher).exclude(
+            document_id=self.document.id,
+            source_id=source.id,
+            reason="Fuente autorizada",
+        )
+
+        self.assertEqual(self._percents(report)[0], Decimal("0.00"))
+        self.assertEqual(len(report.common_text_ranges), 1)
+
+    def test_viewer_marks_common_text_in_grey(self) -> None:
+        report = self._common_report()
+        self.client.force_login(self.teacher)
+
+        response = self.client.get(
+            reverse("reports:detail", args=[self.document.id])
+        )
+
+        self.assertContains(response, "Gris: texto común")
+        grey = [
+            segment.text
+            for segment in response.context["highlighted_segments"]
+            if segment.finding_type == "COMMON_TEXT"
+        ]
+        self.assertEqual(grey, [report.analyzed_content[:report.common_text_ranges[0][1]]])
+
+    def test_pdf_marks_common_text(self) -> None:
+        report = self._common_report()
+        builder = _HighlightedDocumentPdfBuilder(report=report)
+
+        markup, _, _ = builder._render_body_markup(
+            content=report.analyzed_content,
+            findings=list(report.findings.all()),
+            sources_by_id={source.id: source for source in report.sources.all()},
+        )
+
+        self.assertIn(builder.COMMON_TEXT_BACKGROUND, markup)
+        self.assertTrue(build_highlighted_document_pdf(report).startswith(b"%PDF"))
+
+    def test_report_without_common_text_key_has_no_ranges(self) -> None:
+        report = self._analyze(copied_words=100)
+        report.span_alignment.pop("common_text")
+
+        self.assertEqual(report.common_text_ranges, [])
 
 
 class SourceExclusionPermissionTests(SourceExclusionTestMixin, TestCase):

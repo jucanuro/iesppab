@@ -588,6 +588,28 @@ def split_similarity_around_exclusions(
     return pieces
 
 
+# Tipo de segmento del visor y del PDF: no es un hallazgo (`FindingType`).
+COMMON_TEXT_SEGMENT = "COMMON_TEXT"
+
+
+def split_plain_text_around_common(
+    start: int,
+    end: int,
+    common_ranges: list[tuple[int, int]],
+) -> list[tuple[int, int, bool]]:
+    """
+    Parte un tramo sin hallazgos en piezas (inicio, fin, es texto común).
+    """
+    return [
+        (piece_start, piece_end, not outside)
+        for piece_start, piece_end, outside in split_similarity_around_exclusions(
+            start=start,
+            end=end,
+            excluded_ranges=common_ranges,
+        )
+    ]
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -618,6 +640,8 @@ class _HighlightedDocumentPdfBuilder:
     }
     AI_BACKGROUND = "#E3ECFF"
     AI_TEXT_COLOR = "#123F9E"
+    COMMON_TEXT_BACKGROUND = "#E2E8F0"
+    COMMON_TEXT_COLOR = "#475569"
 
     # Colores para numerar las fuentes primarias (chip en el texto + fila en
     # la lista), al estilo de un informe de originalidad.
@@ -794,6 +818,12 @@ class _HighlightedDocumentPdfBuilder:
                     f"{escaped}</span>"
                 )
 
+            elif finding_type == COMMON_TEXT_SEGMENT:
+                parts.append(
+                    f'<span backColor="{self.COMMON_TEXT_BACKGROUND}" '
+                    f'color="{self.COMMON_TEXT_COLOR}">{escaped}</span>'
+                )
+
             else:
                 parts.append(escaped)
 
@@ -815,6 +845,21 @@ class _HighlightedDocumentPdfBuilder:
             return []
 
         excluded_ranges = self.report.excluded_quote_ranges
+        common_ranges = self.report.common_text_ranges
+
+        def plain(start: int, end: int) -> list[tuple[str, str | None, None]]:
+            return [
+                (
+                    content[piece_start:piece_end],
+                    COMMON_TEXT_SEGMENT if common else None,
+                    None,
+                )
+                for piece_start, piece_end, common in split_plain_text_around_common(
+                    start=start,
+                    end=end,
+                    common_ranges=common_ranges,
+                )
+            ]
 
         valid_findings = sorted(
             [
@@ -837,7 +882,7 @@ class _HighlightedDocumentPdfBuilder:
                 continue
 
             if cursor < start:
-                segments.append((content[cursor:start], None, None))
+                segments.extend(plain(cursor, start))
 
             if finding.finding_type == FindingType.SIMILARITY:
                 for piece_start, piece_end, painted in (
@@ -866,7 +911,7 @@ class _HighlightedDocumentPdfBuilder:
             cursor = end
 
         if cursor < len(content):
-            segments.append((content[cursor:], None, None))
+            segments.extend(plain(cursor, len(content)))
 
         return segments
 
@@ -970,6 +1015,11 @@ class _HighlightedDocumentPdfBuilder:
                         + (
                             f" Excluidas: {self.report.excluded_options_label}."
                             if self.report.excluded_options_label
+                            else ""
+                        )
+                        + (
+                            " En gris: texto común, no cuenta en el %."
+                            if self.report.common_text_ranges
                             else ""
                         ),
                         styles["legend_note"],

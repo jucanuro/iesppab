@@ -274,7 +274,7 @@ class CandidateRetriever:
         self.max_candidates = (
             max_candidates
             if max_candidates is not None
-            else getattr(settings, "SIMILARITY_MAX_CANDIDATES", 200)
+            else getattr(settings, "SIMILARITY_MAX_CANDIDATES", 1000)
         )
         self.normalizer = InternalSimilarityEngine()
 

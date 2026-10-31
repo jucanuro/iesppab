@@ -31,6 +31,7 @@ from apps.reports.models import (
     ReportSource,
 )
 from apps.reports.services import (
+    COMMON_TEXT_SEGMENT,
     HighlightedDocumentPdfError,
     ReportSourceExclusionError,
     ReportSourceExclusionPermissionError,
@@ -38,6 +39,7 @@ from apps.reports.services import (
     build_highlighted_document_pdf,
     resolve_analyzed_content,
     resubmission_warning_sources,
+    split_plain_text_around_common,
     split_similarity_around_exclusions,
 )
 from apps.reports.suggestions import build_improvement_suggestions
@@ -94,6 +96,7 @@ class ReportDetailView(LoginRequiredMixin, View):
                     content=resolve_analyzed_content(report),
                     findings=list(report.findings.all()),
                     excluded_ranges=report.excluded_quote_ranges,
+                    common_ranges=report.common_text_ranges,
                 )
             else:
                 analysis_job = self._get_latest_job(document=document)
@@ -248,6 +251,7 @@ class ReportDetailView(LoginRequiredMixin, View):
         content: str,
         findings: list[ReportFinding],
         excluded_ranges: list[tuple[int, int]] | None = None,
+        common_ranges: list[tuple[int, int]] | None = None,
     ) -> list[HighlightSegment]:
         """
         Convierte el texto plano en segmentos resaltables.
@@ -257,6 +261,8 @@ class ReportDetailView(LoginRequiredMixin, View):
         - IA en azul.
         - Si hay solapamiento, se respeta el primer hallazgo válido.
         - Las citas excluidas del % no se pintan como similitud.
+        - El texto común, que tampoco suma al %, va en gris si ningún
+          hallazgo lo cubre.
         """
 
         if not content:
@@ -272,6 +278,20 @@ class ReportDetailView(LoginRequiredMixin, View):
             key=lambda item: item.start_offset,
         )
 
+        def plain(start: int, end: int) -> list[HighlightSegment]:
+            return [
+                HighlightSegment(
+                    text=content[piece_start:piece_end],
+                    finding_type=COMMON_TEXT_SEGMENT if common else None,
+                    confidence_percent=None,
+                )
+                for piece_start, piece_end, common in split_plain_text_around_common(
+                    start=start,
+                    end=end,
+                    common_ranges=common_ranges or [],
+                )
+            ]
+
         segments: list[HighlightSegment] = []
         cursor = 0
 
@@ -283,13 +303,7 @@ class ReportDetailView(LoginRequiredMixin, View):
                 continue
 
             if cursor < start:
-                segments.append(
-                    HighlightSegment(
-                        text=content[cursor:start],
-                        finding_type=None,
-                        confidence_percent=None,
-                    )
-                )
+                segments.extend(plain(cursor, start))
 
             if finding.finding_type == FindingType.SIMILARITY:
                 pieces = split_similarity_around_exclusions(
@@ -314,13 +328,7 @@ class ReportDetailView(LoginRequiredMixin, View):
             cursor = end
 
         if cursor < len(content):
-            segments.append(
-                HighlightSegment(
-                    text=content[cursor:],
-                    finding_type=None,
-                    confidence_percent=None,
-                )
-            )
+            segments.extend(plain(cursor, len(content)))
 
         return segments
 

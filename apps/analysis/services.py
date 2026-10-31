@@ -16,6 +16,7 @@ from django.db.models import Count
 from django.utils import timezone
 
 from apps.accounts.models import User
+from apps.analysis.common_text import CommonTextFilter
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
 from apps.analysis.engines.exclusions import calculate_similarity_percent
 from apps.analysis.engines.fingerprint import compute_fingerprints
@@ -156,6 +157,7 @@ class DocumentAnalysisService:
         self.web_similarity_engine = WebSimilarityEngine()
         self.candidate_retriever = CandidateRetriever()
         self.span_similarity_engine = SpanSimilarityEngine()
+        self.common_text_filter = CommonTextFilter()
 
         self.ai_detector = SpanishAIDetector()
         self.perplexity_detector = SpanishPerplexityDetector()
@@ -827,6 +829,12 @@ class DocumentAnalysisService:
                 sources=retrieved.to_span_sources()
                 + self._web_span_sources(web_pages),
                 excluded_ranges=quoted_ranges,
+            )
+            self.common_text_filter.apply(
+                engine=self.span_similarity_engine,
+                content=analysis_content,
+                alignment=alignment,
+                document=document,
             )
             span_result = self.span_similarity_engine.attribute(
                 content=analysis_content,

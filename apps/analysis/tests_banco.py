@@ -15,6 +15,7 @@ from apps.analysis.banco.calificador import (
     EngineOutput,
     align_words,
     baseline_from_output,
+    canonical_url,
     case_word_labels,
     score_case,
     summarize,
@@ -277,7 +278,7 @@ class BankScorerTests(SimpleTestCase):
         self.assertEqual(score.source_recall, Decimal("100.0"))
         self.assertEqual(score.new_false_positive_words, 2)
         self.assertEqual(score.baseline_words_marked_again, 2)
-        self.assertEqual(score.extra_sources, ["web:https://otra.pe"])
+        self.assertEqual(score.extra_sources, ["web:otra.pe"])
         self.assertEqual(score.missed_sources, [])
 
     def test_quoted_inserted_words_do_not_count(self) -> None:
@@ -327,3 +328,65 @@ class BankScorerTests(SimpleTestCase):
         summary = summarize([score])
         self.assertIn("instituto.pdf", summary)
         self.assertEqual(summary["instituto.pdf"]["recall_palabras"], "83.3")
+
+
+class CanonicalUrlTests(SimpleTestCase):
+    def assertSame(self, left: str, right: str) -> None:
+        self.assertEqual(canonical_url(left), canonical_url(right))
+
+    def test_equivalent_urls_are_the_same_source(self) -> None:
+        self.assertSame(
+            "https://revistamerito.org/index.php/merito/article/view/1869",
+            "https://revistamerito.org/index.php/merito/article/download/1869/3558/8028",
+        )
+        self.assertSame("http://www.minedu.gob.pe/eib/", "https://minedu.gob.pe/eib")
+        self.assertSame(
+            "https://repositorio.ucv.edu.pe/handle/20.500.12692/99635",
+            "https://repositorio.ucv.edu.pe/bitstream/handle/20.500.12692/99635/Tesis.pdf?sequence=1",
+        )
+        self.assertSame("https://ejemplo.pe/nota?utm_source=x#arriba", "https://ejemplo.pe/nota")
+        self.assertSame(
+            "https://scielo.org.bo/scielo.php?script=sci_arttext&pid=S2616-79642023000301423",
+            "https://www.scielo.org.bo/scielo.php?pid=S2616-79642023000301423&script=sci_abstract",
+        )
+
+    def test_different_documents_stay_apart(self) -> None:
+        self.assertNotEqual(
+            canonical_url("https://revistamerito.org/index.php/merito/article/view/1869"),
+            canonical_url("https://revistamerito.org/index.php/merito/article/view/1870"),
+        )
+        self.assertNotEqual(
+            canonical_url("https://dialnet.unirioja.es/servlet/articulo?codigo=8588035"),
+            canonical_url("https://dialnet.unirioja.es/servlet/articulo?codigo=7398049"),
+        )
+        self.assertNotEqual(
+            canonical_url("https://www.bebegenial.com/cuentos-infantiles/"),
+            canonical_url("https://www.bebegenial.com/blog/habito-de-lectura-primera-infancia/"),
+        )
+
+    def test_scorer_counts_download_link_as_expected_source(self) -> None:
+        insertion = Insertion(
+            source_kind="web",
+            source_key="web:https://revista.pe/index.php/r/article/view/12",
+            source_title="Artículo",
+            text="Texto copiado de otra revista aquí.",
+        )
+        base = "Uno dos tres cuatro.\n\nCinco seis siete ocho."
+        content, segments = splice(base, [insertion], random.Random(0))
+        case = BankCase(
+            id="web_01", category="web", base_id="b", excerpt=0,
+            base_text=base, content=content, segments=segments, insertions=[insertion],
+        )
+        output = EngineOutput(
+            analyzed_text=content,
+            marked_ranges=ranges_of(content, "Texto copiado de otra revista aquí"),
+            quoted_ranges=[],
+            source_keys={"web:http://www.revista.pe/index.php/r/article/download/12/30/7/"},
+            percent=Decimal("40"),
+            seconds=0.1,
+        )
+        score = score_case(case, output, Baseline(frozenset(), frozenset(), Decimal("0")))
+
+        self.assertEqual(score.source_recall, Decimal("100.0"))
+        self.assertEqual(score.extra_sources, [])
+        self.assertEqual(score.missed_sources, [])

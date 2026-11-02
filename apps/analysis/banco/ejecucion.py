@@ -429,17 +429,55 @@ def load_bank(bank_dir: Path) -> tuple[dict, list[BankCase]]:
 # --- 4. correr --------------------------------------------------------------
 
 
+class CountingSearchClient:
+    """
+    Envuelve el cliente de Brave para contar consultas: las que salieron de
+    la caché y las que sí llamaron a la API (las que se pagan).
+    """
+
+    def __init__(self, client):
+        self.client = client
+        self.total = 0
+        self.cached = 0
+
+    def search(self, query: str, count: int = 5):
+        from apps.analysis import web_cache
+
+        cleaned = self.client._clean_query(query)
+        if cleaned:
+            self.total += 1
+            key = web_cache.search_cache_key(
+                query=cleaned, count=min(count, 10),
+                country=self.client.country, search_lang=self.client.search_lang,
+            )
+            if web_cache.get_search_results(key) is not None:
+                self.cached += 1
+        return self.client.search(query=query, count=count)
+
+    def usage(self) -> dict[str, int]:
+        return {"total": self.total, "cache": self.cached, "api": self.total - self.cached}
+
+
 class BankRunner:
     """
     Corre el banco dentro de una transacción revertida con el motor span y
     el resto de la configuración vigente (N, tope de candidatos, etc.).
     """
 
-    def __init__(self, bank_dir: Path, write: Callable[[str], None], web_real: bool = False):
+    def __init__(
+        self,
+        bank_dir: Path,
+        write: Callable[[str], None],
+        web_real: bool = False,
+        min_match_words: int | None = None,
+    ):
         self.bank_dir = bank_dir
         self.write = write
         self.web_real = web_real
+        # Solo para esta corrida (experimentos); None deja el de settings.
+        self.min_match_words = min_match_words
         self.text_filter = AcademicTextFilter()
+        self.web_usage: dict[str, int] = {}
 
     def run(self, case_ids: set[str] | None = None) -> tuple[dict, list[CaseScore]]:
         meta, cases = load_bank(self.bank_dir)
@@ -455,11 +493,18 @@ class BankRunner:
         if self.web_real:
             # Fuera de la transacción: así la caché web sí queda guardada.
             collector = WebCandidateCollector()
+            counter = CountingSearchClient(collector.search_client)
+            collector.search_client = counter
             for case in cases:
                 if case.category == "web":
                     pages_by_case[case.id] = collector.collect(content=case.content)
+            self.web_usage = counter.usage()
 
-        with override_settings(SIMILARITY_ENGINE="span"):
+        overrides = {"SIMILARITY_ENGINE": "span"}
+        if self.min_match_words is not None:
+            overrides["SIMILARITY_MIN_MATCH_WORDS"] = self.min_match_words
+
+        with override_settings(**overrides):
             with transaction.atomic():
                 scores = self._run_cases(meta, cases, pages_by_case)
                 transaction.set_rollback(True)
@@ -471,9 +516,14 @@ class BankRunner:
             "motor": "span",
             "texto_comun_min_docs": getattr(settings, "SIMILARITY_COMMON_TEXT_MIN_DOCS", None),
             "tope_candidatos": getattr(settings, "SIMILARITY_MAX_CANDIDATES", None),
-            "min_palabras_tramo": getattr(settings, "SIMILARITY_MIN_MATCH_WORDS", None),
+            "min_palabras_tramo": (
+                self.min_match_words
+                if self.min_match_words is not None
+                else getattr(settings, "SIMILARITY_MIN_MATCH_WORDS", None)
+            ),
             "min_tramo_corto": getattr(settings, "SIMILARITY_MIN_SHORT_RUN", None),
             "web": "real (casos web)" if self.web_real else "foto sin red",
+            **({"consultas_web": self.web_usage} if self.web_usage else {}),
             "semilla_banco": meta.get("semilla"),
             "commit_banco": meta.get("commit"),
         }
@@ -537,6 +587,19 @@ class BankRunner:
                 source_keys={item.source.key for item in span.sources if item.word_count > 0},
                 percent=span.similarity_percent,
                 seconds=elapsed,
+                passages=tuple(
+                    {
+                        "inicio": m.start_offset,
+                        "fin": m.end_offset,
+                        "texto": text[m.start_offset : m.end_offset],
+                        "palabras": m.word_count,
+                        "fuente": m.source.key,
+                        "tipo_fuente": m.source.kind,
+                        "titulo_fuente": m.source.title[:200],
+                        "tipo": m.match_type,
+                    }
+                    for m in span.matches
+                ),
             )
 
         scores: list[CaseScore] = []

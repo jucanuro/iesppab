@@ -142,6 +142,15 @@ class Command(BaseCommand):
             help="Con --banco correr: los casos web buscan con Brave en vez de usar la foto.",
         )
         parser.add_argument(
+            "--min-tramo",
+            type=int,
+            default=None,
+            help=(
+                "Con --banco correr: SIMILARITY_MIN_MATCH_WORDS solo para esta corrida "
+                "(experimento; no cambia la configuración)."
+            ),
+        )
+        parser.add_argument(
             "--casos",
             type=str,
             default="",
@@ -186,7 +195,9 @@ class Command(BaseCommand):
         elif step == "generar":
             ejecucion.generate(bank_dir, seed=options["seed"], write=write)
         else:
-            runner = ejecucion.BankRunner(bank_dir, write, web_real=options["web_real"])
+            runner = ejecucion.BankRunner(
+                bank_dir, write, web_real=options["web_real"], min_match_words=options["min_tramo"]
+            )
             case_ids = {item.strip() for item in options["casos"].split(",") if item.strip()}
             config, scores = runner.run(case_ids or None)
             self.bank_scores = scores

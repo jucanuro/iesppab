@@ -36,6 +36,9 @@ class EngineOutput:
     source_keys: set[str]
     percent: Decimal
     seconds: float
+    # Tramos marcados con su texto y fuente (para revisar a mano los falsos
+    # positivos de los originales).
+    passages: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,7 @@ class CaseScore:
     baseline_words_marked_again: int
     extra_sources: list[str] = field(default_factory=list)
     missed_sources: list[str] = field(default_factory=list)
+    passages: list[dict] = field(default_factory=list)
 
     @property
     def word_recall(self) -> Decimal | None:
@@ -92,6 +96,7 @@ class CaseScore:
             "base_marcada_otra_vez": self.baseline_words_marked_again,
             "fuentes_extra": self.extra_sources,
             "fuentes_no_detectadas": self.missed_sources,
+            **({"pasajes": self.passages} if self.passages else {}),
         }
 
 
@@ -241,6 +246,8 @@ def score_case(
         baseline_words_marked_again=again,
         extra_sources=sorted(found - expected - baseline_found),
         missed_sources=sorted(expected - found),
+        # En un original todo lo marcado es falso positivo: se guarda el texto.
+        passages=list(output.passages) if case.category == "original" else [],
     )
 
 

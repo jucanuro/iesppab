@@ -446,12 +446,19 @@ class CountingSearchClient:
     la caché y las que sí llamaron a la API (las que se pagan).
     """
 
-    def __init__(self, client):
+    def __init__(self, client, max_api_calls: int | None = None):
         self.client = client
         self.total = 0
         self.cached = 0
         # Llamadas que fallaron (no quedan en caché; un 402/429 no se cobra).
         self.failed = 0
+        # Tope de llamadas a la API (presupuesto de la corrida); None = sin tope.
+        self.max_api_calls = max_api_calls
+        self.budget_reached = False
+
+    @property
+    def quota_exhausted(self) -> bool:
+        return self.budget_reached or getattr(self.client, "quota_exhausted", False)
 
     def __getattr__(self, name):
         return getattr(self.client, name)
@@ -465,6 +472,15 @@ class CountingSearchClient:
             self.total += 1
             cached = web_cache.get_search_results(key) is not None
             self.cached += cached
+            if (
+                not cached
+                and self.max_api_calls is not None
+                and self.total - self.cached > self.max_api_calls
+            ):
+                # Se pasaría del presupuesto: no se consulta.
+                self.total -= 1
+                self.budget_reached = True
+                return []
         results = self.client.search(query=query, count=count)
         if key is not None and not cached and web_cache.get_search_results(key) is None:
             self.failed += 1
@@ -526,6 +542,7 @@ class BankRunner:
         web_real: bool = False,
         min_match_words: int | None = None,
         settings_overrides: dict | None = None,
+        max_api_calls: int | None = None,
     ):
         self.bank_dir = bank_dir
         self.write = write
@@ -534,6 +551,7 @@ class BankRunner:
         self.min_match_words = min_match_words
         # --ajuste CLAVE=VALOR: settings solo para esta corrida.
         self.settings_overrides = dict(settings_overrides or {})
+        self.max_api_calls = max_api_calls
         self.text_filter = AcademicTextFilter()
         self.web_usage: dict[str, int] = {}
 
@@ -562,7 +580,9 @@ class BankRunner:
             collector = None
             if self.web_real:
                 collector = WebCandidateCollector()
-                collector.search_client = CountingSearchClient(collector.search_client)
+                collector.search_client = CountingSearchClient(
+                    collector.search_client, max_api_calls=self.max_api_calls
+                )
 
             with CacheWriteRecorder() as recorder:
                 with transaction.atomic():

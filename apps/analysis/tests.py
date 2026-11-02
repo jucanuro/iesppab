@@ -1516,6 +1516,22 @@ class AnalysisExclusionOptionsTests(TestCase):
         self.assertIn("Editorial Academica", report.analyzed_content)
         self.assertEqual(report.summary["excluded_quote_ranges"], [])
 
+    def test_template_is_excluded_even_without_excluding_quotes(self) -> None:
+        receipt = "Página 3 de 38 - Portada Identificador de la entrega trn:oid:::29566:556"
+        self.document_text.content = f"{receipt}\n\n{self.document_text.content}"
+        self.document_text.save()
+
+        with override_settings(SIMILARITY_EXCLUDE_TEMPLATES=True):
+            report = self._execute(exclude_quotes=False)
+
+        [[start, end]] = report.summary["excluded_quote_ranges"]
+        self.assertEqual(report.analyzed_content[start:end], receipt)
+
+        with override_settings(SIMILARITY_EXCLUDE_TEMPLATES=False):
+            report = self._execute(exclude_quotes=False)
+
+        self.assertEqual(report.summary["excluded_quote_ranges"], [])
+
     def test_knowledge_index_never_learns_bibliography(self) -> None:
         self._execute(exclude_bibliography=False)
 
@@ -2693,7 +2709,8 @@ class CommonTextFilterTests(TestCase):
 
         with override_settings(SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS=3):
             short = self._run(min_documents=5)
-        default = self._run(min_documents=5)
+        with override_settings(SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS=0):
+            default = self._run(min_documents=5)
 
         self.assertEqual(short.total_similarity_percent, Decimal("0.00"))
         self.assertEqual(default.total_similarity_percent, Decimal("16.67"))

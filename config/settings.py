@@ -463,9 +463,10 @@ if AI_DETECTION_MODE not in {"global", "segments"}:
 #   citas, con citas (Autor, año), listas/tablas y al final los párrafos que
 #   ya coincidieron con la base interna.
 # - "tramos": modo anterior (8 tramos, 2 frases con comillas + 1 sin).
-# Sigue "tramos" por defecto hasta terminar de medir "parrafos" con el banco
-# (la medición se cortó por el límite de gasto de Brave, 2026-11-02).
-WEB_QUERY_MODE = os.getenv("WEB_QUERY_MODE", "tramos").strip().lower()
+# Banco 2026-11-02, tesis completas con Brave real: recall de palabras web
+# 10,9 % (tramos, 24 consultas) -> 26,0 % (parrafos, 40), FP de originales
+# sin subir (6,76 -> 6,57 en los mismos 5).
+WEB_QUERY_MODE = os.getenv("WEB_QUERY_MODE", "parrafos").strip().lower()
 
 if WEB_QUERY_MODE not in {"parrafos", "tramos"}:
     raise RuntimeError("WEB_QUERY_MODE debe ser 'parrafos' o 'tramos'.")
@@ -484,7 +485,7 @@ WEB_ANALYSIS_MAX_PAGES_TOTAL = env_int(
 # Tope de consultas a Brave por documento (cada una cuesta; $5 por 1000).
 WEB_ANALYSIS_MAX_QUERIES = env_int(
     "WEB_ANALYSIS_MAX_QUERIES",
-    60,
+    40,
 )
 
 # Páginas que aporta como máximo cada consulta en el reparto por rondas.
@@ -518,7 +519,7 @@ WEB_PAGE_VOTES = env_bool("WEB_PAGE_VOTES", True)
 
 # PDFs web con el extractor de documentos (hasta WEB_PDF_MAX_MB) y fichas
 # de repositorio que siguen su citation_pdf_url, respetando robots.txt.
-WEB_FOLLOW_PDF = env_bool("WEB_FOLLOW_PDF", False)
+WEB_FOLLOW_PDF = env_bool("WEB_FOLLOW_PDF", True)
 WEB_PDF_MAX_MB = env_int("WEB_PDF_MAX_MB", 20)
 
 # Tope de tiempo total por descarga de página o PDF (el timeout anterior es
@@ -597,16 +598,19 @@ SIMILARITY_COMMON_TEXT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_MIN_DOCS", 5)
 SIMILARITY_COMMON_TEXT_MIN_RATIO = float(
     os.getenv("SIMILARITY_COMMON_TEXT_MIN_RATIO", "0.7")
 )
-# Experimento (sin activar): tramos de menos de
-# SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS palabras son comunes con
-# SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS documentos (0 = el mismo umbral).
+# Frases genéricas: un tramo de menos de SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS
+# palabras es común con SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS documentos (si
+# es menor que el umbral general; 0 = el mismo umbral). Banco: con 4 los
+# originales bajan 6,07 -> 5,39 % sin perder recall; con 3 las frases
+# sueltas en PDF caen a 42,2.
 SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS = env_int("SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS", 15)
-SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", 0)
+SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", 4)
 
-# Experimento (sin activar): excluir del % el recibo de Turnitin pegado
-# (trn:oid, "Página X de Y - ...") y la cabecera de la tabla de
-# operacionalización de variables. Hoy solo lo usa el banco de similitud.
-SIMILARITY_EXCLUDE_TEMPLATES = env_bool("SIMILARITY_EXCLUDE_TEMPLATES", False)
+# Plantilla que no cuenta para el %: recibo de Turnitin pegado (trn:oid,
+# "Página X de Y - ...") y cabecera de la tabla de operacionalización de
+# variables. Se descuenta como una cita (excluded_quote_ranges), aunque el
+# análisis no excluya citas.
+SIMILARITY_EXCLUDE_TEMPLATES = env_bool("SIMILARITY_EXCLUDE_TEMPLATES", True)
 
 # Repositorios con endpoint OAI-PMH confirmado manualmente (verb=Identify
 # respondió con <Identify> o <error> válido, probado en este orden:

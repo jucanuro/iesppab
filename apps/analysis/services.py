@@ -18,7 +18,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.analysis.common_text import CommonTextFilter
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
-from apps.analysis.engines.exclusions import calculate_similarity_percent
+from apps.analysis.engines.exclusions import calculate_similarity_percent, merge_ranges
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.ai_segments import SegmentedPerplexityDetector
 from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
@@ -223,6 +223,16 @@ class DocumentAnalysisService:
                 if exclude_quotes
                 else []
             )
+
+            # La plantilla (recibo de Turnitin pegado, cabecera de la tabla
+            # de operacionalización) se descuenta como una cita, aunque no se
+            # excluyan citas: se guarda en los mismos rangos para que el
+            # recálculo al excluir una fuente vea el mismo texto contable.
+            if getattr(settings, "SIMILARITY_EXCLUDE_TEMPLATES", False):
+                quoted_ranges = merge_ranges(
+                    quoted_ranges
+                    + self.text_filter.find_template_ranges(analysis_content)
+                )
 
             # La base de conocimiento nunca aprende bibliografía/anexos,
             # aunque este análisis los incluya: son referencias que todos

@@ -155,6 +155,12 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--max-consultas-api",
+            type=int,
+            default=None,
+            help="Con --banco correr --web-real: tope de consultas a la API de Brave (presupuesto).",
+        )
+        parser.add_argument(
             "--categorias",
             type=str,
             default="",
@@ -217,6 +223,7 @@ class Command(BaseCommand):
             runner = ejecucion.BankRunner(
                 bank_dir, write, web_real=options["web_real"], min_match_words=options["min_tramo"],
                 settings_overrides=self._parse_overrides(options["ajuste"]),
+                max_api_calls=options["max_consultas_api"],
             )
             case_ids = {item.strip() for item in options["casos"].split(",") if item.strip()}
             categories = {item.strip() for item in options["categorias"].split(",") if item.strip()}

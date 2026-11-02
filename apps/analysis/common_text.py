@@ -70,7 +70,9 @@ class CommonTextFilter:
         self.short_run_words = getattr(settings, "SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS", 15)
         short = getattr(settings, "SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", None)
         self.short_min_documents = (
-            self.min_documents if not short or not self.min_documents else short
+            self.min_documents
+            if not short or not self.min_documents
+            else min(short, self.min_documents)
         )
         self.normalizer = InternalSimilarityEngine()
 

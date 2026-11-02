@@ -446,3 +446,28 @@ class BraveQuotaTests(TestCase):
         self.assertEqual(get.call_count, 1)
         self.assertTrue(collector.search_client.quota_exhausted)
         self.assertEqual(WebSearchCacheEntry.objects.count(), 0)
+
+
+class BudgetTests(TestCase):
+    @override_settings(WEB_SEARCH_CACHE_DAYS=30)
+    def test_counter_stops_at_the_api_budget(self) -> None:
+        from apps.analysis.banco.ejecucion import CountingSearchClient
+
+        class Client:
+            quota_exhausted = False
+            calls = 0
+
+            def cache_key(self, query, count):
+                return f"{query:x<64}"[:64]
+
+            def search(self, query, count=5):
+                Client.calls += 1
+                return []
+
+        counter = CountingSearchClient(Client(), max_api_calls=2)
+        for query in ("a", "b", "c", "d"):
+            counter.search(query)
+
+        self.assertEqual(Client.calls, 2)
+        self.assertTrue(counter.quota_exhausted)
+        self.assertEqual(counter.usage()["api"], 2)

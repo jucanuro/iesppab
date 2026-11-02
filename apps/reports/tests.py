@@ -48,6 +48,7 @@ from apps.reports.services import (
     SpanReportWriter,
     _HighlightedDocumentPdfBuilder,
     build_highlighted_document_pdf,
+    findings_in_paint_order,
     resolve_analyzed_content,
     resolve_risk_level,
     resubmission_warning_sources,
@@ -175,6 +176,122 @@ class HighlightedDocumentPdfServiceTests(ReportsTestCaseMixin, TestCase):
         self.assertIn("TEXTO ANALIZADO", text)
         # el dominio de la fuente citada aparece en la lista de fuentes primarias
         self.assertIn("example.com", text)
+
+
+class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):
+    """
+    Un pasaje de una fuente dentro de un párrafo marcado como IA suma al % y
+    se pinta como similitud: la IA se parte alrededor. Antes el visor y el
+    PDF se quedaban con el primer hallazgo (la IA) y la fuente salía en la
+    lista sin ningún pasaje marcado.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.ai_finding.start_offset = 0
+        self.ai_finding.end_offset = len(SAMPLE_TEXT)
+        self.ai_finding.save()
+        self.source.matched_percent = Decimal("0.40")
+        self.source.save()
+
+    def test_paint_order_splits_ai_around_similarity(self) -> None:
+        pieces = findings_in_paint_order(
+            [self.ai_finding, self.similarity_finding], len(SAMPLE_TEXT)
+        )
+        start = self.similarity_finding.start_offset
+        end = self.similarity_finding.end_offset
+
+        self.assertEqual(
+            [(a, b, finding.finding_type) for a, b, finding in pieces],
+            [
+                (0, start, FindingType.AI_GENERATED),
+                (start, end, FindingType.SIMILARITY),
+                (end, len(SAMPLE_TEXT), FindingType.AI_GENERATED),
+            ],
+        )
+
+    def test_overlapping_findings_of_the_same_type_keep_the_first(self) -> None:
+        later = self.report.findings.create(
+            source=self.source,
+            finding_type=FindingType.SIMILARITY,
+            start_offset=self.similarity_finding.start_offset + 3,
+            end_offset=self.similarity_finding.end_offset + 10,
+            confidence_percent=Decimal("1.00"),
+        )
+
+        pieces = findings_in_paint_order(
+            [later, self.similarity_finding], len(SAMPLE_TEXT)
+        )
+
+        self.assertEqual(
+            [finding for _, _, finding in pieces if finding.finding_type == FindingType.SIMILARITY],
+            [self.similarity_finding],
+        )
+
+    def test_viewer_paints_the_source_passage(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertIn(
+            ("metodologia aplicada", FindingType.SIMILARITY),
+            [
+                (segment.text, segment.finding_type)
+                for segment in response.context["highlighted_segments"]
+            ],
+        )
+
+    def test_pdf_cites_the_source(self) -> None:
+        builder = _HighlightedDocumentPdfBuilder(report=self.report)
+
+        _, cited_sources, word_counts = builder._render_body_markup(
+            content=SAMPLE_TEXT,
+            findings=list(self.report.findings.all()),
+            sources_by_id={self.source.id: self.source},
+        )
+
+        self.assertEqual([source for _, source in cited_sources], [self.source])
+        self.assertEqual(word_counts[self.source.id], 2)
+
+
+class SourcePercentFormatTests(ReportsTestCaseMixin, TestCase):
+    """
+    El % de cada fuente sale con un decimal: 0,4 % y no 0 %.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.source.matched_percent = Decimal("0.40")
+        self.source.save()
+
+    def test_web_shows_one_decimal(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertContains(response, "0,4%")
+
+    def test_pdf_shows_one_decimal(self) -> None:
+        from pypdf import PdfReader
+
+        text = "".join(
+            page.extract_text()
+            for page in PdfReader(
+                BytesIO(build_highlighted_document_pdf(self.report))
+            ).pages
+        )
+
+        self.assertIn("0,4%", text)
+
+    def test_pdf_rounds_like_the_web(self) -> None:
+        builder = _HighlightedDocumentPdfBuilder(report=self.report)
+
+        self.assertEqual(builder._format_source_percent(Decimal("0.25")), "0,3")
+        self.assertEqual(builder._format_source_percent(Decimal("12.00")), "12,0")
 
 
 class DownloadHighlightedDocumentViewTests(ReportsTestCaseMixin, TestCase):

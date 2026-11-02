@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import logging
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any
 from uuid import UUID
@@ -636,6 +636,64 @@ def split_plain_text_around_common(
     ]
 
 
+def findings_in_paint_order(
+    findings: list[ReportFinding],
+    content_length: int,
+) -> list[tuple[int, int, ReportFinding]]:
+    """
+    Tramos (inicio, fin, hallazgo) sin solapes, ordenados por inicio, para
+    pintar el texto. La similitud tiene prioridad sobre la IA: un pasaje de
+    una fuente dentro de un párrafo marcado como IA suma al % y tiene que
+    verse, así que el hallazgo de IA se parte alrededor. Entre hallazgos del
+    mismo tipo gana el primero.
+    """
+
+    def first_wins(
+        items: list[tuple[int, int, ReportFinding]],
+    ) -> list[tuple[int, int, ReportFinding]]:
+        kept: list[tuple[int, int, ReportFinding]] = []
+        cursor = 0
+
+        for start, end, finding in sorted(items, key=lambda item: item[0]):
+            if start < cursor:
+                continue
+
+            kept.append((start, end, finding))
+            cursor = end
+
+        return kept
+
+    valid = [
+        (max(finding.start_offset, 0), min(finding.end_offset, content_length), finding)
+        for finding in findings
+        if finding.start_offset < finding.end_offset
+        and finding.start_offset < content_length
+    ]
+    similarity = first_wins(
+        [item for item in valid if item[2].finding_type == FindingType.SIMILARITY]
+    )
+    pieces = list(similarity)
+
+    for start, end, finding in first_wins(
+        [item for item in valid if item[2].finding_type != FindingType.SIMILARITY]
+    ):
+        cursor = start
+
+        for similarity_start, similarity_end, _ in similarity:
+            if similarity_end <= cursor or similarity_start >= end:
+                continue
+
+            if similarity_start > cursor:
+                pieces.append((cursor, similarity_start, finding))
+
+            cursor = max(cursor, similarity_end)
+
+        if cursor < end:
+            pieces.append((cursor, end, finding))
+
+    return sorted(pieces, key=lambda item: item[0])
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -854,8 +912,8 @@ class _HighlightedDocumentPdfBuilder:
     ) -> list[tuple[str, str | None, UUID | None]]:
         """
         Misma lógica de `ReportDetailView._build_highlight_segments`
-        (apps/reports/views.py): recorre el texto en orden, respeta el
-        primer hallazgo válido en caso de solapamiento, y deja el resto
+        (apps/reports/views.py): recorre el texto en orden, con los
+        solapamientos resueltos por `findings_in_paint_order`, y deja el resto
         como texto plano. Aquí además se conserva el `source_id` de cada
         hallazgo para poder numerarlo como nota al pie.
         """
@@ -879,26 +937,10 @@ class _HighlightedDocumentPdfBuilder:
                 )
             ]
 
-        valid_findings = sorted(
-            [
-                finding
-                for finding in findings
-                if finding.start_offset < finding.end_offset
-                and finding.start_offset < len(content)
-            ],
-            key=lambda item: item.start_offset,
-        )
-
         segments: list[tuple[str, str | None, UUID | None]] = []
         cursor = 0
 
-        for finding in valid_findings:
-            start = max(finding.start_offset, 0)
-            end = min(finding.end_offset, len(content))
-
-            if start < cursor:
-                continue
-
+        for start, end, finding in findings_in_paint_order(findings, len(content)):
             if cursor < start:
                 segments.extend(plain(cursor, start))
 
@@ -1108,7 +1150,7 @@ class _HighlightedDocumentPdfBuilder:
                     ),
                     Paragraph(
                         f'{words} palabra{"" if words == 1 else "s"} &nbsp;—&nbsp; '
-                        f'<font size="11"><b>{self._format_percent(source.matched_percent)}%</b></font>',
+                        f'<font size="11"><b>{self._format_source_percent(source.matched_percent)}%</b></font>',
                         styles["source_meta"],
                     ),
                 ]
@@ -1193,7 +1235,7 @@ class _HighlightedDocumentPdfBuilder:
             section.append(
                 Paragraph(
                     f"<b>{self._escape(self._truncate(source.title, 90))}</b>"
-                    f" ({self._format_percent(source.matched_percent)}% antes de "
+                    f" ({self._format_source_percent(source.matched_percent)}% antes de "
                     f"excluir){badge}<br/>"
                     f'<font color="#64748B">Motivo: '
                     f"{self._escape(source.exclusion_reason or '—')}</font>",
@@ -1227,6 +1269,12 @@ class _HighlightedDocumentPdfBuilder:
 
     def _format_percent(self, value: Decimal) -> str:
         return f"{value:.0f}"
+
+    def _format_source_percent(self, value: Decimal) -> str:
+        # Con un decimal: una fuente de 0,4 % no puede salir como 0 %. Mismo
+        # redondeo que `floatformat:1` en la web.
+        rounded = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        return f"{rounded}".replace(".", ",")
 
     def _build_styles(self) -> dict[str, ParagraphStyle]:
         base = getSampleStyleSheet()

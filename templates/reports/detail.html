@@ -509,7 +509,7 @@
                                             <p class="mt-1 truncate text-[11px] font-semibold text-red-600">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[11px] font-bold text-red-700">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -525,7 +525,7 @@
                                             <p class="mt-1 truncate text-[11px] font-semibold text-[#8a6100]">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff3cf;">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -541,7 +541,7 @@
                                             <p class="mt-1 truncate text-[11px] font-semibold text-emerald-600">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -578,7 +578,7 @@
                                                 <p class="mt-1 truncate text-[11px] font-semibold text-slate-400">{{ source.display_subtitle }}</p>
                                             </div>
                                             <span class="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500">
-                                                {{ source.matched_percent }}%
+                                                {{ source.matched_percent|floatformat:1 }}%
                                             </span>
                                         </div>
                                         <p class="mt-2 text-[12px] leading-5 text-slate-600">

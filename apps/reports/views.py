@@ -37,6 +37,7 @@ from apps.reports.services import (
     ReportSourceExclusionPermissionError,
     ReportSourceExclusionService,
     build_highlighted_document_pdf,
+    findings_in_paint_order,
     resolve_analyzed_content,
     resubmission_warning_sources,
     split_plain_text_around_common,
@@ -259,7 +260,8 @@ class ReportDetailView(LoginRequiredMixin, View):
         Prioridad:
         - Similitud en rojo.
         - IA en azul.
-        - Si hay solapamiento, se respeta el primer hallazgo válido.
+        - Si se solapan, la similitud gana a la IA y, entre hallazgos del
+          mismo tipo, el primero (`findings_in_paint_order`).
         - Las citas excluidas del % no se pintan como similitud.
         - El texto común, que tampoco suma al %, va en gris si ningún
           hallazgo lo cubre.
@@ -267,16 +269,6 @@ class ReportDetailView(LoginRequiredMixin, View):
 
         if not content:
             return []
-
-        valid_findings = sorted(
-            [
-                finding
-                for finding in findings
-                if finding.start_offset < finding.end_offset
-                and finding.start_offset < len(content)
-            ],
-            key=lambda item: item.start_offset,
-        )
 
         def plain(start: int, end: int) -> list[HighlightSegment]:
             return [
@@ -295,13 +287,7 @@ class ReportDetailView(LoginRequiredMixin, View):
         segments: list[HighlightSegment] = []
         cursor = 0
 
-        for finding in valid_findings:
-            start = max(finding.start_offset, 0)
-            end = min(finding.end_offset, len(content))
-
-            if start < cursor:
-                continue
-
+        for start, end, finding in findings_in_paint_order(findings, len(content)):
             if cursor < start:
                 segments.extend(plain(cursor, start))
 

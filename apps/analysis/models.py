@@ -380,3 +380,86 @@ class DocumentFingerprint(models.Model):
                 name="uniq_fingerprint_per_source",
             )
         ]
+
+class WebSearchCacheEntry(TimeStampedModel):
+    """
+    Respuesta de Brave Search guardada por consulta. Repetir la misma
+    consulta dentro de su vigencia no gasta cuota de la API y devuelve los
+    mismos resultados, así reanalizar un documento da el mismo % web.
+    """
+
+    cache_key = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name=_("Clave de caché"),
+        help_text=_("SHA-256 de la consulta y sus parámetros."),
+    )
+    query = models.TextField(
+        verbose_name=_("Consulta"),
+    )
+    results = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name=_("Resultados"),
+    )
+    expires_at = models.DateTimeField(
+        db_index=True,
+        verbose_name=_("Vence el"),
+    )
+
+    class Meta:
+        verbose_name = _("Caché de búsqueda web")
+        verbose_name_plural = _("Caché de búsquedas web")
+
+    def __str__(self) -> str:
+        return self.query[:80]
+
+
+class WebPageCacheEntry(TimeStampedModel):
+    """
+    Resultado de descargar una página web pública: el texto extraído si se
+    pudo leer, o el fallo (bloqueo, timeout, contenido corto) con una
+    vigencia más corta para volver a intentarlo pronto.
+    """
+
+    url_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name=_("Hash de la URL"),
+    )
+    url = models.TextField(
+        verbose_name=_("URL"),
+    )
+    is_success = models.BooleanField(
+        default=False,
+        verbose_name=_("Lectura exitosa"),
+    )
+    title = models.TextField(
+        blank=True,
+        verbose_name=_("Título"),
+    )
+    text = models.TextField(
+        blank=True,
+        verbose_name=_("Texto"),
+    )
+    source_format = models.CharField(
+        max_length=10,
+        blank=True,
+        verbose_name=_("Formato"),
+    )
+    failure_reason = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_("Motivo del fallo"),
+    )
+    expires_at = models.DateTimeField(
+        db_index=True,
+        verbose_name=_("Vence el"),
+    )
+
+    class Meta:
+        verbose_name = _("Caché de página web")
+        verbose_name_plural = _("Caché de páginas web")
+
+    def __str__(self) -> str:
+        return self.url[:80]

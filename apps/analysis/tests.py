@@ -6,11 +6,13 @@ import random
 import re
 from datetime import date, timedelta
 from decimal import Decimal
+from http.client import RemoteDisconnected
 from io import StringIO
 from types import SimpleNamespace
 from unittest import mock, skipUnless
 from uuid import uuid4
 
+import requests
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -18,6 +20,7 @@ from django.core.management import CommandError, call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from urllib3 import exceptions as urllib3_exceptions
 
 from apps.accounts.models import User, UserRole
 from apps.analysis.common_text import CommonTextFilter
@@ -52,8 +55,11 @@ from apps.analysis.engines.similarity import (
 )
 from apps.analysis.engines.text_filters import AcademicTextFilter
 from apps.analysis.engines.web_search import (
+    RETRY_DELAY_SECONDS,
+    BraveWebSearchClient,
     WebCandidateCollector,
     WebPageContent,
+    WebPageFetcher,
     WebSearchResult,
 )
 from apps.analysis.engines.web_similarity import (
@@ -74,6 +80,8 @@ from apps.analysis.models import (
     OaiFullTextChunk,
     OaiFullTextStatus,
     OaiRecord,
+    WebPageCacheEntry,
+    WebSearchCacheEntry,
 )
 from apps.analysis.retrieval import CandidateRetriever, compute_query_fingerprints
 from apps.analysis.services import (
@@ -2062,13 +2070,44 @@ class WebCandidateCollectorQueryTests(SimpleTestCase):
         pages = collector.collect(content="irrelevante")
 
         self.assertEqual(len(pages), 16)
-        # Dos páginas por consulta: las 8 consultas con comillas (una por
-        # tramo del documento) aportan páginas, no solo las primeras.
-        self.assertEqual(len(collector.search_client.queries), 8)
+        # El tope de páginas no corta las consultas: se ejecutan las 24.
+        self.assertEqual(len(collector.search_client.queries), 24)
+        # Reparto por rondas: cada una de las 16 primeras consultas (las dos
+        # rondas con comillas, que cubren todos los tramos) aporta una página
+        # antes de que alguna aporte la segunda.
+        queries = collector._build_queries(self.PHRASE_GROUPS)
+        run = self._collector().run_queries(queries=queries)
+
+        self.assertEqual([query for query, _page in run.pages], queries[:16])
+
+    def test_pages_per_query_cap_is_filled_by_rounds(self) -> None:
+        collector = self._collector()
+
+        run = collector.run_queries(queries=['"uno"', '"dos"'])
+
+        self.assertEqual(run.executed_queries, 2)
         self.assertEqual(
-            collector.search_client.queries,
-            [f'"{group[0]}"' for group in self.PHRASE_GROUPS],
+            [page.url for _query, page in run.pages],
+            [
+                "https://example.com/1/0",
+                "https://example.com/2/0",
+                "https://example.com/1/1",
+                "https://example.com/2/1",
+            ],
         )
+
+    def test_failed_pages_do_not_use_the_query_quota(self) -> None:
+        collector = self._collector(
+            empty_urls={"https://example.com/1/0", "https://example.com/1/1"},
+        )
+
+        run = collector.run_queries(queries=['"uno"'])
+
+        self.assertEqual(
+            [page.url for _query, page in run.pages],
+            ["https://example.com/1/2", "https://example.com/1/3"],
+        )
+        self.assertEqual(run.fetched_pages, 4)
 
     def test_collect_logs_queries_pages_and_pages_with_content(self) -> None:
         collector = self._collector(empty_urls={"https://example.com/1/0"})
@@ -2080,7 +2119,7 @@ class WebCandidateCollectorQueryTests(SimpleTestCase):
 
         self.assertEqual(len(summary), 1)
         self.assertIn("frases=16", summary[0])
-        self.assertIn("consultas=8/24 (límite=24)", summary[0])
+        self.assertIn("consultas=24/24 (límite=24)", summary[0])
         self.assertIn("páginas_consultadas=17", summary[0])
         self.assertIn(f"páginas_con_contenido={len(pages)}", summary[0])
 
@@ -3873,11 +3912,11 @@ class WebSearchProbeCommandTests(TestCase):
 
     def test_counts_shared_eight_word_sequences_per_page(self) -> None:
         words = self.content.split()
-        # Página 1: comparte 3 secuencias de 8 palabras (10 palabras seguidas).
-        # Página 2: comparte 1 secuencia. El resto, ninguna.
+        # Página 1/0: comparte 3 secuencias de 8 palabras (10 palabras
+        # seguidas). Página 2/0: comparte 1 secuencia. El resto, ninguna.
         texts_by_url = {
             "https://example.com/1/0": "relleno " + " ".join(words[100:110]) + " relleno",
-            "https://example.com/1/1": " ".join(words[300:308]),
+            "https://example.com/2/0": " ".join(words[300:308]),
         }
 
         def fake_collector(command_self) -> WebCandidateCollector:
@@ -3893,7 +3932,7 @@ class WebSearchProbeCommandTests(TestCase):
             output = self._call("--estrategia", "ambas")
 
         self.assertIn("[   3 secuencias] https://example.com/1/0", output)
-        self.assertIn("[   1 secuencias] https://example.com/1/1", output)
+        self.assertIn("[   1 secuencias] https://example.com/2/0", output)
         self.assertRegex(output, r"Páginas con ≥1 secuencia de 8\s+2\s+2")
         self.assertRegex(output, r"Páginas con ≥3 secuencias de 8\s+1\s+1")
         self.assertIn("Páginas (anterior)", output)
@@ -4603,3 +4642,264 @@ class HarvestOaiFullTextCommandTests(TestCase):
     def test_unknown_repository_fails(self) -> None:
         with self.assertRaises(CommandError):
             call_command("harvest_oai_fulltext", repositorio="UCV", limite=1)
+
+
+class _FakeWebResponse:
+    def __init__(
+        self,
+        status_code: int = 200,
+        payload: dict | None = None,
+        body: bytes = b"",
+        content_type: str = "text/html; charset=utf-8",
+        url: str = "https://example.com/pagina",
+    ) -> None:
+        self.status_code = status_code
+        self._payload = payload or {}
+        self._body = body
+        self.headers = {"Content-Type": content_type}
+        self.url = url
+        self.encoding = "utf-8"
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
+    def json(self) -> dict:
+        return self._payload
+
+    def iter_content(self, chunk_size: int):
+        yield self._body
+
+
+def _brave_payload(*urls: str) -> dict:
+    return {
+        "web": {
+            "results": [
+                {"url": url, "title": f"Título {url}", "description": "resumen"}
+                for url in urls
+            ]
+        }
+    }
+
+
+_LONG_HTML = (
+    "<html><head><title>Página de prueba</title></head><body><p>"
+    + "texto académico de la página de prueba " * 30
+    + "</p></body></html>"
+).encode("utf-8")
+
+_REMOTE_DISCONNECTED = requests.ConnectionError(
+    urllib3_exceptions.ProtocolError(
+        "Connection aborted.",
+        RemoteDisconnected("Remote end closed connection without response"),
+    )
+)
+
+
+@override_settings(
+    BRAVE_SEARCH_API_KEY="clave-de-prueba",
+    BRAVE_SEARCH_COUNTRY="ALL",
+    BRAVE_SEARCH_LANG="es",
+    WEB_SEARCH_CACHE_DAYS=30,
+)
+class BraveSearchCacheTests(TestCase):
+    def setUp(self) -> None:
+        sleep_patch = mock.patch("apps.analysis.engines.web_search.time.sleep")
+        self.sleep = sleep_patch.start()
+        self.addCleanup(sleep_patch.stop)
+
+    def _search(self, query: str = '"frase de prueba"') -> list[WebSearchResult]:
+        return BraveWebSearchClient().search(query=query, count=5)
+
+    def test_second_identical_query_is_served_from_cache(self) -> None:
+        response = _FakeWebResponse(payload=_brave_payload("https://a.org/1", "https://b.org/2"))
+
+        with mock.patch("requests.get", return_value=response) as get:
+            first = self._search()
+            second = self._search()
+
+        self.assertEqual(get.call_count, 1)
+        self.assertEqual(first, second)
+        self.assertEqual([result.url for result in second], ["https://a.org/1", "https://b.org/2"])
+        entry = WebSearchCacheEntry.objects.get()
+        self.assertAlmostEqual(
+            (entry.expires_at - timezone.now()).total_seconds(),
+            timedelta(days=30).total_seconds(),
+            delta=60,
+        )
+
+    def test_empty_valid_response_is_cached_too(self) -> None:
+        with mock.patch("requests.get", return_value=_FakeWebResponse(payload={})) as get:
+            self.assertEqual(self._search(), [])
+            self.assertEqual(self._search(), [])
+
+        self.assertEqual(get.call_count, 1)
+
+    def test_errors_are_not_cached(self) -> None:
+        with mock.patch(
+            "requests.get", return_value=_FakeWebResponse(status_code=429)
+        ) as get:
+            self.assertEqual(self._search(), [])
+            self.assertEqual(self._search(), [])
+
+        # 429 = límite de cuota: ni reintento ni caché.
+        self.assertEqual(get.call_count, 2)
+        self.assertFalse(WebSearchCacheEntry.objects.exists())
+
+    def test_expired_entry_queries_brave_again(self) -> None:
+        response = _FakeWebResponse(payload=_brave_payload("https://a.org/1"))
+
+        with mock.patch("requests.get", return_value=response) as get:
+            self._search()
+            WebSearchCacheEntry.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+            self._search()
+
+        self.assertEqual(get.call_count, 2)
+
+    def test_different_country_uses_another_cache_entry(self) -> None:
+        response = _FakeWebResponse(payload=_brave_payload("https://a.org/1"))
+
+        with mock.patch("requests.get", return_value=response) as get:
+            self._search()
+
+            with override_settings(BRAVE_SEARCH_COUNTRY="PE"):
+                self._search()
+
+        self.assertEqual(get.call_count, 2)
+
+    def test_timeout_is_retried_once(self) -> None:
+        response = _FakeWebResponse(payload=_brave_payload("https://a.org/1"))
+
+        with mock.patch(
+            "requests.get", side_effect=[requests.ReadTimeout("lento"), response]
+        ) as get:
+            results = self._search()
+
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(len(results), 1)
+        self.sleep.assert_called_once_with(RETRY_DELAY_SECONDS)
+
+
+@override_settings(WEB_PAGE_CACHE_DAYS=30, WEB_PAGE_FAILURE_CACHE_HOURS=24)
+class WebPageCacheTests(TestCase):
+    RESULT = WebSearchResult(
+        title="Resultado",
+        url="https://example.com/pagina",
+        domain="example.com",
+        snippet="",
+    )
+
+    def setUp(self) -> None:
+        sleep_patch = mock.patch("apps.analysis.engines.web_search.time.sleep")
+        self.sleep = sleep_patch.start()
+        self.addCleanup(sleep_patch.stop)
+
+    def _fetch(self) -> WebPageContent | None:
+        return WebPageFetcher().fetch(result=self.RESULT)
+
+    def test_successful_page_is_read_once_and_cached_for_30_days(self) -> None:
+        with mock.patch("requests.get", return_value=_FakeWebResponse(body=_LONG_HTML)) as get:
+            first = self._fetch()
+            second = self._fetch()
+
+        self.assertEqual(get.call_count, 1)
+        self.assertIsNotNone(first)
+        self.assertEqual(first, second)
+        self.assertEqual(second.title, "Página de prueba")
+        entry = WebPageCacheEntry.objects.get()
+        self.assertTrue(entry.is_success)
+        self.assertAlmostEqual(
+            (entry.expires_at - timezone.now()).total_seconds(),
+            timedelta(days=30).total_seconds(),
+            delta=60,
+        )
+
+    def test_blocked_page_is_not_retried_and_cached_for_24_hours(self) -> None:
+        with mock.patch("requests.get", return_value=_FakeWebResponse(status_code=403)) as get:
+            self.assertIsNone(self._fetch())
+            self.assertIsNone(self._fetch())
+
+        self.assertEqual(get.call_count, 1)
+        self.sleep.assert_not_called()
+        entry = WebPageCacheEntry.objects.get()
+        self.assertFalse(entry.is_success)
+        self.assertEqual(entry.failure_reason, "HTTP 403")
+        self.assertAlmostEqual(
+            (entry.expires_at - timezone.now()).total_seconds(),
+            timedelta(hours=24).total_seconds(),
+            delta=60,
+        )
+
+    def test_expired_failure_is_fetched_again(self) -> None:
+        with mock.patch(
+            "requests.get",
+            side_effect=[
+                _FakeWebResponse(status_code=429),
+                _FakeWebResponse(body=_LONG_HTML),
+            ],
+        ) as get:
+            self.assertIsNone(self._fetch())
+            WebPageCacheEntry.objects.update(expires_at=timezone.now() - timedelta(seconds=1))
+            self.assertIsNotNone(self._fetch())
+
+        self.assertEqual(get.call_count, 2)
+        self.assertTrue(WebPageCacheEntry.objects.get().is_success)
+
+    def test_remote_disconnected_is_retried_once(self) -> None:
+        with mock.patch(
+            "requests.get",
+            side_effect=[_REMOTE_DISCONNECTED, _FakeWebResponse(body=_LONG_HTML)],
+        ) as get:
+            page = self._fetch()
+
+        self.assertEqual(get.call_count, 2)
+        self.assertIsNotNone(page)
+        self.sleep.assert_any_call(RETRY_DELAY_SECONDS)
+
+    def test_second_timeout_is_cached_as_failure(self) -> None:
+        with mock.patch(
+            "requests.get",
+            side_effect=[requests.ConnectTimeout("t1"), requests.ConnectTimeout("t2")],
+        ) as get:
+            self.assertIsNone(self._fetch())
+            self.assertIsNone(self._fetch())
+
+        # Un solo reintento; el segundo análisis ya no vuelve a esperar.
+        self.assertEqual(get.call_count, 2)
+        self.assertIn("ConnectTimeout", WebPageCacheEntry.objects.get().failure_reason)
+
+    def test_other_connection_errors_are_not_retried(self) -> None:
+        with mock.patch(
+            "requests.get", side_effect=requests.ConnectionError("DNS")
+        ) as get:
+            self.assertIsNone(self._fetch())
+
+        self.assertEqual(get.call_count, 1)
+
+    @override_settings(WEB_PAGE_CACHE_DAYS=0)
+    def test_cache_can_be_disabled(self) -> None:
+        with mock.patch("requests.get", return_value=_FakeWebResponse(body=_LONG_HTML)) as get:
+            self._fetch()
+            self._fetch()
+
+        self.assertEqual(get.call_count, 2)
+        self.assertFalse(WebPageCacheEntry.objects.exists())
+
+
+class PurgeWebCacheCommandTests(TestCase):
+    def test_only_expired_entries_are_deleted(self) -> None:
+        now = timezone.now()
+        past = now - timedelta(minutes=1)
+        future = now + timedelta(days=1)
+        WebSearchCacheEntry.objects.create(cache_key="a" * 64, query="vieja", expires_at=past)
+        WebSearchCacheEntry.objects.create(cache_key="b" * 64, query="vigente", expires_at=future)
+        WebPageCacheEntry.objects.create(url_hash="c" * 64, url="https://x/1", expires_at=past)
+        WebPageCacheEntry.objects.create(url_hash="d" * 64, url="https://x/2", expires_at=past)
+        WebPageCacheEntry.objects.create(url_hash="e" * 64, url="https://x/3", expires_at=future)
+        stdout = StringIO()
+
+        call_command("purge_web_cache", stdout=stdout)
+
+        self.assertIn("1 búsquedas y 2 páginas", stdout.getvalue())
+        self.assertEqual(list(WebSearchCacheEntry.objects.values_list("query", flat=True)), ["vigente"])
+        self.assertEqual(list(WebPageCacheEntry.objects.values_list("url", flat=True)), ["https://x/3"])

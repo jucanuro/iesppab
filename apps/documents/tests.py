@@ -205,3 +205,76 @@ class PdfTextNormalizationTests(TestCase):
 
         self.assertIn("\n1. Identificar", text.replace("\n\n", "\n"))
         self.assertIn("\n2. Identificar", text)
+
+
+class DocxTableExtractionTests(DocxDocumentTestMixin, TestCase):
+    """
+    Las tablas van en su lugar del cuerpo (no al final) y una celda
+    combinada se escribe una sola vez.
+    """
+
+    INTRO = "Párrafo que presenta la tabla con suficiente texto para la prueba."
+    OUTRO = "Párrafo posterior a la tabla que cierra el documento de prueba."
+
+    def _make_document(self, build_table) -> Document:
+        docx = DocxDocument()
+        docx.add_paragraph(self.INTRO)
+        build_table(docx)
+        docx.add_paragraph(self.OUTRO)
+        buffer = io.BytesIO()
+        docx.save(buffer)
+        payload = buffer.getvalue()
+
+        document = Document(
+            institution=self.institution,
+            owner=self.student,
+            uploaded_by=self.student,
+            title="Tesis con tabla",
+            kind=DocumentKind.OTHER,
+            original_filename="tabla.docx",
+            mime_type=DOCX_MIME,
+            file_size_bytes=len(payload),
+            sha256_hash=f"hash-tabla-{len(payload)}",
+        )
+        document.original_file.save("tabla.docx", ContentFile(payload), save=False)
+        document.save()
+        return document
+
+    def test_table_keeps_its_position_in_the_body(self) -> None:
+        def build(docx) -> None:
+            table = docx.add_table(rows=2, cols=2)
+            table.cell(0, 0).text = "Dimensión"
+            table.cell(0, 1).text = "Indicador"
+            table.cell(1, 0).text = "Lectura"
+            table.cell(1, 1).text = "Comprensión"
+
+        content = DocumentTextExtractor().extract(self._make_document(build)).content
+
+        self.assertEqual(
+            content.split("\n\n"),
+            [self.INTRO, "Dimensión Indicador", "Lectura Comprensión", self.OUTRO],
+        )
+
+    def test_merged_cells_are_written_once(self) -> None:
+        def build(docx) -> None:
+            table = docx.add_table(rows=3, cols=3)
+            # Fila 0: título combinado en las tres columnas.
+            table.cell(0, 0).merge(table.cell(0, 2)).text = "Variable de estudio"
+            # Columna 0, filas 1-2: dimensión combinada en vertical.
+            table.cell(1, 0).merge(table.cell(2, 0)).text = "Comprensión lectora"
+            table.cell(1, 1).text = "Literal"
+            table.cell(1, 2).text = "Ítems 1-5"
+            table.cell(2, 1).text = "Inferencial"
+            table.cell(2, 2).text = "Ítems 6-10"
+
+        content = DocumentTextExtractor().extract(self._make_document(build)).content
+
+        self.assertEqual(
+            content.split("\n\n")[1:4],
+            [
+                "Variable de estudio",
+                "Comprensión lectora Literal Ítems 1-5",
+                "Inferencial Ítems 6-10",
+            ],
+        )
+        self.assertEqual(content.count("Comprensión lectora"), 1)

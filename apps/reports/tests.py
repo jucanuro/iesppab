@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 from decimal import Decimal
-from io import StringIO
+from io import BytesIO, StringIO
 
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
@@ -11,11 +11,19 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.accounts.models import User, UserRole
+from apps.analysis.engines.span_similarity import (
+    SOURCE_KIND_OAI,
+    SpanAnalysisResult,
+    SpanSource,
+    SpanSourceResult,
+)
 from apps.analysis.engines.text_filters import AcademicTextFilter
 from apps.analysis.engines.web_search import WebPageContent
 from apps.analysis.indexers import DocumentKnowledgeIndexer
+from apps.analysis.models import OaiFullText, OaiFullTextStatus, OaiRecord
 from apps.analysis.services import DocumentAnalysisService
 from apps.certificates.models import Certificate
 from apps.certificates.services import CertificateGenerationService
@@ -498,7 +506,7 @@ class ExclusionOptionsDisplayTests(ReportsTestCaseMixin, TestCase):
     def test_detail_shows_excluded_legend(self) -> None:
         self.client.force_login(self.student)
 
-        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+        response = self.client.get(reverse("reports:detail", kwargs={"pk": self.document.id}))
 
         self.assertContains(response, "Excluidas: citas, bibliografía")
 
@@ -507,7 +515,7 @@ class ExclusionOptionsDisplayTests(ReportsTestCaseMixin, TestCase):
         self.report.save()
         self.client.force_login(self.student)
 
-        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+        response = self.client.get(reverse("reports:detail", kwargs={"pk": self.document.id}))
 
         self.assertContains(response, "Excluidas: bibliografía")
         self.assertNotContains(response, "Excluidas: citas")
@@ -516,7 +524,7 @@ class ExclusionOptionsDisplayTests(ReportsTestCaseMixin, TestCase):
         self._quote_inside_similarity_finding()
         self.client.force_login(self.student)
 
-        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+        response = self.client.get(reverse("reports:detail", kwargs={"pk": self.document.id}))
         segments = response.context["highlighted_segments"]
 
         painted = [
@@ -1221,7 +1229,7 @@ class CommonTextReportTests(SourceExclusionTestMixin, TestCase):
         self.client.force_login(self.teacher)
 
         response = self.client.get(
-            reverse("reports:detail", args=[self.document.id])
+            reverse("reports:detail", kwargs={"pk": self.document.id})
         )
 
         self.assertContains(response, "Gris: texto común")
@@ -1506,7 +1514,7 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
     def test_detail_shows_ai_disclaimer(self) -> None:
         self.client.force_login(self.student)
 
-        response = self.client.get(reverse("reports:detail", args=[self.document.id]))
+        response = self.client.get(reverse("reports:detail", kwargs={"pk": self.document.id}))
 
         self.assertContains(response, AI_ESTIMATE_DISCLAIMER)
 
@@ -1647,3 +1655,136 @@ class RecalculateRiskLevelsCommandTests(SourceExclusionTestMixin, TestCase):
         self.assertEqual(report.similarity_percent, Decimal("0.00"))
         self.assertEqual(report.original_similarity_percent, Decimal("50.00"))
         self.assertEqual(report.risk_level, ReportRiskLevel.LOW)
+
+
+class SourceDisplayTests(SourceExclusionTestMixin, TestCase):
+    """
+    La fuente se presenta por el título del trabajo, con el repositorio o
+    dominio como subtítulo, en la web, el PDF y la verificación pública.
+    """
+
+    def _oai_record(self, source_url: str) -> OaiRecord:
+        return OaiRecord.objects.create(
+            repository_name="Repositorio UPeU",
+            repository_domain="repositorio.upeu.edu.pe",
+            oai_identifier="oai:repositorio.upeu.edu.pe:20.500.12840/4983",
+            title="Aprendizaje cooperativo y la expresión oral del inglés",
+            source_url=source_url,
+            text_excerpt="Resumen.",
+            normalized_text="resumen",
+            harvested_at=timezone.now(),
+        )
+
+    def _write_oai(self, record: OaiRecord) -> ReportSource:
+        report = AnalysisReport.objects.create(document=self.document)
+        result = SpanAnalysisResult(
+            similarity_percent=Decimal("5.00"),
+            countable_word_count=200,
+            sources=[
+                SpanSourceResult(
+                    source=SpanSource(
+                        key=f"oai:{record.id}",
+                        kind=SOURCE_KIND_OAI,
+                        title=record.title,
+                        segments=("texto",),
+                        source_id=record.id,
+                        owner_name=record.repository_name,
+                        url=record.source_url,
+                        domain=record.repository_name,
+                    ),
+                    word_count=10,
+                    percent=Decimal("5.00"),
+                )
+            ],
+        )
+        SpanReportWriter().write(report=report, result=result, reset=True)
+        return report.sources.get()
+
+    def test_internal_source_shows_work_title_without_student_name(self) -> None:
+        self._internal_source(self.copied[:60], title="Tesis sobre convivencia")
+        source = self._source(self._analyze(copied_words=60), "Tesis sobre convivencia")
+
+        self.assertEqual(source.display_title, "Tesis sobre convivencia")
+        self.assertEqual(source.display_subtitle, "Repositorio interno")
+        self.assertEqual(source.link_url, "")
+
+        response = self._client_for(self.teacher).get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+        self.assertContains(response, "Tesis sobre convivencia")
+        self.assertContains(response, "Repositorio interno")
+
+    def test_web_source_links_to_page_with_domain_subtitle(self) -> None:
+        page = self._web_page(self.copied[:60], title="Guía de convivencia")
+        source = self._source(
+            self._analyze(copied_words=60, web_pages=[page]), "Guía de convivencia"
+        )
+
+        self.assertEqual(source.display_subtitle, "example.com")
+        self.assertEqual(source.link_url, page.url)
+
+    def test_oai_source_links_to_record_url(self) -> None:
+        record = self._oai_record("https://hdl.handle.net/20.500.12840/4983")
+        source = self._write_oai(record)
+
+        self.assertTrue(source.is_oai)
+        self.assertEqual(source.display_title, record.title)
+        self.assertEqual(source.display_subtitle, "Repositorio UPeU")
+        self.assertEqual(source.link_url, record.source_url)
+
+    def test_oai_source_without_url_falls_back_to_pdf(self) -> None:
+        record = self._oai_record("")
+        OaiFullText.objects.create(
+            record=record,
+            status=OaiFullTextStatus.OK,
+            pdf_url="https://repositorio.upeu.edu.pe/bitstream/4983.pdf",
+        )
+        source = self._write_oai(record)
+
+        self.assertEqual(
+            source.link_url, "https://repositorio.upeu.edu.pe/bitstream/4983.pdf"
+        )
+
+    def test_pdf_lists_title_with_repository_subtitle(self) -> None:
+        from pypdf import PdfReader
+
+        self._internal_source(self.copied[:60], title="Tesis sobre convivencia")
+        report = self._analyze(copied_words=60)
+        text = "".join(
+            page.extract_text()
+            for page in PdfReader(BytesIO(build_highlighted_document_pdf(report))).pages
+        )
+
+        self.assertIn("Tesis sobre convivencia", text)
+        self.assertIn("Repositorio interno", text)
+        self.assertNotIn("Base interna", text)
+
+    def test_verify_page_lists_sources(self) -> None:
+        self._internal_source(self.copied[:60], title="Tesis sobre convivencia")
+        report = self._analyze(copied_words=60)
+        Certificate.objects.create(
+            report=report,
+            code="CERT-0001",
+            verification_hash="a" * 64,
+            issued_by=self.teacher,
+        )
+
+        response = self.client.get(
+            reverse("certificates:verify", args=["a" * 64])
+        )
+
+        self.assertContains(response, "Certificado válido")
+        self.assertContains(response, "Tesis sobre convivencia")
+        self.assertContains(response, "Repositorio interno")
+        self.assertNotContains(response, "alumno2")
+
+    def test_verify_page_unknown_hash(self) -> None:
+        response = self.client.get(
+            reverse("certificates:verify", args=["b" * 64])
+        )
+
+        self.assertContains(response, "Certificado no encontrado")
+
+    def _client_for(self, user: User):
+        self.client.force_login(user)
+        return self.client

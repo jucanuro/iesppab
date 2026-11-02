@@ -178,6 +178,11 @@ class CertificateVerifyView(View):
             )
             .first()
         )
+        sources = (
+            list(certificate.report.sources.filter(is_excluded=False))
+            if certificate
+            else []
+        )
 
         return render(
             request,
@@ -185,5 +190,6 @@ class CertificateVerifyView(View):
             {
                 "certificate": certificate,
                 "verification_hash": verification_hash,
+                "sources": sources,
             },
         )

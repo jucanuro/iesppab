@@ -55,6 +55,7 @@ from apps.analysis.models import (
     SOURCE_TYPE_OAI_FULLTEXT,
     DocumentFingerprint,
     DocumentKnowledgeChunk,
+    OaiFullText,
     OaiRecord,
 )
 from apps.analysis.retrieval import CandidateRetriever
@@ -1271,10 +1272,12 @@ class DocumentAnalysisService:
             if oai_record is not None:
                 domain = oai_record.repository_name
                 url = oai_record.source_url
+                full_text = OaiFullText.objects.filter(record=oai_record).first()
                 source_metadata = {
                     "source": "oai",
                     "oai_identifier": oai_record.oai_identifier,
                     "repository_name": oai_record.repository_name,
+                    "pdf_url": full_text.pdf_url if full_text else "",
                 }
                 finding_source = "oai"
             else:

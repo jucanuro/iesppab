@@ -1,112 +1,61 @@
 {% extends "base.html" %}
 
-{% block title %}Reporte | {{ document.title }}{% endblock %}
+{% block title %}Verificación de certificado{% endblock %}
 
 {% block content %}
-<section class="space-y-5">
+<section class="mx-auto max-w-4xl space-y-5">
 
-    <!-- CABECERA -->
-    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div class="bg-gradient-to-r from-slate-50 via-white to-sky-50 px-6 py-6">
-            <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-3">
-                        <span class="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1">
-                            <span class="h-2 w-2 rounded-full bg-sky-500"></span>
-                            <span class="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-700">
-                                Reporte de originalidad
-                            </span>
-                        </span>
+    {% if certificate %}
+        {% with report=certificate.report document=certificate.report.document %}
 
-                        <span class="text-xs font-semibold text-slate-500">
-                            Documento académico procesado
-                        </span>
+        <!-- CABECERA -->
+        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
+            <div class="bg-gradient-to-r from-[#eef3ff] via-white to-[#eef3ff] px-6 py-6">
+                <span class="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1">
+                    <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">
+                        Certificado válido
+                    </span>
+                </span>
+
+                <h2 class="mt-4 text-2xl font-bold tracking-tight text-[#123f9e]">
+                    {{ document.title }}
+                </h2>
+
+                <p class="mt-2 text-sm text-slate-500">
+                    {{ document.owner.get_full_name|default:document.owner.username }}
+                    · {{ document.institution.name }}
+                </p>
+
+                <dl class="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                        <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Código</dt>
+                        <dd class="mt-1 font-semibold text-slate-800">{{ certificate.code }}</dd>
                     </div>
-
-                    <h2 class="mt-4 text-2xl font-bold tracking-tight text-slate-900">
-                        {{ document.title }}
-                    </h2>
-
-                    <p class="mt-2 text-sm text-slate-500">
-                        {{ document.owner.get_full_name|default:document.owner.username }}
-                        · {{ document.get_kind_display }}
-                        · {{ document.created_at|date:"d/m/Y H:i" }}
-                    </p>
-                </div>
-
-                <div class="flex flex-wrap gap-2">
-                    <a href="{% url 'documents:upload' %}"
-                       class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-50">
-                        Volver
-                    </a>
-
-                    {% if certificate %}
-                        <a href="{% url 'certificates:download' certificate.id %}"
-                           class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100">
-                            {% include "certificates/_seal_download_icon.html" %}
-                            Descargar
-                        </a>
-                    {% else %}
-                        <form method="post"
-                              action="{% url 'certificates:generate' document.id %}"
-                              class="inline-flex"
-                              data-submit-spinner>
-                            {% csrf_token %}
-                            <button type="submit"
-                                    data-loading-label="Generando…"
-                                    class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700 transition hover:bg-emerald-100">
-                                {% include "certificates/_seal_icon.html" %}
-                                Generar
-                            </button>
-                        </form>
-                    {% endif %}
-                </div>
+                    <div>
+                        <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Emitido el</dt>
+                        <dd class="mt-1 font-semibold text-slate-800">{{ certificate.created_at|date:"d/m/Y H:i" }}</dd>
+                    </div>
+                    <div class="sm:col-span-2">
+                        <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Hash de verificación</dt>
+                        <dd class="mt-1 break-all font-mono text-xs text-slate-600">{{ verification_hash }}</dd>
+                    </div>
+                </dl>
             </div>
-        </div>
-    </section>
-
-    {% if not report %}
-        <section class="rounded-xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
-            <h3 class="text-lg font-bold text-amber-800">
-                Este documento aún no tiene reporte.
-            </h3>
-            <p class="mt-2 text-sm text-amber-700">
-                Primero ejecuta el análisis desde la bandeja documental.
-            </p>
         </section>
-    {% else %}
 
         <!-- MÉTRICAS -->
-        <section class="grid gap-4 md:grid-cols-4">
-            <article class="rounded-xl border border-red-200 bg-red-50 p-5 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-red-500">
+        <section class="grid gap-4 sm:grid-cols-2">
+            <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
                     Similitud
                 </p>
-                <p class="mt-3 text-4xl font-bold text-red-600">
+                <p class="mt-3 text-4xl font-bold text-[#123f9e]">
                     {{ report.similarity_percent }}%
                 </p>
             </article>
 
-            <article class="rounded-xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-sky-600">
-                    IA estimada
-                </p>
-                <p class="mt-3 text-4xl font-bold text-sky-600">
-                    {{ report.ai_probability_percent }}%
-                </p>
-                <p class="mt-2 text-[10.5px] leading-snug text-sky-700/80">{{ report.AI_DISCLAIMER }}</p>
-            </article>
-
-            <article class="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-600">
-                    Estado
-                </p>
-                <p class="mt-3 text-3xl font-bold text-emerald-700">
-                    {{ document.get_status_display }}
-                </p>
-            </article>
-
-            <article class="rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <article class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
                     Riesgo
                 </p>
@@ -116,127 +65,49 @@
             </article>
         </section>
 
-        <!-- CONTENIDO PRINCIPAL -->
-        <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <!-- FUENTES -->
+        <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
+            <div class="border-b border-slate-200 px-5 py-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-slate-700">
+                    Fuentes detectadas
+                </h3>
+            </div>
 
-            <!-- VISOR -->
-            <article class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div class="border-b border-slate-200 px-5 py-4">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <span class="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1">
-                                <span class="h-2 w-2 rounded-full bg-red-500"></span>
-                                <span class="text-[11px] font-bold uppercase tracking-[0.18em] text-red-700">
-                                    Visor interactivo
-                                </span>
-                            </span>
-
-                            <h3 class="mt-3 text-lg font-bold text-slate-900">
-                                Texto del documento
-                            </h3>
-                        </div>
-
-                        <div class="flex gap-2">
-                            <span class="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-600">
-                                Rojo: similitud
-                            </span>
-                            <span class="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-bold text-sky-600">
-                                Azul: IA
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="max-h-[70vh] overflow-y-auto p-5">
-                    <div class="whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm leading-8 text-slate-700">
-                        {% for segment in highlighted_segments %}
-                            {% if segment.finding_type == "SIMILARITY" %}
-                                <span class="rounded-md bg-red-100 px-1 py-0.5 text-red-900 ring-1 ring-red-200"
-                                      title="Similitud {{ segment.confidence_percent }}%">{{ segment.text }}</span>
-                            {% elif segment.finding_type == "AI_GENERATED" %}
-                                <span class="rounded-md bg-sky-100 px-1 py-0.5 text-sky-900 ring-1 ring-sky-200"
-                                      title="IA {{ segment.confidence_percent }}%">{{ segment.text }}</span>
-                            {% else %}
-                                {{ segment.text }}
-                            {% endif %}
-                        {% empty %}
-                            <p class="text-slate-500">
-                                No hay texto extraído para mostrar.
-                            </p>
-                        {% endfor %}
-                    </div>
-                </div>
-            </article>
-
-            <!-- SIDEBAR -->
-            <aside class="space-y-5">
-
-                <!-- FUENTES -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div class="border-b border-slate-200 px-5 py-4">
-                        <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-slate-700">
-                            Fuentes detectadas
-                        </h3>
-                    </div>
-
-                    <div class="max-h-[300px] space-y-3 overflow-y-auto p-4">
-                        {% for source in sources %}
-                            <article class="rounded-lg border border-red-200 bg-red-50 p-3">
-                                <div class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-red-800">
-                                            {{ source.title }}
-                                        </p>
-                                        <p class="mt-1 truncate text-xs font-medium text-red-600">
-                                            {{ source.domain }}
-                                        </p>
-                                    </div>
-
-                                    <span class="shrink-0 rounded-md bg-red-100 px-2 py-1 text-xs font-bold text-red-700">
-                                        {{ source.matched_percent }}%
-                                    </span>
-                                </div>
-                            </article>
-                        {% empty %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
-                                No se detectaron fuentes internas relevantes.
-                            </p>
-                        {% endfor %}
-                    </div>
-                </section>
-
-                <!-- IA -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div class="border-b border-slate-200 px-5 py-4">
-                        <h3 class="text-sm font-bold uppercase tracking-[0.16em] text-slate-700">
-                            Posibles patrones IA
-                        </h3>
-                    </div>
-
-                    <div class="max-h-[300px] space-y-3 overflow-y-auto p-4">
-                        {% for finding in ai_findings %}
-                            <article class="rounded-lg border border-sky-200 bg-sky-50 p-3">
-                                <div class="flex items-center justify-between gap-2">
-                                    <p class="text-xs font-bold uppercase tracking-[0.14em] text-sky-700">
-                                        Confianza
-                                    </p>
-                                    <span class="rounded-md bg-sky-100 px-2 py-1 text-xs font-bold text-sky-700">
-                                        {{ finding.confidence_percent }}%
-                                    </span>
-                                </div>
-
-                                <p class="mt-2 line-clamp-5 text-sm leading-6 text-sky-900">
-                                    {{ finding.text_excerpt }}
+            <div class="space-y-3 p-4">
+                {% for source in sources %}
+                    <article class="rounded-lg border border-slate-200 bg-[#eef3ff] p-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="min-w-0">
+                                <p class="text-sm font-bold text-[#123f9e]">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                <p class="mt-1 truncate text-xs font-medium text-slate-500">
+                                    {{ source.display_subtitle }}
                                 </p>
-                            </article>
-                        {% empty %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
-                                No se detectaron patrones IA relevantes.
-                            </p>
-                        {% endfor %}
-                    </div>
-                </section>
-            </aside>
+                            </div>
+
+                            <span class="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-bold text-[#123f9e]">
+                                {{ source.matched_percent|floatformat:1 }}%
+                            </span>
+                        </div>
+                    </article>
+                {% empty %}
+                    <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                        No se detectaron fuentes relevantes.
+                    </p>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% endwith %}
+    {% else %}
+        <section class="rounded-xl border border-red-200 bg-red-50 p-6 shadow-sm">
+            <h2 class="text-lg font-bold text-red-800">
+                Certificado no encontrado
+            </h2>
+            <p class="mt-2 text-sm text-red-700">
+                El código de verificación no corresponde a ningún certificado vigente.
+                Puede haber sido revocado o el enlace es incorrecto.
+            </p>
+            <p class="mt-3 break-all font-mono text-xs text-red-600">{{ verification_hash }}</p>
         </section>
     {% endif %}
 </section>

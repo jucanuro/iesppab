@@ -484,6 +484,15 @@ WEB_ANALYSIS_MAX_PAGES_PER_QUERY = env_int(
     2,
 )
 
+# Vigencia de las caches web (apps/analysis/web_cache.py). Las respuestas de
+# Brave y las páginas leídas se reutilizan: menos cuota y el mismo % web al
+# reanalizar. Un fallo (bloqueo, timeout) se recuerda menos tiempo para
+# volver a intentarlo pronto. 0 desactiva esa caché. Las entradas vencidas
+# se borran con `python manage.py purge_web_cache`.
+WEB_SEARCH_CACHE_DAYS = env_int("WEB_SEARCH_CACHE_DAYS", 30)
+WEB_PAGE_CACHE_DAYS = env_int("WEB_PAGE_CACHE_DAYS", 30)
+WEB_PAGE_FAILURE_CACHE_HOURS = env_int("WEB_PAGE_FAILURE_CACHE_HOURS", 24)
+
 
 OAI_HARVEST_ENABLED = env_bool(
     "OAI_HARVEST_ENABLED",

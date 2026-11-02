@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from http.client import RemoteDisconnected
 from io import BytesIO
 from urllib.parse import urlparse
 
@@ -11,6 +13,9 @@ import requests
 from bs4 import BeautifulSoup
 from django.conf import settings
 from pypdf import PdfReader
+from urllib3.exceptions import ReadTimeoutError
+
+from apps.analysis import web_cache
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +45,52 @@ class WebSearchRun:
     fetched_pages: int
 
 
+# Un solo reintento, tras una espera corta, cuando el servidor no respondió
+# a tiempo o cerró la conexión sin respuesta: suelen ser cortes pasajeros.
+# Un 403/429 es un bloqueo o límite de cuota y reintentar no lo arregla.
+RETRY_DELAY_SECONDS = 1.0
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    pending: list[object] = [exc]
+    seen: set[int] = set()
+
+    while pending:
+        current = pending.pop()
+
+        if not isinstance(current, BaseException) or id(current) in seen:
+            continue
+
+        seen.add(id(current))
+
+        if isinstance(
+            current, (requests.Timeout, RemoteDisconnected, ReadTimeoutError)
+        ):
+            return True
+
+        pending.extend(current.args)
+        pending.extend([current.__cause__, current.__context__])
+
+    return False
+
+
+def call_with_retry(operation: Callable[[], object], description: str):
+    """
+    Ejecuta `operation` y, si falla por timeout o RemoteDisconnected, la
+    repite una vez tras RETRY_DELAY_SECONDS. Cualquier otro error (y el
+    segundo fallo) se propaga.
+    """
+    try:
+        return operation()
+    except requests.RequestException as exc:
+        if not _is_transient_error(exc):
+            raise
+
+        logger.info("Reintentando tras corte pasajero. %s error=%s", description, exc)
+        time.sleep(RETRY_DELAY_SECONDS)
+        return operation()
+
+
 class BraveWebSearchClient:
     BASE_URL = "https://api.search.brave.com/res/v1/web/search"
 
@@ -63,6 +114,18 @@ class BraveWebSearchClient:
         if not cleaned_query:
             return []
 
+        count = min(count, 10)
+        cache_key = web_cache.search_cache_key(
+            query=cleaned_query,
+            count=count,
+            country=self.country,
+            search_lang=self.search_lang,
+        )
+        cached = web_cache.get_search_results(cache_key)
+
+        if cached is not None:
+            return self._parse_results(cached)
+
         headers = {
             "Accept": "application/json",
             "X-Subscription-Token": self.api_key,
@@ -70,12 +133,12 @@ class BraveWebSearchClient:
 
         params = {
             "q": cleaned_query,
-            "count": min(count, 10),
+            "count": count,
             "country": self.country,
             "search_lang": self.search_lang,
         }
 
-        try:
+        def request() -> requests.Response:
             response = requests.get(
                 self.BASE_URL,
                 headers=headers,
@@ -83,6 +146,10 @@ class BraveWebSearchClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
+            return response
+
+        try:
+            response = call_with_retry(request, f"query={cleaned_query}")
             payload = response.json()
 
         except requests.RequestException as exc:
@@ -93,12 +160,27 @@ class BraveWebSearchClient:
             logger.warning("JSON inválido Brave Search. query=%s error=%s", cleaned_query, exc)
             return []
 
+        # Solo se guarda una respuesta válida (aunque venga vacía); los
+        # errores se vuelven a consultar en el próximo análisis.
+        items = [
+            {
+                "url": item.get("url", ""),
+                "title": item.get("title", ""),
+                "description": item.get("description", ""),
+            }
+            for item in payload.get("web", {}).get("results", [])
+        ]
+        web_cache.store_search_results(cache_key, cleaned_query, items)
+
+        return self._parse_results(items)
+
+    def _parse_results(self, items: list[dict]) -> list[WebSearchResult]:
         results: list[WebSearchResult] = []
 
-        for item in payload.get("web", {}).get("results", []):
-            url = item.get("url", "").strip()
-            title = item.get("title", "").strip()
-            snippet = item.get("description", "").strip()
+        for item in items:
+            url = (item.get("url") or "").strip()
+            title = (item.get("title") or "").strip()
+            snippet = (item.get("description") or "").strip()
 
             if not url:
                 continue
@@ -161,9 +243,47 @@ class WebPageFetcher:
         self.timeout = getattr(settings, "WEB_ANALYSIS_TIMEOUT_SECONDS", 10)
 
     def fetch(self, result: WebSearchResult) -> WebPageContent | None:
+        """
+        Página leída o None. Se consulta primero la caché por URL: tanto la
+        lectura exitosa como el fallo, así un reanálisis ve exactamente las
+        mismas páginas.
+        """
         if self._looks_like_blocked_file(result.url):
             return None
 
+        cached = web_cache.get_page(result.url)
+
+        if cached is not None:
+            if not cached.is_success:
+                return None
+
+            return WebPageContent(
+                title=cached.title or result.title,
+                url=result.url,
+                domain=result.domain,
+                text=cached.text,
+                source_format=cached.source_format,
+            )
+
+        page, failure_reason = self._download(result=result)
+
+        if page is None:
+            web_cache.store_page(result.url, failure_reason=failure_reason)
+        else:
+            web_cache.store_page(
+                result.url,
+                title=page.title,
+                text=page.text,
+                source_format=page.source_format,
+            )
+
+        return page
+
+    def _download(
+        self,
+        result: WebSearchResult,
+    ) -> tuple[WebPageContent | None, str]:
+        """(página, "") si se pudo leer; (None, motivo) si no."""
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (compatible; IESPP-OriginalityBot/1.0; "
@@ -172,7 +292,7 @@ class WebPageFetcher:
             "Accept": "text/html,application/xhtml+xml,application/pdf",
         }
 
-        try:
+        def download() -> tuple[requests.Response, bytes]:
             response = requests.get(
                 result.url,
                 headers=headers,
@@ -182,37 +302,46 @@ class WebPageFetcher:
             )
 
             if response.status_code >= 400:
-                return None
+                return response, b""
+
+            # La lectura va dentro del reintento: un corte a mitad de la
+            # descarga también es pasajero.
+            return response, self._read_limited_response(response=response)
+
+        try:
+            response, raw_content = call_with_retry(download, f"url={result.url}")
+
+            if response.status_code >= 400:
+                return None, f"HTTP {response.status_code}"
 
             content_type = response.headers.get("Content-Type", "").lower()
             url_lower = response.url.lower().split("?")[0]
 
-            raw_content = self._read_limited_response(response=response)
-
             if not raw_content:
-                return None
+                return None, "respuesta vacía"
 
             if "application/pdf" in content_type or url_lower.endswith(".pdf"):
-                return self._parse_pdf(
+                page = self._parse_pdf(
                     raw_content=raw_content,
                     result=result,
                 )
-
-            if "text/html" in content_type or "application/xhtml" in content_type:
-                return self._parse_html(
+            elif "text/html" in content_type or "application/xhtml" in content_type:
+                page = self._parse_html(
                     html=raw_content.decode(response.encoding or "utf-8", errors="ignore"),
                     result=result,
                 )
+            else:
+                return None, f"tipo no soportado: {content_type[:80]}"
 
-            return None
+            return page, "" if page is not None else "sin texto suficiente"
 
         except requests.RequestException as exc:
             logger.info("No se pudo leer web. url=%s error=%s", result.url, exc)
-            return None
+            return None, f"{type(exc).__name__}: {exc}"
 
         except Exception as exc:
             logger.info("Error procesando web. url=%s error=%s", result.url, exc)
-            return None
+            return None, f"{type(exc).__name__}: {exc}"
 
     def _read_limited_response(self, response: requests.Response) -> bytes:
         chunks: list[bytes] = []
@@ -372,9 +501,7 @@ class WebCandidateCollector:
         self.max_query_phrases = getattr(settings, "WEB_ANALYSIS_MAX_QUERY_PHRASES", 8)
         self.max_queries = getattr(settings, "WEB_ANALYSIS_MAX_QUERIES", 24)
         self.max_pages_total = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_TOTAL", 16)
-        # Tope de páginas que aporta cada consulta: sin él, las primeras
-        # consultas (inicio del documento) llenan `max_pages_total` y los
-        # tramos del medio y del final nunca llegan a buscarse.
+        # Tope de páginas que aporta cada consulta (ver `run_queries`).
         self.max_pages_per_query = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_PER_QUERY", 2)
 
     def collect(self, content: str) -> list[WebPageContent]:
@@ -408,50 +535,63 @@ class WebCandidateCollector:
 
     def run_queries(self, queries: list[str]) -> WebSearchRun:
         """
-        Ejecuta las consultas en orden y descarga sus páginas respetando
-        `max_pages_total` y `max_pages_per_query`. Devuelve cada página
-        junto a la consulta que la trajo (lo usa `web_search_probe`).
+        Ejecuta TODAS las consultas y después reparte la descarga de páginas
+        por rondas: en cada ronda cada consulta, en orden de prioridad,
+        aporta como mucho una página más, hasta `max_pages_per_query` por
+        consulta y `max_pages_total` en total.
+
+        Antes se descargaba consulta por consulta y, al llenarse el tope de
+        páginas, las consultas restantes ni se ejecutaban: las primeras
+        consultas se llevaban todo el presupuesto. Devuelve cada página junto
+        a la consulta que la trajo (lo usa `web_search_probe`).
         """
+        results_by_query = [
+            (query, list(self.search_client.search(query=query, count=5)))
+            for query in queries
+        ]
+
         seen_urls: set[str] = set()
         pages: list[tuple[str, WebPageContent]] = []
-        executed_queries = 0
+        pages_by_query = [0] * len(results_by_query)
+        next_result = [0] * len(results_by_query)
         fetched_pages = 0
+        progress = True
 
-        for query in queries:
-            if len(pages) >= self.max_pages_total:
-                break
+        while progress and len(pages) < self.max_pages_total:
+            progress = False
 
-            executed_queries += 1
-            results = self.search_client.search(
-                query=query,
-                count=5,
-            )
-            pages_from_query = 0
-
-            for result in results:
-                if (
-                    len(pages) >= self.max_pages_total
-                    or pages_from_query >= self.max_pages_per_query
-                ):
+            for index, (query, results) in enumerate(results_by_query):
+                if len(pages) >= self.max_pages_total:
                     break
 
-                if result.url in seen_urls:
+                if pages_by_query[index] >= self.max_pages_per_query:
                     continue
 
-                seen_urls.add(result.url)
-                fetched_pages += 1
+                # Se avanza por los resultados de la consulta hasta leer una
+                # página; las URLs ya vistas (por esta u otra consulta) y las
+                # que fallan no consumen su cupo.
+                while next_result[index] < len(results):
+                    result = results[next_result[index]]
+                    next_result[index] += 1
 
-                page = self.fetcher.fetch(result=result)
+                    if result.url in seen_urls:
+                        continue
 
-                if page is None:
-                    continue
+                    seen_urls.add(result.url)
+                    fetched_pages += 1
+                    page = self.fetcher.fetch(result=result)
 
-                pages.append((query, page))
-                pages_from_query += 1
+                    if page is None:
+                        continue
+
+                    pages.append((query, page))
+                    pages_by_query[index] += 1
+                    progress = True
+                    break
 
         return WebSearchRun(
             pages=pages,
-            executed_queries=executed_queries,
+            executed_queries=len(results_by_query),
             fetched_pages=fetched_pages,
         )
 

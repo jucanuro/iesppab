@@ -354,6 +354,57 @@ class ReportSource(TimeStampedModel):
     def is_possible_resubmission(self) -> bool:
         return bool(self.resubmission)
 
+    # Los registros OAI se guardan con source_type INTERNAL (ambos motores
+    # los tratan junto con los documentos internos); se distinguen por
+    # metadata["source"], así que estas propiedades sirven también para
+    # reportes anteriores.
+    @property
+    def is_web(self) -> bool:
+        return self.source_type == SourceType.WEB
+
+    @property
+    def is_oai(self) -> bool:
+        return (self.metadata or {}).get("source") == "oai"
+
+    @property
+    def display_title(self) -> str:
+        """
+        Nombre principal: título de la tesis, documento o página.
+        """
+        return self.title or self.domain or "Fuente"
+
+    @property
+    def display_subtitle(self) -> str:
+        """
+        Repositorio o dominio. Para documentos internos nunca se muestra
+        el nombre del alumno, solo el origen.
+        """
+        if self.is_web:
+            return self.domain or "Internet"
+
+        if self.is_oai:
+            return (
+                (self.metadata or {}).get("repository_name")
+                or self.domain
+                or "Repositorio académico"
+            )
+
+        return "Repositorio interno"
+
+    @property
+    def link_url(self) -> str:
+        """
+        Enlace público de la fuente: página web, o registro OAI (o su PDF
+        si el registro no trae URL). Los documentos internos son privados.
+        """
+        if self.is_web:
+            return self.url
+
+        if self.is_oai:
+            return self.url or (self.metadata or {}).get("pdf_url", "")
+
+        return ""
+
 
 class FindingType(models.TextChoices):
     SIMILARITY = "SIMILARITY", _("Similitud")

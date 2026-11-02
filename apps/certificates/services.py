@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import logging
 import secrets
 import unicodedata
@@ -775,20 +776,23 @@ class CertificateGenerationService:
         rows: list[list[Any]] = [
             [
                 Paragraph("Fuente", styles["sources_header"]),
-                Paragraph("Descripción", styles["sources_header"]),
                 Paragraph("%", styles["sources_header"]),
             ]
         ]
 
         for source in sources:
+            title = html.escape(self._truncate(source.display_title, 120), quote=False)
+            link = source.link_url
+
+            if link:
+                title = f'<a href="{html.escape(link, quote=True)}">{title}</a>'
+
             rows.append(
                 [
                     Paragraph(
-                        source.domain or "—",
-                        styles["sources_cell"],
-                    ),
-                    Paragraph(
-                        self._truncate(source.title, 90),
+                        f"<b>{title}</b><br/>"
+                        f'<font size="7" color="#64748B">'
+                        f"{html.escape(source.display_subtitle, quote=False)}</font>",
                         styles["sources_cell"],
                     ),
                     Paragraph(
@@ -800,7 +804,7 @@ class CertificateGenerationService:
 
         sources_table = Table(
             rows,
-            colWidths=[4.5 * cm, 9.6 * cm, 2.5 * cm],
+            colWidths=[14.1 * cm, 2.5 * cm],
             repeatRows=1,
         )
         sources_table.setStyle(self._sources_table_style())
@@ -831,7 +835,7 @@ class CertificateGenerationService:
                     [colors.white, colors.HexColor("#F0F5FF")],
                 ),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (2, 0), (2, -1), "CENTER"),
+                ("ALIGN", (1, 0), (1, -1), "CENTER"),
                 ("PADDING", (0, 0), (-1, -1), 6),
             ]
         )

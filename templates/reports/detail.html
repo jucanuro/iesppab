@@ -206,7 +206,7 @@
                 <ul class="mt-2 space-y-1 text-[13px] text-red-700">
                     {% for source in resubmission_sources %}
                         <li>
-                            «{{ source.title }}» de
+                            «{{ source.display_title }}» de
                             <span class="font-semibold">{{ source.resubmission.original_owner|default:"otro usuario" }}</span>{% if source.resubmission.original_created_at %},
                             subido el {{ source.resubmission.original_created_at|slice:":10" }}{% endif %}
                             ({% if source.resubmission.same_hash %}archivo idéntico{% else %}cubre el {{ source.resubmission.coverage_percent }}% del documento{% endif %}{% if source.is_excluded %}; fuente excluida{% endif %}).
@@ -505,11 +505,11 @@
                                 <article class="rounded-lg border border-red-200 bg-red-50 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-red-800">{{ source.title }}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-red-600">{{ source.domain }}</p>
+                                            <p class="truncate text-[13px] font-bold text-red-800" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                            <p class="mt-1 truncate text-[11px] font-semibold text-red-600">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[11px] font-bold text-red-700">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -521,11 +521,11 @@
                                 <article class="rounded-lg border border-[#f5b400]/40 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]" style="background-color:#fff8e6;">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-[#8a6100]">{{ source.title }}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-[#8a6100]">{{ source.domain }}</p>
+                                            <p class="truncate text-[13px] font-bold text-[#8a6100]" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                            <p class="mt-1 truncate text-[11px] font-semibold text-[#8a6100]">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff3cf;">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -537,11 +537,11 @@
                                 <article class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-emerald-800">{{ source.title }}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-emerald-600">{{ source.domain }}</p>
+                                            <p class="truncate text-[13px] font-bold text-emerald-800" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                            <p class="mt-1 truncate text-[11px] font-semibold text-emerald-600">{{ source.display_subtitle }}</p>
                                         </div>
                                         <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
-                                            {{ source.matched_percent }}%
+                                            {{ source.matched_percent|floatformat:1 }}%
                                         </span>
                                     </div>
                                     {% if source.snippet %}
@@ -574,11 +574,11 @@
                                     <article class="rounded-lg border border-slate-200 bg-slate-50 p-3">
                                         <div class="flex items-start justify-between gap-3">
                                             <div class="min-w-0">
-                                                <p class="truncate text-[13px] font-bold text-slate-500 line-through">{{ source.title }}</p>
-                                                <p class="mt-1 truncate text-[11px] font-semibold text-slate-400">{{ source.domain }}</p>
+                                                <p class="truncate text-[13px] font-bold text-slate-500 line-through" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                                <p class="mt-1 truncate text-[11px] font-semibold text-slate-400">{{ source.display_subtitle }}</p>
                                             </div>
                                             <span class="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500">
-                                                {{ source.matched_percent }}%
+                                                {{ source.matched_percent|floatformat:1 }}%
                                             </span>
                                         </div>
                                         <p class="mt-2 text-[12px] leading-5 text-slate-600">

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 from docx import Document as DocxDocument
+from docx.table import Table
 from pypdf import PdfReader
 
 from apps.documents.models import Document, DocumentText
@@ -344,19 +345,15 @@ class DocumentTextExtractor:
                 docx = DocxDocument(file_obj)
                 parts: list[str] = []
 
-                for paragraph in docx.paragraphs:
-                    if paragraph.text.strip():
-                        parts.append(paragraph.text.strip())
-
-                for table in docx.tables:
-                    for row in table.rows:
-                        row_text = " ".join(
-                            cell.text.strip()
-                            for cell in row.cells
-                            if cell.text.strip()
-                        )
-                        if row_text:
-                            parts.append(row_text)
+                # Párrafos y tablas en el orden real del cuerpo: antes las
+                # tablas iban todas al final y el texto de una tabla quedaba
+                # lejos del párrafo que la presenta (offsets, tramos de la
+                # búsqueda web y segmentos de IA desplazados).
+                for block in docx.iter_inner_content():
+                    if isinstance(block, Table):
+                        parts.extend(self._docx_table_rows(block))
+                    elif block.text.strip():
+                        parts.append(block.text.strip())
 
                 # Cada párrafo de Word va separado por una línea en blanco:
                 # el filtro académico, la detección de IA y la búsqueda web
@@ -372,6 +369,35 @@ class DocumentTextExtractor:
             raise TextExtractionError(
                 "No se pudo extraer texto del DOCX."
             ) from exc
+
+    def _docx_table_rows(self, table: Table) -> list[str]:
+        """
+        Una línea por fila. `row.cells` repite la misma celda por cada
+        columna que abarca una combinación horizontal y por cada fila de una
+        combinación vertical: cada celda se escribe solo la primera vez, si
+        no su texto se duplicaba y contaba doble en la similitud.
+        """
+        # Se guardan los elementos (no su id()): así siguen vivos y lxml
+        # devuelve el mismo objeto para la misma celda.
+        seen_cells: set = set()
+        rows: list[str] = []
+
+        for row in table.rows:
+            row_cells: list[str] = []
+
+            for cell in row.cells:
+                if cell._tc in seen_cells:
+                    continue
+
+                seen_cells.add(cell._tc)
+
+                if cell.text.strip():
+                    row_cells.append(cell.text.strip())
+
+            if row_cells:
+                rows.append(" ".join(row_cells))
+
+        return rows
 
     def _normalize_text(self, text: str) -> str:
         text = text.replace("\x00", " ")

@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import logging
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any
 from uuid import UUID
@@ -38,6 +38,7 @@ from apps.analysis.engines.span_similarity import (
     SpanSimilarityEngine,
 )
 from apps.analysis.engines.text_filters import AcademicTextFilter
+from apps.analysis.models import OaiFullText
 from apps.certificates.models import Certificate
 from apps.documents.models import Document
 from apps.reports.models import (
@@ -127,6 +128,7 @@ class SpanReportWriter:
             existing = {source.source_key: source for source in report.sources.all()}
 
         rows: dict[str, ReportSource] = {}
+        pdf_urls = self._oai_pdf_urls(result)
 
         for item in result.sources:
             source = item.source
@@ -151,6 +153,7 @@ class SpanReportWriter:
                 url=source.url,
                 details=details,
                 countable_word_count=countable_word_count,
+                pdf_urls=pdf_urls,
             )
             row.save()
             rows[source.key] = row
@@ -219,6 +222,7 @@ class SpanReportWriter:
         url: str,
         details: dict,
         countable_word_count: int,
+        pdf_urls: dict[UUID, str],
     ) -> dict:
         if kind == SOURCE_KIND_WEB:
             return {"source": "web", "url": url}
@@ -228,6 +232,7 @@ class SpanReportWriter:
                 "source": "oai",
                 "oai_identifier": details.get("oai_identifier", ""),
                 "repository_name": details.get("repository_name", ""),
+                "pdf_url": pdf_urls.get(source_id, "") if source_id else "",
             }
 
         metadata: dict[str, Any] = {
@@ -243,6 +248,27 @@ class SpanReportWriter:
             metadata["resubmission"] = resubmission
 
         return metadata
+
+    @staticmethod
+    def _oai_pdf_urls(result: SpanAnalysisResult) -> dict[UUID, str]:
+        """
+        PDF del texto completo de cada registro OAI citado: enlace de
+        respaldo cuando el registro no trae URL propia.
+        """
+        record_ids = [
+            item.source.source_id
+            for item in result.sources
+            if item.source.kind == SOURCE_KIND_OAI and item.source.source_id
+        ]
+
+        if not record_ids:
+            return {}
+
+        return dict(
+            OaiFullText.objects.filter(record_id__in=record_ids)
+            .exclude(pdf_url="")
+            .values_list("record_id", "pdf_url")
+        )
 
     def _resubmission(self, details: dict, countable_word_count: int) -> dict:
         coverage_percent = (
@@ -610,6 +636,64 @@ def split_plain_text_around_common(
     ]
 
 
+def findings_in_paint_order(
+    findings: list[ReportFinding],
+    content_length: int,
+) -> list[tuple[int, int, ReportFinding]]:
+    """
+    Tramos (inicio, fin, hallazgo) sin solapes, ordenados por inicio, para
+    pintar el texto. La similitud tiene prioridad sobre la IA: un pasaje de
+    una fuente dentro de un párrafo marcado como IA suma al % y tiene que
+    verse, así que el hallazgo de IA se parte alrededor. Entre hallazgos del
+    mismo tipo gana el primero.
+    """
+
+    def first_wins(
+        items: list[tuple[int, int, ReportFinding]],
+    ) -> list[tuple[int, int, ReportFinding]]:
+        kept: list[tuple[int, int, ReportFinding]] = []
+        cursor = 0
+
+        for start, end, finding in sorted(items, key=lambda item: item[0]):
+            if start < cursor:
+                continue
+
+            kept.append((start, end, finding))
+            cursor = end
+
+        return kept
+
+    valid = [
+        (max(finding.start_offset, 0), min(finding.end_offset, content_length), finding)
+        for finding in findings
+        if finding.start_offset < finding.end_offset
+        and finding.start_offset < content_length
+    ]
+    similarity = first_wins(
+        [item for item in valid if item[2].finding_type == FindingType.SIMILARITY]
+    )
+    pieces = list(similarity)
+
+    for start, end, finding in first_wins(
+        [item for item in valid if item[2].finding_type != FindingType.SIMILARITY]
+    ):
+        cursor = start
+
+        for similarity_start, similarity_end, _ in similarity:
+            if similarity_end <= cursor or similarity_start >= end:
+                continue
+
+            if similarity_start > cursor:
+                pieces.append((cursor, similarity_start, finding))
+
+            cursor = max(cursor, similarity_end)
+
+        if cursor < end:
+            pieces.append((cursor, end, finding))
+
+    return sorted(pieces, key=lambda item: item[0])
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -658,11 +742,6 @@ class _HighlightedDocumentPdfBuilder:
         "#0F766E",
     ]
 
-    SOURCE_TYPE_LABELS = {
-        SourceType.WEB: "Internet",
-        SourceType.REPOSITORY: "Repositorio académico",
-        SourceType.INTERNAL: "Base interna",
-    }
 
     def __init__(self, report: AnalysisReport) -> None:
         self.report = report
@@ -670,9 +749,6 @@ class _HighlightedDocumentPdfBuilder:
 
     def _source_color(self, number: int) -> str:
         return self.SOURCE_PALETTE[(number - 1) % len(self.SOURCE_PALETTE)]
-
-    def _source_type_label(self, source: ReportSource) -> str:
-        return self.SOURCE_TYPE_LABELS.get(source.source_type, "Fuente")
 
     def build(self) -> bytes:
         content = resolve_analyzed_content(self.report)
@@ -836,8 +912,8 @@ class _HighlightedDocumentPdfBuilder:
     ) -> list[tuple[str, str | None, UUID | None]]:
         """
         Misma lógica de `ReportDetailView._build_highlight_segments`
-        (apps/reports/views.py): recorre el texto en orden, respeta el
-        primer hallazgo válido en caso de solapamiento, y deja el resto
+        (apps/reports/views.py): recorre el texto en orden, con los
+        solapamientos resueltos por `findings_in_paint_order`, y deja el resto
         como texto plano. Aquí además se conserva el `source_id` de cada
         hallazgo para poder numerarlo como nota al pie.
         """
@@ -861,26 +937,10 @@ class _HighlightedDocumentPdfBuilder:
                 )
             ]
 
-        valid_findings = sorted(
-            [
-                finding
-                for finding in findings
-                if finding.start_offset < finding.end_offset
-                and finding.start_offset < len(content)
-            ],
-            key=lambda item: item.start_offset,
-        )
-
         segments: list[tuple[str, str | None, UUID | None]] = []
         cursor = 0
 
-        for finding in valid_findings:
-            start = max(finding.start_offset, 0)
-            end = min(finding.end_offset, len(content))
-
-            if start < cursor:
-                continue
-
+        for start, end, finding in findings_in_paint_order(findings, len(content)):
             if cursor < start:
                 segments.extend(plain(cursor, start))
 
@@ -1061,7 +1121,17 @@ class _HighlightedDocumentPdfBuilder:
             # Con el motor span la fuente guarda sus palabras exactas; en
             # reportes anteriores se aproximan contando las resaltadas.
             words = source.word_count or word_counts.get(source.id, 0)
-            label = source.domain or self._truncate(source.title, 60) or "Fuente"
+            title = self._escape(self._truncate(source.display_title, 120))
+            link = source.link_url
+
+            if link:
+                title = f'<a href="{html.escape(link, quote=True)}" color="{color}">{title}</a>'
+
+            subtitle = self._escape(source.display_subtitle)
+
+            if link:
+                subtitle += f" · {self._escape(self._truncate(link, 70))}"
+
             badge = (
                 '<br/><font size="7" color="#B91C1C"><b>Posible reenvío del mismo '
                 "trabajo</b></font>"
@@ -1073,14 +1143,14 @@ class _HighlightedDocumentPdfBuilder:
                 [
                     Paragraph(f'<font color="#FFFFFF"><b>{number}</b></font>', styles["source_num"]),
                     Paragraph(
-                        f'<font color="{color}"><b>{self._escape(label)}</b></font><br/>'
-                        f'<font size="7" color="#64748B">{self._source_type_label(source)}</font>'
+                        f'<font color="{color}"><b>{title}</b></font><br/>'
+                        f'<font size="7" color="#64748B">{subtitle}</font>'
                         f"{badge}",
                         styles["source_name"],
                     ),
                     Paragraph(
                         f'{words} palabra{"" if words == 1 else "s"} &nbsp;—&nbsp; '
-                        f'<font size="11"><b>{self._format_percent(source.matched_percent)}%</b></font>',
+                        f'<font size="11"><b>{self._format_source_percent(source.matched_percent)}%</b></font>',
                         styles["source_meta"],
                     ),
                 ]
@@ -1165,7 +1235,7 @@ class _HighlightedDocumentPdfBuilder:
             section.append(
                 Paragraph(
                     f"<b>{self._escape(self._truncate(source.title, 90))}</b>"
-                    f" ({self._format_percent(source.matched_percent)}% antes de "
+                    f" ({self._format_source_percent(source.matched_percent)}% antes de "
                     f"excluir){badge}<br/>"
                     f'<font color="#64748B">Motivo: '
                     f"{self._escape(source.exclusion_reason or '—')}</font>",
@@ -1199,6 +1269,12 @@ class _HighlightedDocumentPdfBuilder:
 
     def _format_percent(self, value: Decimal) -> str:
         return f"{value:.0f}"
+
+    def _format_source_percent(self, value: Decimal) -> str:
+        # Con un decimal: una fuente de 0,4 % no puede salir como 0 %. Mismo
+        # redondeo que `floatformat:1` en la web.
+        rounded = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        return f"{rounded}".replace(".", ",")
 
     def _build_styles(self) -> dict[str, ParagraphStyle]:
         base = getSampleStyleSheet()

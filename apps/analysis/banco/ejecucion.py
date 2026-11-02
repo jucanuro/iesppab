@@ -37,6 +37,7 @@ from django.test import override_settings
 from django.utils import timezone
 
 from apps.analysis.banco.calificador import (
+    BRAVE_USD_PER_QUERY,
     Baseline,
     CaseScore,
     EngineOutput,
@@ -367,7 +368,13 @@ def generate(bank_dir: Path, seed: int, write: Callable[[str], None]) -> Bank:
         SourceDocument(key=key, kind=SOURCE_WEB, title=page.title, text=page.text)
         for key, page in sorted(load_web_pages(bank_dir).items())
     ]
-    bank = BankGenerator(seed=seed).generate(bases=bases, corpus=corpus_pool(seed), web=web)
+    generator = BankGenerator(seed=seed)
+    bank = generator.generate(bases=bases, corpus=corpus_pool(seed), web=web)
+    bank.cases.extend(
+        generator.generate_full_web(
+            bases=bases, web=web, excluded_ids={base.id for base in bank.institute_sources}
+        )
+    )
 
     cases_dir = bank_dir / "casos"
     cases_dir.mkdir(parents=True, exist_ok=True)
@@ -429,6 +436,10 @@ def load_bank(bank_dir: Path) -> tuple[dict, list[BankCase]]:
 # --- 4. correr --------------------------------------------------------------
 
 
+# Categorías que buscan en Brave con --web-real (el resto usa la foto).
+WEB_REAL_CATEGORIES = {"original", "web", "web_completa"}
+
+
 class CountingSearchClient:
     """
     Envuelve el cliente de Brave para contar consultas: las que salieron de
@@ -439,23 +450,67 @@ class CountingSearchClient:
         self.client = client
         self.total = 0
         self.cached = 0
+        # Llamadas que fallaron (no quedan en caché; un 402/429 no se cobra).
+        self.failed = 0
+
+    def __getattr__(self, name):
+        return getattr(self.client, name)
 
     def search(self, query: str, count: int = 5):
         from apps.analysis import web_cache
 
-        cleaned = self.client._clean_query(query)
-        if cleaned:
+        key = self.client.cache_key(query=query, count=count)
+        cached = False
+        if key is not None:
             self.total += 1
-            key = web_cache.search_cache_key(
-                query=cleaned, count=min(count, 10),
-                country=self.client.country, search_lang=self.client.search_lang,
-            )
-            if web_cache.get_search_results(key) is not None:
-                self.cached += 1
-        return self.client.search(query=query, count=count)
+            cached = web_cache.get_search_results(key) is not None
+            self.cached += cached
+        results = self.client.search(query=query, count=count)
+        if key is not None and not cached and web_cache.get_search_results(key) is None:
+            self.failed += 1
+        return results
 
     def usage(self) -> dict[str, int]:
-        return {"total": self.total, "cache": self.cached, "api": self.total - self.cached}
+        api = self.total - self.cached
+        return {"total": self.total, "cache": self.cached, "api": api,
+                "fallidas": self.failed, "cobradas": api - self.failed}
+
+
+class CacheWriteRecorder:
+    """
+    Las corridas indexan dentro de una transacción que se revierte; la
+    caché web escrita adentro se perdería. Esto anota cada escritura y la
+    repite después del rollback.
+    """
+
+    def __init__(self):
+        from apps.analysis import web_cache
+
+        self.module = web_cache
+        self.originals = (web_cache.store_search_results, web_cache.store_page)
+        self.calls: list[tuple[Callable, tuple, dict]] = []
+
+    def __enter__(self):
+        store_search, store_page = self.originals
+
+        def recording(function):
+            def wrapper(*args, **kwargs):
+                self.calls.append((function, args, kwargs))
+                return function(*args, **kwargs)
+            return wrapper
+
+        self.module.store_search_results = recording(store_search)
+        self.module.store_page = recording(store_page)
+        return self
+
+    def __exit__(self, *exc):
+        self.module.store_search_results, self.module.store_page = self.originals
+        return False
+
+    def replay(self) -> int:
+        for function, args, kwargs in self.calls:
+            function(*args, **kwargs)
+        return len(self.calls)
 
 
 class BankRunner:
@@ -470,19 +525,28 @@ class BankRunner:
         write: Callable[[str], None],
         web_real: bool = False,
         min_match_words: int | None = None,
+        settings_overrides: dict | None = None,
     ):
         self.bank_dir = bank_dir
         self.write = write
         self.web_real = web_real
         # Solo para esta corrida (experimentos); None deja el de settings.
         self.min_match_words = min_match_words
+        # --ajuste CLAVE=VALOR: settings solo para esta corrida.
+        self.settings_overrides = dict(settings_overrides or {})
         self.text_filter = AcademicTextFilter()
         self.web_usage: dict[str, int] = {}
 
-    def run(self, case_ids: set[str] | None = None) -> tuple[dict, list[CaseScore]]:
+    def run(
+        self,
+        case_ids: set[str] | None = None,
+        categories: set[str] | None = None,
+    ) -> tuple[dict, list[CaseScore]]:
         meta, cases = load_bank(self.bank_dir)
         if case_ids:
             cases = [case for case in cases if case.id in case_ids]
+        if categories:
+            cases = [case for case in cases if case.category in categories]
 
         snapshot = load_web_pages(self.bank_dir)
         pages_by_case = {
@@ -490,26 +554,28 @@ class BankRunner:
             for case in cases
         }
 
-        if self.web_real:
-            # Fuera de la transacción: así la caché web sí queda guardada.
-            collector = WebCandidateCollector()
-            counter = CountingSearchClient(collector.search_client)
-            collector.search_client = counter
-            for case in cases:
-                if case.category == "web":
-                    pages_by_case[case.id] = collector.collect(content=case.content)
-            self.web_usage = counter.usage()
-
-        overrides = {"SIMILARITY_ENGINE": "span"}
+        overrides = {"SIMILARITY_ENGINE": "span", **self.settings_overrides}
         if self.min_match_words is not None:
             overrides["SIMILARITY_MIN_MATCH_WORDS"] = self.min_match_words
 
         with override_settings(**overrides):
-            with transaction.atomic():
-                scores = self._run_cases(meta, cases, pages_by_case)
-                transaction.set_rollback(True)
+            collector = None
+            if self.web_real:
+                collector = WebCandidateCollector()
+                collector.search_client = CountingSearchClient(collector.search_client)
 
-        return self._config(meta), scores
+            with CacheWriteRecorder() as recorder:
+                with transaction.atomic():
+                    scores = self._run_cases(meta, cases, pages_by_case, collector)
+                    transaction.set_rollback(True)
+            # La caché web sí queda guardada para la próxima corrida.
+            recorder.replay()
+
+            if collector is not None:
+                self.web_usage = collector.search_client.usage()
+            config = self._config(meta)
+
+        return config, scores
 
     def _config(self, meta: dict) -> dict:
         return {
@@ -522,13 +588,25 @@ class BankRunner:
                 else getattr(settings, "SIMILARITY_MIN_MATCH_WORDS", None)
             ),
             "min_tramo_corto": getattr(settings, "SIMILARITY_MIN_SHORT_RUN", None),
-            "web": "real (casos web)" if self.web_real else "foto sin red",
-            **({"consultas_web": self.web_usage} if self.web_usage else {}),
+            "texto_comun_corto_min_docs": getattr(settings, "SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", None),
+            "excluir_plantilla": getattr(settings, "SIMILARITY_EXCLUDE_TEMPLATES", False),
+            "web": (
+                f"real ({', '.join(sorted(WEB_REAL_CATEGORIES))})" if self.web_real else "foto sin red"
+            ),
+            **({"ajustes": self.settings_overrides} if self.settings_overrides else {}),
+            **(
+                {
+                    "consultas_web": self.web_usage,
+                    "costo_usd_corrida": str(self.web_usage.get("cobradas", 0) * BRAVE_USD_PER_QUERY),
+                }
+                if self.web_usage
+                else {}
+            ),
             "semilla_banco": meta.get("semilla"),
             "commit_banco": meta.get("commit"),
         }
 
-    def _run_cases(self, meta, cases, pages_by_case) -> list[CaseScore]:
+    def _run_cases(self, meta, cases, pages_by_case, collector=None) -> list[CaseScore]:
         # Import diferido: el servicio lee el motor en __init__ y tiene que
         # crearse dentro de override_settings.
         from apps.accounts.models import User, UserRole
@@ -571,12 +649,43 @@ class BankRunner:
         case_document = document(case_owner, "Caso banco")
         service = DocumentAnalysisService(requested_by=case_owner)
 
-        def analyze(text: str, pages: list[WebPageContent], extra_seconds: float = 0.0) -> EngineOutput:
+        collected: dict[str, list[WebPageContent]] = {}
+        web_stats: dict = {}
+
+        def search_web(text: str, covered) -> list[WebPageContent]:
+            counter = collector.search_client
+            before = counter.usage()
+            pages = collector.collect(content=text, covered_ranges=covered)
+            after = counter.usage()
+            web_stats.clear()
+            web_stats.update(collector.last_stats)
+            web_stats["consultas_total"] = after["total"] - before["total"]
+            web_stats["consultas_api"] = after["cobradas"] - before["cobradas"]
+            web_stats["consultas_fallidas"] = after["fallidas"] - before["fallidas"]
+            return pages
+
+        def analyze(
+            text: str,
+            pages: list[WebPageContent] | None,
+            extra_seconds: float = 0.0,
+        ) -> EngineOutput:
+            """`pages=None`: búsqueda web real (con los tramos ya cubiertos por la base interna)."""
             quoted = self.text_filter.find_quoted_ranges(text)
+            if getattr(settings, "SIMILARITY_EXCLUDE_TEMPLATES", False):
+                # Experimento: la plantilla se excluye como las citas.
+                quoted = sorted(quoted + self.text_filter.find_template_ranges(text))
             started = time.perf_counter()
+
+            def collect(covered):
+                if pages is not None:
+                    return list(pages)
+                found = search_web(text, covered)
+                collected["ultima"] = found
+                return found
+
             result = service._run_similarity(
                 document=case_document, analysis_content=text, quoted_ranges=quoted,
-                collect_web_pages=lambda: list(pages), engine="span",
+                collect_web_pages=collect, engine="span",
             )
             elapsed = time.perf_counter() - started + extra_seconds
             span = result.span_result
@@ -605,13 +714,25 @@ class BankRunner:
         scores: list[CaseScore] = []
         for position, case in enumerate(cases, start=1):
             pages = pages_by_case[case.id]
-            case_output = analyze(case.content, pages)
+            web_case = collector is not None and case.category in WEB_REAL_CATEGORIES
+            web_stats.clear()
+
+            if web_case:
+                case_output = analyze(case.content, None)
+                # La línea base y las variantes DOCX/PDF se comparan con las
+                # mismas páginas que encontró el caso.
+                pages = collected.pop("ultima")
+                case_stats = dict(web_stats)
+            else:
+                case_output = analyze(case.content, pages)
+                case_stats = {}
             baseline: Baseline = (
                 baseline_from_output(case_output)
                 if case.category == "original"
                 else baseline_from_output(analyze(case.base_text, pages))
             )
             scores.append(score_case(case, case_output, baseline, institute_keys))
+            scores[-1].web_stats = case_stats
 
             for extension in case.files:
                 path = self.bank_dir / "casos" / f"{case.id}.{extension}"
@@ -622,10 +743,15 @@ class BankRunner:
                 scores.append(score_case(case, output, baseline, institute_keys, variant=extension))
 
             last = scores[-1 - len(case.files)]
+            web_note = (
+                f" consultas={case_stats.get('consultas_total')} api={case_stats.get('consultas_api')}"
+                if case_stats
+                else ""
+            )
             self.write(
-                f"  [{position}/{len(cases)}] {case.id:<14} {last.percent:>6}% "
-                f"recall={last.word_recall} fp_nuevas={last.new_false_positive_words} "
-                f"{last.seconds:.1f}s"
+                f"  [{position}/{len(cases)}] {case.id:<16} {last.percent:>6}% "
+                f"recall={last.word_recall} fuentes={last.source_recall} "
+                f"fp_nuevas={last.new_false_positive_words} {last.seconds:.1f}s{web_note}"
             )
 
         return scores
@@ -655,6 +781,7 @@ CATEGORY_LABELS = {
     "instituto": "Instituto",
     "parafrasis": "Paráfrasis",
     "frases": "Frases sueltas",
+    "web_completa": "Web tesis completa",
 }
 
 
@@ -662,6 +789,7 @@ def format_table(summary: dict[str, dict]) -> list[str]:
     header = (
         f"{'categoría':<22} {'casos':>5} {'rec.pal':>8} {'rec.fte':>8} {'% medio':>8} "
         f"{'% máx':>7} {'base %':>7} {'FP nuevas':>10} {'FP % base':>9} {'f.extra':>7} {'s/doc':>6}"
+        f" {'cons/doc':>8} {'api':>5} {'US$/doc':>8}"
     )
     lines = [header, "-" * len(header)]
 
@@ -681,5 +809,7 @@ def format_table(summary: dict[str, dict]) -> list[str]:
             f"{item['porcentaje_max']:>7} {item['linea_base_media']:>7} "
             f"{item['fp_nuevas_palabras']:>10} {item['fp_nuevas_pct_base'] or '-':>9} "
             f"{item['fuentes_extra']:>7} {item['segundos_medio']:>6}"
+            f" {item.get('consultas_doc', '-'):>8} {item.get('consultas_api', '-'):>5}"
+            f" {item.get('costo_usd_doc', '-'):>8}"
         )
     return lines

@@ -990,7 +990,7 @@ class SourceExclusionTestMixin:
             document=self.document,
             analysis_content=content,
             quoted_ranges=[],
-            collect_web_pages=lambda: list(web_pages),
+            collect_web_pages=lambda _covered: list(web_pages),
             engine="span",
         )
         report = service._save_report(

@@ -14,6 +14,10 @@ Categorías (10 casos cada una):
   otros alumnos dentro del banco.
 - parafrasis: los mismos pasajes de "instituto", parafraseados por reglas.
 - frases: 8-12 frases sueltas de 5-10 palabras de fuentes distintas.
+
+Aparte, 5 casos "web_completa": la tesis base entera (12.000-20.000
+palabras, como una real) con 6-10 pasajes web. Usan su propio generador
+aleatorio, así que no cambian los 60 casos anteriores.
 """
 
 from __future__ import annotations
@@ -42,6 +46,10 @@ PHRASE_WORDS_MIN, PHRASE_WORDS_MAX = 5, 10
 WEB_PAGES_PER_CASE = 16
 # Por categoría: el caso 1 también se genera como DOCX y el 2 como PDF.
 FILE_VARIANTS = {1: "docx", 2: "pdf"}
+FULL_WEB_CATEGORY = "web_completa"
+FULL_WEB_CASES = 5
+FULL_PASSAGES_MIN, FULL_PASSAGES_MAX = 6, 10
+FULL_MIN_WORDS, FULL_MAX_WORDS = 12000, 20000
 
 SOURCE_CORPUS = "corpus"
 SOURCE_WEB = "web"
@@ -372,8 +380,60 @@ class BankGenerator:
 
         return ordered
 
-    def _passages(self, pool: list[SourceDocument], rng: random.Random) -> list[Insertion]:
-        count = rng.randint(PASSAGES_MIN, PASSAGES_MAX)
+    def generate_full_web(
+        self,
+        bases: list[BaseDocument],
+        web: list[SourceDocument],
+        excluded_ids: set[str],
+    ) -> list[BankCase]:
+        """
+        Tesis completas con pasajes web. `excluded_ids`: las tesis que el
+        banco indexa como fuentes del instituto (darían 100 % internas).
+        """
+        rng = random.Random(f"{self.seed}-{FULL_WEB_CATEGORY}")
+        web = sorted(web, key=lambda source: source.key)
+        pool = sorted(
+            (
+                base for base in bases
+                if base.id not in excluded_ids
+                and FULL_MIN_WORDS <= count_words(base.text) <= FULL_MAX_WORDS
+            ),
+            key=lambda base: base.id,
+        )
+
+        if len(pool) < FULL_WEB_CASES:
+            raise BankGenerationError(
+                f"Solo hay {len(pool)} tesis de {FULL_MIN_WORDS}-{FULL_MAX_WORDS} palabras."
+            )
+
+        cases = []
+        for number, base in enumerate(rng.sample(pool, FULL_WEB_CASES), start=1):
+            insertions = self._passages(
+                web, rng, count=rng.randint(FULL_PASSAGES_MIN, FULL_PASSAGES_MAX)
+            )
+            content, segments = splice(base.text, insertions, rng)
+            case = BankCase(
+                id=f"{FULL_WEB_CATEGORY}_{number:02d}",
+                category=FULL_WEB_CATEGORY,
+                base_id=base.id,
+                excerpt=-1,
+                base_text=base.text,
+                content=content,
+                segments=segments,
+                insertions=insertions,
+            )
+            case.web_pages = self._web_pages(case, web, rng)
+            cases.append(case)
+
+        return cases
+
+    def _passages(
+        self,
+        pool: list[SourceDocument],
+        rng: random.Random,
+        count: int | None = None,
+    ) -> list[Insertion]:
+        count = count or rng.randint(PASSAGES_MIN, PASSAGES_MAX)
         candidates = list(pool)
         rng.shuffle(candidates)
         insertions = []

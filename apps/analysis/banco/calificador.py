@@ -16,14 +16,13 @@ pierden en la extracción cuentan como no detectadas.
 from __future__ import annotations
 
 import bisect
-import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from difflib import SequenceMatcher
-from urllib.parse import parse_qsl, unquote, urlsplit
 
 from apps.analysis.banco.generador import BankCase
 from apps.analysis.banco.textos import words
+from apps.analysis.engines.web_search import canonical_url
 
 
 @dataclass(frozen=True)
@@ -70,6 +69,8 @@ class CaseScore:
     extra_sources: list[str] = field(default_factory=list)
     missed_sources: list[str] = field(default_factory=list)
     passages: list[dict] = field(default_factory=list)
+    # Búsqueda web real del caso (consultas, páginas, snippets).
+    web_stats: dict = field(default_factory=dict)
 
     @property
     def word_recall(self) -> Decimal | None:
@@ -99,6 +100,7 @@ class CaseScore:
             "fuentes_extra": self.extra_sources,
             "fuentes_no_detectadas": self.missed_sources,
             **({"pasajes": self.passages} if self.passages else {}),
+            **({"web": self.web_stats} if self.web_stats else {}),
         }
 
 
@@ -261,38 +263,6 @@ def _bank_key(key: str, institute_keys: dict[str, str] | None) -> str:
     return key
 
 
-# Parámetros de la URL que identifican el documento (Scielo `pid`, Dialnet
-# `codigo`, etc.); el resto (`lang`, `utm_*`, `script`...) no cambia la fuente.
-_ID_QUERY_PARAMS = frozenset({"pid", "codigo", "id", "p", "page_id", "articulo", "doi", "handle"})
-# OJS: .../article/view/1869, .../article/download/1869/3558/8028
-_OJS_RE = re.compile(r"/article/(?:view|download|viewfile)/(\d+)(?:/|$)", flags=re.IGNORECASE)
-# DSpace: /handle/20.500.12692/99635 y /bitstream/handle/20.500.12692/99635/x.pdf
-_DSPACE_RE = re.compile(r"/(?:bitstream/)?handle/([\d.]+/\d+)(?:/|$)", flags=re.IGNORECASE)
-
-
-def canonical_url(url: str) -> str:
-    """
-    Forma canónica de una URL para decidir si dos URLs son la misma fuente:
-    sin esquema, sin "www.", sin barra final ni fragmento, solo con los
-    parámetros que identifican el documento, y con el id del artículo en
-    OJS (view/download) y DSpace (handle/bitstream).
-    """
-    parts = urlsplit(url.strip())
-    host = parts.netloc.lower().removeprefix("www.")
-    path = unquote(parts.path).rstrip("/")
-
-    if match := _OJS_RE.search(path):
-        path = path[: match.start()] + f"/article/{match.group(1)}"
-    elif match := _DSPACE_RE.search(path):
-        path = f"/handle/{match.group(1)}"
-
-    params = sorted(
-        (name.lower(), value)
-        for name, value in parse_qsl(parts.query)
-        if name.lower() in _ID_QUERY_PARAMS
-    )
-    query = "&".join(f"{name}={value}" for name, value in params)
-    return f"{host}{path}" + (f"?{query}" if query else "")
 
 
 def summarize(scores: list[CaseScore]) -> dict[str, dict]:
@@ -325,5 +295,23 @@ def summarize(scores: list[CaseScore]) -> dict[str, dict]:
             "fuentes_extra": sum(len(i.extra_sources) for i in items),
             "segundos_medio": round(sum(i.seconds for i in items) / len(items), 2),
             "segundos_max": round(max(i.seconds for i in items), 2),
+            **_web_summary(items),
         }
     return summary
+
+
+BRAVE_USD_PER_QUERY = Decimal("0.005")
+
+
+def _web_summary(items: list[CaseScore]) -> dict:
+    """Consultas Brave por documento (solo casos con búsqueda web real)."""
+    with_web = [item.web_stats for item in items if item.web_stats]
+    if not with_web:
+        return {}
+    total = sum(stats.get("consultas_total", 0) for stats in with_web)
+    per_doc = Decimal(total) / len(with_web)
+    return {
+        "consultas_doc": str(per_doc.quantize(Decimal("0.1"))),
+        "consultas_api": sum(stats.get("consultas_api", 0) for stats in with_web),
+        "costo_usd_doc": str((per_doc * BRAVE_USD_PER_QUERY).quantize(Decimal("0.001"))),
+    }

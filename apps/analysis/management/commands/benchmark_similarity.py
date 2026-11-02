@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -139,7 +139,26 @@ class Command(BaseCommand):
         parser.add_argument(
             "--web-real",
             action="store_true",
-            help="Con --banco correr: los casos web buscan con Brave en vez de usar la foto.",
+            help=(
+                "Con --banco correr: los originales y los casos web buscan con Brave "
+                "(con caché) en vez de usar la foto."
+            ),
+        )
+        parser.add_argument(
+            "--ajuste",
+            action="append",
+            default=[],
+            metavar="CLAVE=VALOR",
+            help=(
+                "Con --banco correr: setting solo para esta corrida (se puede repetir), "
+                "p. ej. --ajuste WEB_ANALYSIS_MAX_QUERIES=40."
+            ),
+        )
+        parser.add_argument(
+            "--categorias",
+            type=str,
+            default="",
+            help="Con --banco correr: categorías separadas por coma (p. ej. original,web).",
         )
         parser.add_argument(
             "--min-tramo",
@@ -196,10 +215,12 @@ class Command(BaseCommand):
             ejecucion.generate(bank_dir, seed=options["seed"], write=write)
         else:
             runner = ejecucion.BankRunner(
-                bank_dir, write, web_real=options["web_real"], min_match_words=options["min_tramo"]
+                bank_dir, write, web_real=options["web_real"], min_match_words=options["min_tramo"],
+                settings_overrides=self._parse_overrides(options["ajuste"]),
             )
             case_ids = {item.strip() for item in options["casos"].split(",") if item.strip()}
-            config, scores = runner.run(case_ids or None)
+            categories = {item.strip() for item in options["categorias"].split(",") if item.strip()}
+            config, scores = runner.run(case_ids or None, categories or None)
             self.bank_scores = scores
             write("")
             for key, value in config.items():
@@ -215,6 +236,21 @@ class Command(BaseCommand):
                 "f.extra: fuentes nombradas que no son de las inserciones ni de la línea base."
             )
             write(f"Resultados guardados en {ejecucion.save_results(bank_dir, config, scores)}")
+
+    def _parse_overrides(self, items: list[str]) -> dict:
+        """CLAVE=VALOR -> {CLAVE: valor}; true/false y enteros se convierten."""
+        overrides = {}
+        for item in items:
+            key, separator, raw = item.partition("=")
+            if not separator or not key.strip().isupper():
+                raise CommandError(f"Ajuste inválido: {item!r} (se espera CLAVE=VALOR).")
+            value: object = raw.strip()
+            if value.lower() in {"true", "false"}:
+                value = value.lower() == "true"
+            elif re.fullmatch(r"-?\d+", value):
+                value = int(value)
+            overrides[key.strip()] = value
+        return overrides
 
     def _evaluate_bases(self, ejecucion, bank_dir: Path, write) -> None:
         from django.test import override_settings
@@ -235,7 +271,7 @@ class Command(BaseCommand):
                     started = time.perf_counter()
                     result = service._run_similarity(
                         document=document, analysis_content=text, quoted_ranges=[],
-                        collect_web_pages=lambda: [], engine="span",
+                        collect_web_pages=lambda _covered: [], engine="span",
                     )
                     return EngineOutput(
                         analyzed_text=text, marked_ranges=[], quoted_ranges=[],
@@ -548,7 +584,7 @@ class Command(BaseCommand):
                     document=case_document,
                     analysis_content=case.content,
                     quoted_ranges=[],
-                    collect_web_pages=lambda: list(web_pages),
+                    collect_web_pages=lambda _covered: list(web_pages),
                     engine=engine,
                     retrieval=retrieval,
                 )

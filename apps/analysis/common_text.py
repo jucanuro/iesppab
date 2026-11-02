@@ -65,6 +65,13 @@ class CommonTextFilter:
             if min_ratio is not None
             else getattr(settings, "SIMILARITY_COMMON_TEXT_MIN_RATIO", 0.7)
         )
+        # Tramos cortos (frases genéricas): pueden exigir menos documentos.
+        # Por defecto el mismo umbral, así no cambia nada.
+        self.short_run_words = getattr(settings, "SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS", 15)
+        short = getattr(settings, "SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", None)
+        self.short_min_documents = (
+            self.min_documents if not short or not self.min_documents else short
+        )
         self.normalizer = InternalSimilarityEngine()
 
     @property
@@ -108,7 +115,7 @@ class CommonTextFilter:
         common_runs = {
             run
             for run, hashes in candidates.items()
-            if self._shared_documents(hashes, documents_by_hash) >= self.min_documents
+            if self._shared_documents(hashes, documents_by_hash) >= self._required_documents(run)
         }
 
         engine.remove_common_text(
@@ -125,6 +132,12 @@ class CommonTextFilter:
             len(common_runs),
             len(alignment.common_runs),
         )
+
+    def _required_documents(self, run: tuple[int, int]) -> int:
+        first, last = run
+        if last - first + 1 < self.short_run_words:
+            return self.short_min_documents
+        return self.min_documents
 
     def _run_hashes(self, text: str) -> set[int]:
         normalized = self.normalizer._normalize(text)
@@ -160,7 +173,7 @@ class CommonTextFilter:
                 .filter(hash__in=batch)
                 .values("hash")
                 .annotate(frequency=Count("id"))
-                .filter(frequency__gte=self.min_documents)
+                .filter(frequency__gte=min(self.min_documents, self.short_min_documents))
                 .values_list("hash", flat=True)
             )
 

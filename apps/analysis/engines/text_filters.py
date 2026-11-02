@@ -271,6 +271,44 @@ class AcademicTextFilter:
             excluded_sections=excluded,
         )
 
+    # Recibo de Turnitin pegado en la tesis: se excluye la línea entera.
+    TURNITIN_LINE_RE = re.compile(
+        r"^[^\n]*(?:trn:oid|P[áa]gina\s+\d+\s+de\s+\d+\s+-\s|Identificador de la entrega"
+        r"|alertas de integridad|Descripci[óo]n general de integridad"
+        r"|E[nr]grega de integridad|Entrega de integridad)[^\n]*$",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    # Título de la tabla de operacionalización (línea corta) y su fila de
+    # encabezados.
+    OPERATIONALIZATION_TITLE_RE = re.compile(
+        r"^[ \t]*(?:Tabla\s*\d*[.:]?\s*)?(?:Tabla de\s+)?Operacionalizaci[óo]n de\s+"
+        r"(?:las?\s+)?variables?\b[^\n]{0,120}$",
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    OPERATIONALIZATION_HEADER_RE = re.compile(
+        r"\bVariables?\s+Definici[óo]n\s+conceptual\s+Definici[óo]n\s+operacional"
+        r"(?:\s+(?:Dimensi[óo]n(?:es)?|Indicadores|[ÍI]tems|Escala(?:\s+de\s+medici[óo]n)?"
+        r"|Instrumentos?|Niveles?(?:\s+y\s+rangos)?))*",
+        flags=re.IGNORECASE,
+    )
+
+    def find_template_ranges(self, content: str) -> list[tuple[int, int]]:
+        """
+        Rangos de plantilla que no indican copia: el recibo de Turnitin
+        pegado y la cabecera de la tabla de operacionalización de variables.
+        """
+        ranges = [
+            match.span()
+            for pattern in (
+                self.TURNITIN_LINE_RE,
+                self.OPERATIONALIZATION_TITLE_RE,
+                self.OPERATIONALIZATION_HEADER_RE,
+            )
+            for match in pattern.finditer(content)
+            if match.end() > match.start()
+        ]
+        return sorted(ranges)
+
     def find_quoted_ranges(self, content: str) -> list[tuple[int, int]]:
         """
         Rangos (inicio, fin) de las citas textuales entre comillas de

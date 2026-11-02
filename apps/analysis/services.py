@@ -18,7 +18,7 @@ from django.utils import timezone
 from apps.accounts.models import User
 from apps.analysis.common_text import CommonTextFilter
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
-from apps.analysis.engines.exclusions import calculate_similarity_percent
+from apps.analysis.engines.exclusions import calculate_similarity_percent, merge_ranges
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.ai_segments import SegmentedPerplexityDetector
 from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
@@ -224,6 +224,16 @@ class DocumentAnalysisService:
                 else []
             )
 
+            # La plantilla (recibo de Turnitin pegado, cabecera de la tabla
+            # de operacionalización) se descuenta como una cita, aunque no se
+            # excluyan citas: se guarda en los mismos rangos para que el
+            # recálculo al excluir una fuente vea el mismo texto contable.
+            if getattr(settings, "SIMILARITY_EXCLUDE_TEMPLATES", False):
+                quoted_ranges = merge_ranges(
+                    quoted_ranges
+                    + self.text_filter.find_template_ranges(analysis_content)
+                )
+
             # La base de conocimiento nunca aprende bibliografía/anexos,
             # aunque este análisis los incluya: son referencias que todos
             # citan y ensuciarían las comparaciones de otros documentos.
@@ -251,8 +261,9 @@ class DocumentAnalysisService:
                 document=document,
                 analysis_content=analysis_content,
                 quoted_ranges=quoted_ranges,
-                collect_web_pages=lambda: self.web_candidate_collector.collect(
+                collect_web_pages=lambda covered: self.web_candidate_collector.collect(
                     content=analysis_content,
+                    covered_ranges=covered,
                 ),
                 on_step=lambda step: self._mark_job_step(job=job, step=step),
             )
@@ -763,7 +774,8 @@ class DocumentAnalysisService:
         document: Document,
         analysis_content: str,
         quoted_ranges: list[tuple[int, int]],
-        collect_web_pages: Callable[[], list[WebPageContent]],
+        # Recibe los tramos ya cubiertos por la base interna (motor span).
+        collect_web_pages: Callable[[list[tuple[int, int]]], list[WebPageContent]],
         on_step: Callable[[str], None] | None = None,
         engine: str | None = None,
         retrieval: str | None = None,
@@ -818,19 +830,35 @@ class DocumentAnalysisService:
                 excluded_ranges=quoted_ranges,
             )
 
+        internal_alignment = None
+        covered_ranges: list[tuple[int, int]] = []
+
+        if engine == "span":
+            # La base interna se alinea antes de buscar en la web: los
+            # párrafos que ya coinciden con ella son los últimos en recibir
+            # consulta a Brave. Cada fuente se alinea por separado, así que
+            # alinear interna y web en dos pasos da lo mismo que en uno.
+            internal_alignment = self.span_similarity_engine.align(
+                content=analysis_content,
+                sources=retrieved.to_span_sources(),
+                excluded_ranges=quoted_ranges,
+            )
+            covered_ranges = self._covered_char_ranges(internal_alignment)
+
         step("Buscando coincidencias públicas en internet")
 
-        web_pages = collect_web_pages()
+        web_pages = collect_web_pages(covered_ranges)
 
         step("Comparando contra fuentes web encontradas")
 
         if engine == "span":
-            alignment = self.span_similarity_engine.align(
+            alignment = internal_alignment
+            web_alignment = self.span_similarity_engine.align(
                 content=analysis_content,
-                sources=retrieved.to_span_sources()
-                + self._web_span_sources(web_pages),
+                sources=self._web_span_sources(web_pages),
                 excluded_ranges=quoted_ranges,
             )
+            alignment.sources.extend(web_alignment.sources)
             self.common_text_filter.apply(
                 engine=self.span_similarity_engine,
                 content=analysis_content,
@@ -956,10 +984,25 @@ class DocumentAnalysisService:
                 title=page.title or page.domain,
                 url=page.url,
                 domain=page.domain,
-                segments=(page.text,),
+                segments=page.comparable_segments,
             )
             for page in web_pages
         ]
+
+    def _covered_char_ranges(self, alignment) -> list[tuple[int, int]]:
+        """Tramos (por carácter) del documento cubiertos por alguna fuente."""
+        covered = {index for aligned in alignment.sources for index in aligned.coverage}
+        ranges: list[tuple[int, int]] = []
+
+        for index in sorted(covered):
+            _token, start, end = alignment.words[index]
+
+            if ranges and index - 1 in covered:
+                ranges[-1] = (ranges[-1][0], end)
+            else:
+                ranges.append((start, end))
+
+        return ranges
 
     def _split_span_result(
         self,

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import html as html_lib
 import logging
 import re
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections import Counter, deque
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from http.client import RemoteDisconnected
 from io import BytesIO
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urljoin, urlparse, urlsplit
+from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
@@ -16,6 +19,7 @@ from pypdf import PdfReader
 from urllib3.exceptions import ReadTimeoutError
 
 from apps.analysis import web_cache
+from apps.documents.extractors import normalize_pdf_pages, read_pdf_pages
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,12 @@ class WebSearchResult:
     url: str
     domain: str
     snippet: str
+    # Fragmentos adicionales de la página (`extra_snippets` de Brave).
+    extra_snippets: tuple[str, ...] = ()
+
+    @property
+    def snippets(self) -> tuple[str, ...]:
+        return tuple(item for item in (self.snippet, *self.extra_snippets) if item)
 
 
 @dataclass(frozen=True)
@@ -35,6 +45,76 @@ class WebPageContent:
     domain: str
     text: str
     source_format: str
+    # Tramos no contiguos que se comparan por separado (p. ej. los snippets
+    # de Brave de una página que no se pudo descargar). Vacío: solo `text`.
+    segments: tuple[str, ...] = ()
+
+    @property
+    def comparable_segments(self) -> tuple[str, ...]:
+        return self.segments or (self.text,)
+
+
+SOURCE_FORMAT_SNIPPET = "SNIPPET"
+
+# Parámetros de la URL que identifican el documento (Scielo `pid`, Dialnet
+# `codigo`, etc.); el resto (`lang`, `utm_*`, `script`...) no cambia la fuente.
+_ID_QUERY_PARAMS = frozenset({"pid", "codigo", "id", "p", "page_id", "articulo", "doi", "handle"})
+# OJS: .../article/view/1869, .../article/download/1869/3558/8028
+_OJS_RE = re.compile(r"/article/(?:view|download|viewfile)/(\d+)(?:/|$)", flags=re.IGNORECASE)
+# DSpace: /handle/20.500.12692/99635 y /bitstream/handle/20.500.12692/99635/x.pdf
+_DSPACE_RE = re.compile(r"/(?:bitstream/)?handle/([\d.]+/\d+)(?:/|$)", flags=re.IGNORECASE)
+
+
+def canonical_url(url: str) -> str:
+    """
+    Forma canónica de una URL para decidir si dos URLs son la misma fuente:
+    sin esquema, sin "www.", sin barra final ni fragmento, solo con los
+    parámetros que identifican el documento, y con el id del artículo en
+    OJS (view/download) y DSpace (handle/bitstream).
+    """
+    parts = urlsplit(url.strip())
+    host = parts.netloc.lower().removeprefix("www.")
+    path = unquote(parts.path).rstrip("/")
+
+    if match := _OJS_RE.search(path):
+        path = path[: match.start()] + f"/article/{match.group(1)}"
+    elif match := _DSPACE_RE.search(path):
+        path = f"/handle/{match.group(1)}"
+
+    params = sorted(
+        (name.lower(), value)
+        for name, value in parse_qsl(parts.query)
+        if name.lower() in _ID_QUERY_PARAMS
+    )
+    query = "&".join(f"{name}={value}" for name, value in params)
+    return f"{host}{path}" + (f"?{query}" if query else "")
+
+
+def clean_snippet(text: str) -> str:
+    """Brave resalta con <strong> y escapa entidades HTML."""
+    return re.sub(r"\s+", " ", html_lib.unescape(re.sub(r"<[^>]+>", "", text or ""))).strip()
+
+
+def normalized_words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower())
+
+
+def shares_run(phrase: str, text: str, min_words: int) -> bool:
+    """¿`text` contiene `min_words` palabras seguidas de `phrase`?"""
+    phrase_words = normalized_words(phrase)
+
+    if len(phrase_words) < min_words:
+        return False
+
+    text_words = normalized_words(text)
+    grams = {
+        tuple(text_words[index : index + min_words])
+        for index in range(len(text_words) - min_words + 1)
+    }
+    return any(
+        tuple(phrase_words[index : index + min_words]) in grams
+        for index in range(len(phrase_words) - min_words + 1)
+    )
 
 
 @dataclass(frozen=True)
@@ -93,12 +173,34 @@ def call_with_retry(operation: Callable[[], object], description: str):
 
 class BraveWebSearchClient:
     BASE_URL = "https://api.search.brave.com/res/v1/web/search"
+    # Máximo de resultados por consulta que acepta la API.
+    MAX_COUNT = 20
+    QUOTA_STATUS_CODES = (402, 429)
 
     def __init__(self) -> None:
         self.api_key = getattr(settings, "BRAVE_SEARCH_API_KEY", "")
         self.timeout = getattr(settings, "WEB_ANALYSIS_TIMEOUT_SECONDS", 10)
         self.country = getattr(settings, "BRAVE_SEARCH_COUNTRY", "PE")
         self.search_lang = getattr(settings, "BRAVE_SEARCH_LANG", "es")
+        # Hasta 5 fragmentos más por resultado, por el mismo costo.
+        self.extra_snippets = getattr(settings, "BRAVE_EXTRA_SNIPPETS", False)
+        # 402 (límite de gasto agotado) o 429 (cuota): seguir consultando
+        # no sirve; el colector deja de buscar.
+        self.quota_exhausted = False
+
+    def cache_key(self, query: str, count: int) -> str | None:
+        cleaned_query = self._clean_query(query)
+
+        if not cleaned_query:
+            return None
+
+        return web_cache.search_cache_key(
+            query=cleaned_query,
+            count=min(count, self.MAX_COUNT),
+            country=self.country,
+            search_lang=self.search_lang,
+            extra_snippets=self.extra_snippets,
+        )
 
     def search(
         self,
@@ -114,13 +216,8 @@ class BraveWebSearchClient:
         if not cleaned_query:
             return []
 
-        count = min(count, 10)
-        cache_key = web_cache.search_cache_key(
-            query=cleaned_query,
-            count=count,
-            country=self.country,
-            search_lang=self.search_lang,
-        )
+        count = min(count, self.MAX_COUNT)
+        cache_key = self.cache_key(query=cleaned_query, count=count)
         cached = web_cache.get_search_results(cache_key)
 
         if cached is not None:
@@ -138,6 +235,9 @@ class BraveWebSearchClient:
             "search_lang": self.search_lang,
         }
 
+        if self.extra_snippets:
+            params["extra_snippets"] = "true"
+
         def request() -> requests.Response:
             response = requests.get(
                 self.BASE_URL,
@@ -153,7 +253,18 @@ class BraveWebSearchClient:
             payload = response.json()
 
         except requests.RequestException as exc:
-            logger.warning("Error Brave Search. query=%s error=%s", cleaned_query, exc)
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+
+            if status in self.QUOTA_STATUS_CODES:
+                self.quota_exhausted = True
+                logger.error(
+                    "Brave Search sin cuota (HTTP %s): la búsqueda web queda sin "
+                    "resultados hasta ampliar el límite. query=%s",
+                    status,
+                    cleaned_query,
+                )
+            else:
+                logger.warning("Error Brave Search. query=%s error=%s", cleaned_query, exc)
             return []
 
         except ValueError as exc:
@@ -167,6 +278,11 @@ class BraveWebSearchClient:
                 "url": item.get("url", ""),
                 "title": item.get("title", ""),
                 "description": item.get("description", ""),
+                **(
+                    {"extra_snippets": list(item.get("extra_snippets") or [])}
+                    if self.extra_snippets
+                    else {}
+                ),
             }
             for item in payload.get("web", {}).get("results", [])
         ]
@@ -180,7 +296,12 @@ class BraveWebSearchClient:
         for item in items:
             url = (item.get("url") or "").strip()
             title = (item.get("title") or "").strip()
-            snippet = (item.get("description") or "").strip()
+            snippet = clean_snippet(item.get("description") or "")
+            extra = tuple(
+                cleaned
+                for cleaned in (clean_snippet(text) for text in item.get("extra_snippets") or [])
+                if cleaned
+            )
 
             if not url:
                 continue
@@ -196,6 +317,7 @@ class BraveWebSearchClient:
                     url=url,
                     domain=domain,
                     snippet=snippet,
+                    extra_snippets=extra,
                 )
             )
 
@@ -238,9 +360,27 @@ class WebPageFetcher:
     )
 
     MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+    BOT_NAME = "IESPP-OriginalityBot"
+    USER_AGENT = (
+        "Mozilla/5.0 (compatible; IESPP-OriginalityBot/1.0; +https://iespp.local)"
+    )
+    # Con WEB_FOLLOW_PDF la lectura cambia (PDF con el extractor de
+    # documentos, ficha -> PDF): se guarda en la caché con otra clave para
+    # no mezclarla con las lecturas viejas.
+    FOLLOW_PDF_CACHE_SUFFIX = "#pdf-v2"
 
     def __init__(self) -> None:
         self.timeout = getattr(settings, "WEB_ANALYSIS_TIMEOUT_SECONDS", 10)
+        # PDFs con el mismo extractor que los documentos, fichas de
+        # repositorio que enlazan su PDF (citation_pdf_url) y robots.txt.
+        self.follow_pdf = getattr(settings, "WEB_FOLLOW_PDF", False)
+        self.max_download_bytes = (
+            getattr(settings, "WEB_PDF_MAX_MB", 20) * 1024 * 1024
+            if self.follow_pdf
+            else self.MAX_DOWNLOAD_BYTES
+        )
+        self.max_download_seconds = getattr(settings, "WEB_PAGE_MAX_DOWNLOAD_SECONDS", 30)
+        self._robots: dict[str, RobotFileParser] = {}
 
     def fetch(self, result: WebSearchResult) -> WebPageContent | None:
         """
@@ -251,7 +391,8 @@ class WebPageFetcher:
         if self._looks_like_blocked_file(result.url):
             return None
 
-        cached = web_cache.get_page(result.url)
+        cache_url = result.url + (self.FOLLOW_PDF_CACHE_SUFFIX if self.follow_pdf else "")
+        cached = web_cache.get_page(cache_url)
 
         if cached is not None:
             if not cached.is_success:
@@ -268,10 +409,10 @@ class WebPageFetcher:
         page, failure_reason = self._download(result=result)
 
         if page is None:
-            web_cache.store_page(result.url, failure_reason=failure_reason)
+            web_cache.store_page(cache_url, failure_reason=failure_reason)
         else:
             web_cache.store_page(
-                result.url,
+                cache_url,
                 title=page.title,
                 text=page.text,
                 source_format=page.source_format,
@@ -284,32 +425,11 @@ class WebPageFetcher:
         result: WebSearchResult,
     ) -> tuple[WebPageContent | None, str]:
         """(página, "") si se pudo leer; (None, motivo) si no."""
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (compatible; IESPP-OriginalityBot/1.0; "
-                "+https://iespp.local)"
-            ),
-            "Accept": "text/html,application/xhtml+xml,application/pdf",
-        }
-
-        def download() -> tuple[requests.Response, bytes]:
-            response = requests.get(
-                result.url,
-                headers=headers,
-                timeout=self.timeout,
-                allow_redirects=True,
-                stream=True,
-            )
-
-            if response.status_code >= 400:
-                return response, b""
-
-            # La lectura va dentro del reintento: un corte a mitad de la
-            # descarga también es pasajero.
-            return response, self._read_limited_response(response=response)
+        if self.follow_pdf and self._is_pdf_url(result.url) and not self._robots_allows(result.url):
+            return None, "robots.txt"
 
         try:
-            response, raw_content = call_with_retry(download, f"url={result.url}")
+            response, raw_content = self._get(result.url)
 
             if response.status_code >= 400:
                 return None, f"HTTP {response.status_code}"
@@ -326,10 +446,14 @@ class WebPageFetcher:
                     result=result,
                 )
             elif "text/html" in content_type or "application/xhtml" in content_type:
-                page = self._parse_html(
-                    html=raw_content.decode(response.encoding or "utf-8", errors="ignore"),
-                    result=result,
-                )
+                html = raw_content.decode(response.encoding or "utf-8", errors="ignore")
+                page = None
+
+                if self.follow_pdf:
+                    page = self._follow_citation_pdf(html=html, base_url=response.url, result=result)
+
+                if page is None:
+                    page = self._parse_html(html=html, result=result)
             else:
                 return None, f"tipo no soportado: {content_type[:80]}"
 
@@ -343,17 +467,129 @@ class WebPageFetcher:
             logger.info("Error procesando web. url=%s error=%s", result.url, exc)
             return None, f"{type(exc).__name__}: {exc}"
 
+    def _get(self, url: str) -> tuple[requests.Response, bytes]:
+        headers = {
+            "User-Agent": self.USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,application/pdf",
+        }
+
+        def download() -> tuple[requests.Response, bytes]:
+            response = requests.get(
+                url,
+                headers=headers,
+                timeout=self.timeout,
+                allow_redirects=True,
+                stream=True,
+            )
+
+            if response.status_code >= 400:
+                return response, b""
+
+            # La lectura va dentro del reintento: un corte a mitad de la
+            # descarga también es pasajero.
+            return response, self._read_limited_response(response=response)
+
+        return call_with_retry(download, f"url={url}")
+
+    def _follow_citation_pdf(
+        self,
+        html: str,
+        base_url: str,
+        result: WebSearchResult,
+    ) -> WebPageContent | None:
+        """
+        Ficha de repositorio (DSpace, OJS...): si declara su PDF en
+        `citation_pdf_url` y robots.txt lo permite, se lee el PDF en lugar
+        de la ficha, que solo trae el resumen.
+        """
+        soup = BeautifulSoup(html, "lxml")
+        meta = soup.find("meta", attrs={"name": "citation_pdf_url"})
+        pdf_url = (meta.get("content") or "").strip() if meta else ""
+
+        if not pdf_url:
+            return None
+
+        pdf_url = urljoin(base_url, pdf_url)
+
+        if not self._robots_allows(pdf_url):
+            logger.info("PDF de ficha bloqueado por robots.txt. url=%s", pdf_url)
+            return None
+
+        try:
+            response, raw_content = self._get(pdf_url)
+        except requests.RequestException as exc:
+            logger.info("No se pudo leer el PDF de la ficha. url=%s error=%s", pdf_url, exc)
+            return None
+
+        if response.status_code >= 400 or not raw_content:
+            return None
+
+        title = soup.title.string.strip() if soup.title and soup.title.string else ""
+        return self._parse_pdf(
+            raw_content=raw_content,
+            result=WebSearchResult(
+                title=title or result.title,
+                url=result.url,
+                domain=result.domain,
+                snippet=result.snippet,
+            ),
+        )
+
+    def _is_pdf_url(self, url: str) -> bool:
+        return url.lower().split("?")[0].endswith(".pdf")
+
+    def _robots_allows(self, url: str) -> bool:
+        """robots.txt del sitio (uno por sitio y por análisis)."""
+        parts = urlsplit(url)
+        site = f"{parts.scheme}://{parts.netloc}"
+        parser = self._robots.get(site)
+
+        if parser is None:
+            parser = RobotFileParser()
+
+            try:
+                response = requests.get(
+                    f"{site}/robots.txt",
+                    headers={"User-Agent": self.USER_AGENT},
+                    timeout=self.timeout,
+                )
+                if response.status_code in (401, 403):
+                    parser.disallow_all = True
+                elif response.status_code >= 400:
+                    parser.allow_all = True
+                else:
+                    parser.parse(response.text.splitlines())
+            except requests.RequestException:
+                # Sin robots.txt legible se permite, como hacen los buscadores.
+                parser.allow_all = True
+
+            self._robots[site] = parser
+
+        return parser.can_fetch(self.BOT_NAME, url)
+
     def _read_limited_response(self, response: requests.Response) -> bytes:
+        """
+        Cuerpo hasta `max_download_bytes`. El timeout de requests es por
+        lectura: un servidor que manda bytes a goteo nunca lo dispara. Por
+        eso hay además un tope de tiempo total por descarga; si se pasa, la
+        descarga se descarta.
+        """
         chunks: list[bytes] = []
         total = 0
+        deadline = time.monotonic() + self.max_download_seconds
 
         for chunk in response.iter_content(chunk_size=8192):
+            if time.monotonic() > deadline:
+                raise requests.ConnectionError(
+                    f"descarga más lenta que {self.max_download_seconds} s"
+                )
+
             if not chunk:
                 continue
 
             total += len(chunk)
 
-            if total > self.MAX_DOWNLOAD_BYTES:
+            if total > self.max_download_bytes:
                 break
 
             chunks.append(chunk)
@@ -397,16 +633,23 @@ class WebPageFetcher:
         result: WebSearchResult,
     ) -> WebPageContent | None:
         try:
-            reader = PdfReader(BytesIO(raw_content))
-            pages_text: list[str] = []
+            if self.follow_pdf:
+                # El mismo extractor que los documentos subidos: mismos
+                # párrafos, sin cabeceras ni números de página.
+                content = self._normalize_visible_text(
+                    normalize_pdf_pages(read_pdf_pages(BytesIO(raw_content)))
+                )
+            else:
+                reader = PdfReader(BytesIO(raw_content))
+                pages_text: list[str] = []
 
-            for page in reader.pages[:40]:
-                text = page.extract_text() or ""
+                for page in reader.pages[:40]:
+                    text = page.extract_text() or ""
 
-                if text.strip():
-                    pages_text.append(text.strip())
+                    if text.strip():
+                        pages_text.append(text.strip())
 
-            content = self._normalize_visible_text("\n\n".join(pages_text))
+                content = self._normalize_visible_text("\n\n".join(pages_text))
 
             if len(content) < 500:
                 return None
@@ -458,6 +701,39 @@ _WORD_EDGE_PUNCTUATION = ".,;:¿?¡!"
 # paréntesis, comillas, barras, "&", etc.
 _PLAIN_WORD_RE = re.compile(r"^[^\W\d_]+(?:-[^\W\d_]+)*$", flags=re.UNICODE)
 _ACRONYM_RE = re.compile(r"[A-ZÁÉÍÓÚÑÜ]{2,}")
+# Cita entre paréntesis con año: "(Pérez, 2019)", "(2020, p. 4)", "(Ruiz y Sol, 2018a)".
+_CITATION_RE = re.compile(r"\([^()]{0,80}?\b(?:19|20)\d{2}[a-z]?\b[^()]{0,40}\)")
+# Viñeta o numeración al inicio de una línea: "-", "•", "a)", "1.", "1.2."
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-•▪●◦*–]|[a-zA-Z]\)|\d+(?:\.\d+)*[.)])\s", flags=re.MULTILINE)
+
+# Prioridad de un párrafo para gastar consultas (menor = antes).
+TIER_PROSE = 0
+TIER_CITED = 1
+TIER_LIST = 2
+TIER_INTERNAL = 3
+
+
+@dataclass(frozen=True)
+class QueryParagraph:
+    """Un párrafo buscable: su frase más distintiva y su prioridad."""
+
+    index: int  # orden entre los párrafos buscables del documento
+    start: int
+    end: int
+    phrase: str
+    words: int
+    tier: int
+
+
+@dataclass
+class ParagraphQuery:
+    paragraph: int
+    query: str
+    quoted: bool
+    results: list[WebSearchResult]
+    # Resultados cuyo snippet contiene >= 8 palabras seguidas de la frase.
+    hits: list[WebSearchResult] = field(default_factory=list)
+    reason: str = "inicial"  # "inicial" | "vecino" | "sin_comillas"
 
 
 class WebCandidateCollector:
@@ -499,14 +775,40 @@ class WebCandidateCollector:
         # buscan las mejores frases de CADA tramo, para cubrir inicio,
         # medio y final.
         self.max_query_phrases = getattr(settings, "WEB_ANALYSIS_MAX_QUERY_PHRASES", 8)
-        self.max_queries = getattr(settings, "WEB_ANALYSIS_MAX_QUERIES", 24)
+        self.max_queries = getattr(settings, "WEB_ANALYSIS_MAX_QUERIES", 60)
         self.max_pages_total = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_TOTAL", 16)
         # Tope de páginas que aporta cada consulta (ver `run_queries`).
-        self.max_pages_per_query = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_PER_QUERY", 2)
+        self.max_pages_per_query = getattr(settings, "WEB_ANALYSIS_MAX_PAGES_PER_QUERY", 3)
+        # "parrafos": una frase por párrafo de prosa; "tramos": modo anterior
+        # (8 tramos, 2 frases con comillas + 1 sin comillas por tramo).
+        self.query_mode = getattr(settings, "WEB_QUERY_MODE", "parrafos")
+        # Resultados pedidos a Brave y cuántos se usan de cada consulta.
+        self.search_count = getattr(settings, "BRAVE_SEARCH_COUNT", 20)
+        self.results_per_query = getattr(settings, "WEB_RESULTS_PER_QUERY", 20)
+        self.use_extra_snippets = getattr(settings, "WEB_USE_EXTRA_SNIPPETS", True)
+        self.snippet_match = getattr(settings, "WEB_SNIPPET_MATCH", True)
+        self.unquoted_retry = getattr(settings, "WEB_UNQUOTED_RETRY", True)
+        self.adaptive_neighbors = getattr(settings, "WEB_ADAPTIVE_NEIGHBORS", True)
+        self.page_votes = getattr(settings, "WEB_PAGE_VOTES", True)
+        self.snippet_min_words = getattr(settings, "SIMILARITY_MIN_MATCH_WORDS", 8)
+        # Resumen de la última búsqueda (lo lee el banco de similitud).
+        self.last_stats: dict = {}
 
-    def collect(self, content: str) -> list[WebPageContent]:
+    def collect(
+        self,
+        content: str,
+        covered_ranges: Sequence[tuple[int, int]] = (),
+    ) -> list[WebPageContent]:
+        """
+        Páginas web contra las que comparar el documento. `covered_ranges`
+        son los tramos (por carácter) que ya coincidieron con la base
+        interna: esos párrafos son los últimos en recibir consulta.
+        """
         if not getattr(settings, "WEB_ANALYSIS_ENABLED", True):
             return []
+
+        if self.query_mode == "parrafos":
+            return self._collect_by_paragraphs(content=content, covered_ranges=covered_ranges)
 
         phrase_groups = self._extract_search_phrases(content=content)
 
@@ -519,6 +821,11 @@ class WebCandidateCollector:
         queries = self._build_queries(phrase_groups=phrase_groups)
         run = self.run_queries(queries=queries)
         pages = [page for _query, page in run.pages]
+        self.last_stats = {
+            "consultas": run.executed_queries,
+            "paginas_leidas": run.fetched_pages,
+            "paginas": len(pages),
+        }
 
         logger.info(
             "Búsqueda web terminada. frases=%s consultas=%s/%s (límite=%s) "
@@ -549,9 +856,22 @@ class WebCandidateCollector:
             (query, list(self.search_client.search(query=query, count=5)))
             for query in queries
         ]
-
-        seen_urls: set[str] = set()
         pages: list[tuple[str, WebPageContent]] = []
+        fetched_pages = self._fetch_in_rounds(results_by_query, seen_urls=set(), pages=pages)
+
+        return WebSearchRun(
+            pages=pages,
+            executed_queries=len(results_by_query),
+            fetched_pages=fetched_pages,
+        )
+
+    def _fetch_in_rounds(
+        self,
+        results_by_query: list[tuple[str, list[WebSearchResult]]],
+        seen_urls: set[str],
+        pages: list[tuple[str, WebPageContent]],
+    ) -> int:
+        """Agrega a `pages` las páginas leídas por rondas; devuelve cuántas se intentó leer."""
         pages_by_query = [0] * len(results_by_query)
         next_result = [0] * len(results_by_query)
         fetched_pages = 0
@@ -589,11 +909,392 @@ class WebCandidateCollector:
                     progress = True
                     break
 
-        return WebSearchRun(
-            pages=pages,
-            executed_queries=len(results_by_query),
-            fetched_pages=fetched_pages,
+        return fetched_pages
+
+    # --- modo "parrafos" ---------------------------------------------------
+
+    def _collect_by_paragraphs(
+        self,
+        content: str,
+        covered_ranges: Sequence[tuple[int, int]],
+    ) -> list[WebPageContent]:
+        paragraphs = self._query_paragraphs(content=content, covered_ranges=covered_ranges)
+
+        if not paragraphs:
+            self.last_stats = {"parrafos": 0, "consultas": 0}
+            logger.info("Búsqueda web omitida: no hay párrafos buscables en el documento.")
+            return []
+
+        queries = self._run_paragraph_queries(paragraphs)
+        pages, fetched = self._pages_for_queries(queries)
+
+        reasons = Counter(query.reason for query in queries)
+        self.last_stats = {
+            "parrafos": len(paragraphs),
+            "consultas": len(queries),
+            "consultas_vecino": reasons["vecino"],
+            "consultas_sin_comillas": reasons["sin_comillas"],
+            "consultas_con_coincidencia": sum(1 for query in queries if query.hits),
+            "paginas_leidas": fetched,
+            "paginas": sum(1 for page in pages if page.source_format != SOURCE_FORMAT_SNIPPET),
+            "solo_snippet": sum(1 for page in pages if page.source_format == SOURCE_FORMAT_SNIPPET),
+        }
+        logger.info(
+            "Búsqueda web por párrafos terminada. párrafos=%s consultas=%s/%s "
+            "vecinos=%s sin_comillas=%s con_coincidencia=%s páginas_leídas=%s "
+            "páginas=%s solo_snippet=%s",
+            len(paragraphs),
+            len(queries),
+            self.max_queries,
+            reasons["vecino"],
+            reasons["sin_comillas"],
+            self.last_stats["consultas_con_coincidencia"],
+            fetched,
+            self.last_stats["paginas"],
+            self.last_stats["solo_snippet"],
         )
+        return pages
+
+    def _query_paragraphs(
+        self,
+        content: str,
+        covered_ranges: Sequence[tuple[int, int]],
+    ) -> list[QueryParagraph]:
+        """
+        Párrafos de prosa en español con al menos PARAGRAPH_MIN_WORDS
+        palabras y una frase buscable (8-14 palabras sin citas, cifras ni
+        siglas). Prioridad: prosa sin citas, prosa con citas (Autor, año),
+        listas o tablas, y al final los que ya coincidieron con la base
+        interna.
+        """
+        covered = sorted(covered_ranges)
+        paragraphs: list[QueryParagraph] = []
+        paragraph_start = 0
+
+        for separator in re.finditer(r"\n\s*\n|\Z", content):
+            raw = content[paragraph_start : separator.start()]
+            start = paragraph_start
+            paragraph_start = separator.end()
+            clean = re.sub(r"\s+", " ", raw).strip()
+            word_count = len(clean.split())
+
+            if word_count < self.PARAGRAPH_MIN_WORDS or self._is_low_value_paragraph(clean):
+                continue
+
+            if not self._looks_spanish(clean):
+                continue
+
+            phrase = self._best_phrase(raw)
+
+            if phrase is None:
+                continue
+
+            end = start + len(raw)
+
+            if self._covered_fraction(covered, start, end) >= 0.5:
+                tier = TIER_INTERNAL
+            elif self._looks_like_list_or_table(raw):
+                tier = TIER_LIST
+            elif _CITATION_RE.search(clean):
+                tier = TIER_CITED
+            else:
+                tier = TIER_PROSE
+
+            paragraphs.append(
+                QueryParagraph(
+                    index=len(paragraphs),
+                    start=start,
+                    end=end,
+                    phrase=phrase,
+                    words=word_count,
+                    tier=tier,
+                )
+            )
+
+        return paragraphs
+
+    PARAGRAPH_MIN_WORDS = 30
+
+    def _best_phrase(self, paragraph: str) -> str | None:
+        best: tuple[float, str] | None = None
+
+        # Cada línea cierra oración: un ítem de lista no se pega al texto
+        # siguiente.
+        for match in re.finditer(r"\S[^\n]*?(?:[.!?](?=\s)|$)", paragraph, flags=re.MULTILINE):
+            sentence = re.sub(r"\s+", " ", match.group(0)).strip()
+
+            if len(sentence.split()) < self.PHRASE_MIN_WORDS or not self._looks_spanish(sentence):
+                continue
+
+            for score, phrase in self._phrase_windows(sentence):
+                if best is None or score > best[0]:
+                    best = (score, phrase)
+
+        return None if best is None else best[1]
+
+    def _looks_like_list_or_table(self, raw: str) -> bool:
+        lines = [line.strip() for line in raw.splitlines() if line.strip()]
+
+        if len(_LIST_ITEM_RE.findall(raw)) >= 2:
+            return True
+
+        if len(lines) >= 3:
+            lengths = sorted(len(line) for line in lines)
+            if lengths[len(lengths) // 2] < 80:
+                return True
+
+        tokens = raw.split()
+        numeric = sum(1 for token in tokens if re.search(r"\d", token))
+        return bool(tokens) and numeric / len(tokens) > 0.15
+
+    def _covered_fraction(
+        self,
+        covered: list[tuple[int, int]],
+        start: int,
+        end: int,
+    ) -> float:
+        if not covered or end <= start:
+            return 0.0
+
+        overlap = sum(
+            max(0, min(end, range_end) - max(start, range_start))
+            for range_start, range_end in covered
+            if range_start < end and start < range_end
+        )
+        return overlap / (end - start)
+
+    def _run_paragraph_queries(self, paragraphs: list[QueryParagraph]) -> list[ParagraphQuery]:
+        """
+        Una consulta entre comillas por párrafo, en orden de prioridad,
+        hasta `max_queries`. Cuando una consulta encuentra la frase en un
+        snippet, los párrafos vecinos pasan al frente de la cola (la copia
+        suele venir en bloques) y, si un vecino ya dio 0 resultados con
+        comillas, se repite sin comillas.
+        """
+        ranked = sorted(paragraphs, key=lambda item: (item.tier, -item.words, item.index))
+        queue: deque[tuple[str, int]] = deque(("comillas", item.index) for item in ranked)
+        status: dict[int, str] = {}  # párrafo -> "coincidencia" | "cero" | "sin_coincidencia"
+        retried: set[int] = set()
+        done_phrases: dict[tuple[str, bool], str] = {}
+        queries: list[ParagraphQuery] = []
+
+        while queue and len(queries) < self.max_queries:
+            if getattr(self.search_client, "quota_exhausted", False):
+                logger.error("Búsqueda web cortada: Brave sin cuota tras %s consultas.", len(queries))
+                break
+
+            kind, index = queue.popleft()
+
+            quoted = kind != "sin_comillas"
+
+            if quoted and index in status:
+                continue
+
+            if not quoted and index in retried:
+                continue
+
+            paragraph = paragraphs[index]
+            phrase_key = (paragraph.phrase.lower(), quoted)
+
+            # Un párrafo repetido (p. ej. la conclusión que repite el
+            # resumen) no gasta otra consulta.
+            if phrase_key in done_phrases:
+                if quoted:
+                    status[index] = done_phrases[phrase_key]
+                else:
+                    retried.add(index)
+                continue
+            query = f'"{paragraph.phrase}"' if quoted else paragraph.phrase
+            results = list(self.search_client.search(query=query, count=self.search_count))
+            results = results[: self.results_per_query]
+            hits = [result for result in results if self._snippet_hit(paragraph.phrase, result)]
+
+            reason = "sin_comillas" if not quoted else ("vecino" if kind == "vecino" else "inicial")
+            queries.append(
+                ParagraphQuery(
+                    paragraph=index, query=query, quoted=quoted, results=results,
+                    hits=hits, reason=reason,
+                )
+            )
+
+            if quoted:
+                status[index] = "coincidencia" if hits else ("cero" if not results else "sin_coincidencia")
+                done_phrases[phrase_key] = status[index]
+            else:
+                retried.add(index)
+                done_phrases[phrase_key] = "hecha"
+                if hits:
+                    status[index] = "coincidencia"
+
+            if hits:
+                # appendleft invierte: el vecino anterior queda primero.
+                for neighbor in (index + 1, index - 1):
+                    if not 0 <= neighbor < len(paragraphs):
+                        continue
+                    if (
+                        self.adaptive_neighbors
+                        and neighbor not in status
+                        and paragraphs[neighbor].tier != TIER_INTERNAL
+                    ):
+                        queue.appendleft(("vecino", neighbor))
+                    elif (
+                        self.unquoted_retry
+                        and status.get(neighbor) == "cero"
+                        and neighbor not in retried
+                    ):
+                        queue.appendleft(("sin_comillas", neighbor))
+            elif (
+                self.unquoted_retry
+                and quoted
+                and not results
+                and any(status.get(n) == "coincidencia" for n in (index - 1, index + 1))
+            ):
+                queue.appendleft(("sin_comillas", index))
+
+        return queries
+
+    def _snippet_hit(self, phrase: str, result: WebSearchResult) -> bool:
+        snippets = result.snippets if self.use_extra_snippets else (result.snippet,)
+        return any(
+            shares_run(phrase, text, self.snippet_min_words)
+            for text in (result.title, *snippets)
+            if text
+        )
+
+    def _pages_for_queries(
+        self,
+        queries: list[ParagraphQuery],
+    ) -> tuple[list[WebPageContent], int]:
+        """
+        Descarga páginas: primero (con votos) las que tuvieron la frase en
+        el snippet y las que aparecieron en varias consultas, aunque no
+        estén en el top de ninguna; después el reparto por rondas de
+        `run_queries`. Con WEB_SNIPPET_MATCH, toda URL cuyo snippet
+        contiene la frase se compara también con sus snippets, aunque la
+        página no se haya podido descargar.
+        """
+        seen_urls: set[str] = set()
+        pages: list[tuple[str, WebPageContent]] = []
+        fetched = 0
+
+        if self.page_votes:
+            fetched += self._fetch_voted(queries, seen_urls, pages)
+
+        run = self._fetch_in_rounds(
+            [(query.query, query.results) for query in queries],
+            seen_urls=seen_urls,
+            pages=pages,
+        )
+        fetched += run
+
+        result_pages = [page for _query, page in pages]
+
+        if self.snippet_match:
+            result_pages = self._with_snippets(result_pages, queries)
+
+        return result_pages, fetched
+
+    def _fetch_voted(
+        self,
+        queries: list[ParagraphQuery],
+        seen_urls: set[str],
+        pages: list[tuple[str, WebPageContent]],
+    ) -> int:
+        url_votes: Counter[str] = Counter()
+        domain_votes: Counter[str] = Counter()
+        hit_urls: set[str] = set()
+        first: dict[str, tuple[int, str, WebSearchResult]] = {}
+
+        for position, query in enumerate(queries):
+            canonical = {canonical_url(result.url): result for result in query.results}
+            url_votes.update(canonical.keys())
+            domain_votes.update({result.domain for result in query.results})
+            hit_urls.update(canonical_url(result.url) for result in query.hits)
+
+            for key, result in canonical.items():
+                first.setdefault(key, (position, query.query, result))
+
+        priority = sorted(
+            (key for key in first if key in hit_urls or url_votes[key] >= 2),
+            key=lambda key: (
+                key not in hit_urls,
+                -url_votes[key],
+                -domain_votes[first[key][2].domain],
+                first[key][0],
+            ),
+        )
+        fetched = 0
+
+        for key in priority:
+            if len(pages) >= self.max_pages_total:
+                break
+
+            _position, query_text, result = first[key]
+
+            if result.url in seen_urls:
+                continue
+
+            seen_urls.add(result.url)
+            fetched += 1
+            page = self.fetcher.fetch(result=result)
+
+            if page is not None:
+                pages.append((query_text, page))
+
+        return fetched
+
+    def _with_snippets(
+        self,
+        pages: list[WebPageContent],
+        queries: list[ParagraphQuery],
+    ) -> list[WebPageContent]:
+        snippets_by_url: dict[str, list[str]] = {}
+        result_by_url: dict[str, WebSearchResult] = {}
+        hit_urls: list[str] = []
+
+        for query in queries:
+            for result in query.results:
+                key = canonical_url(result.url)
+                bucket = snippets_by_url.setdefault(key, [])
+                for text in result.snippets if self.use_extra_snippets else (result.snippet,):
+                    if text and text not in bucket:
+                        bucket.append(text)
+                result_by_url.setdefault(key, result)
+            for result in query.hits:
+                key = canonical_url(result.url)
+                if key not in hit_urls:
+                    hit_urls.append(key)
+
+        by_url = {canonical_url(page.url): index for index, page in enumerate(pages)}
+        pages = list(pages)
+
+        for key in hit_urls:
+            snippets = tuple(snippets_by_url.get(key, ()))
+
+            if key in by_url:
+                page = pages[by_url[key]]
+                pages[by_url[key]] = WebPageContent(
+                    title=page.title, url=page.url, domain=page.domain, text=page.text,
+                    source_format=page.source_format,
+                    segments=(*page.comparable_segments, *snippets),
+                )
+                continue
+
+            result = result_by_url[key]
+            pages.append(
+                WebPageContent(
+                    title=result.title,
+                    url=result.url,
+                    domain=result.domain,
+                    text=" ".join(snippets),
+                    source_format=SOURCE_FORMAT_SNIPPET,
+                    segments=snippets,
+                )
+            )
+
+        return pages
+
+    # --- modo "tramos" (anterior) -----------------------------------------
 
     def _build_queries(self, phrase_groups: list[list[str]]) -> list[str]:
         """

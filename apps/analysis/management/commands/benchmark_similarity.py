@@ -9,7 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -126,8 +126,67 @@ class Command(BaseCommand):
             action="store_true",
             help="No escribe el CSV de resultados.",
         )
+        parser.add_argument(
+            "--banco",
+            choices=["preparar-web", "evaluar-bases", "generar", "correr"],
+            help=(
+                "Banco de casos con respuesta conocida (ver apps/analysis/banco): "
+                "preparar-web (foto de páginas, usa Brave con caché), evaluar-bases, "
+                "generar (con --seed) y correr (califica con el motor span)."
+            ),
+        )
+        parser.add_argument("--banco-dir", type=str, default="")
+        parser.add_argument(
+            "--web-real",
+            action="store_true",
+            help=(
+                "Con --banco correr: los originales y los casos web buscan con Brave "
+                "(con caché) en vez de usar la foto."
+            ),
+        )
+        parser.add_argument(
+            "--ajuste",
+            action="append",
+            default=[],
+            metavar="CLAVE=VALOR",
+            help=(
+                "Con --banco correr: setting solo para esta corrida (se puede repetir), "
+                "p. ej. --ajuste WEB_ANALYSIS_MAX_QUERIES=40."
+            ),
+        )
+        parser.add_argument(
+            "--max-consultas-api",
+            type=int,
+            default=None,
+            help="Con --banco correr --web-real: tope de consultas a la API de Brave (presupuesto).",
+        )
+        parser.add_argument(
+            "--categorias",
+            type=str,
+            default="",
+            help="Con --banco correr: categorías separadas por coma (p. ej. original,web).",
+        )
+        parser.add_argument(
+            "--min-tramo",
+            type=int,
+            default=None,
+            help=(
+                "Con --banco correr: SIMILARITY_MIN_MATCH_WORDS solo para esta corrida "
+                "(experimento; no cambia la configuración)."
+            ),
+        )
+        parser.add_argument(
+            "--casos",
+            type=str,
+            default="",
+            help="Con --banco correr: ids de casos separados por coma.",
+        )
 
     def handle(self, *args, **options) -> None:
+        if options.get("banco"):
+            self._handle_bank(options)
+            return
+
         rng = random.Random(options["seed"])
         samples = self._load_samples(Path(options["samples_dir"]))
         sources, cases = self._build_cases(samples=samples, rng=rng)
@@ -144,6 +203,98 @@ class Command(BaseCommand):
 
         self.results = results
         self.cases = cases
+
+    # --- banco de casos con respuesta conocida ----------------------------
+
+    def _handle_bank(self, options) -> None:
+        from apps.analysis.banco import ejecucion
+
+        bank_dir = Path(options["banco_dir"]) if options["banco_dir"] else ejecucion.DEFAULT_BANK_DIR
+        step = options["banco"]
+        write = self.stdout.write
+
+        if step == "preparar-web":
+            ejecucion.prepare_web(bank_dir, write)
+        elif step == "evaluar-bases":
+            self._evaluate_bases(ejecucion, bank_dir, write)
+        elif step == "generar":
+            ejecucion.generate(bank_dir, seed=options["seed"], write=write)
+        else:
+            runner = ejecucion.BankRunner(
+                bank_dir, write, web_real=options["web_real"], min_match_words=options["min_tramo"],
+                settings_overrides=self._parse_overrides(options["ajuste"]),
+                max_api_calls=options["max_consultas_api"],
+            )
+            case_ids = {item.strip() for item in options["casos"].split(",") if item.strip()}
+            categories = {item.strip() for item in options["categorias"].split(",") if item.strip()}
+            config, scores = runner.run(case_ids or None, categories or None)
+            self.bank_scores = scores
+            write("")
+            for key, value in config.items():
+                write(f"{key}: {value}")
+            write("")
+            for line in ejecucion.format_table(ejecucion.summarize(scores)):
+                write(line)
+            write("")
+            write(
+                "rec.pal: % de palabras insertadas marcadas. rec.fte: % de fuentes de las "
+                "inserciones nombradas. base %: % del fragmento base solo. FP nuevas: "
+                "palabras del texto base marcadas que no lo estaban en la línea base. "
+                "f.extra: fuentes nombradas que no son de las inserciones ni de la línea base."
+            )
+            write(f"Resultados guardados en {ejecucion.save_results(bank_dir, config, scores)}")
+
+    def _parse_overrides(self, items: list[str]) -> dict:
+        """CLAVE=VALOR -> {CLAVE: valor}; true/false y enteros se convierten."""
+        overrides = {}
+        for item in items:
+            key, separator, raw = item.partition("=")
+            if not separator or not key.strip().isupper():
+                raise CommandError(f"Ajuste inválido: {item!r} (se espera CLAVE=VALOR).")
+            value: object = raw.strip()
+            if value.lower() in {"true", "false"}:
+                value = value.lower() == "true"
+            elif re.fullmatch(r"-?\d+", value):
+                value = int(value)
+            overrides[key.strip()] = value
+        return overrides
+
+    def _evaluate_bases(self, ejecucion, bank_dir: Path, write) -> None:
+        from django.test import override_settings
+
+        from apps.analysis.banco.calificador import EngineOutput
+
+        with override_settings(SIMILARITY_ENGINE="span"):
+            with transaction.atomic():
+                suffix = uuid4().hex[:8]
+                institution = Institution.objects.create(
+                    name=f"Banco bases {suffix}", slug=f"banco-bases-{suffix}"
+                )
+                owner = self._user(institution, f"banco-bases-{suffix}")
+                document = self._document(institution, owner, f"Base banco [{suffix}]")
+                service = DocumentAnalysisService(requested_by=owner)
+
+                def run_alone(text: str) -> EngineOutput:
+                    started = time.perf_counter()
+                    result = service._run_similarity(
+                        document=document, analysis_content=text, quoted_ranges=[],
+                        collect_web_pages=lambda _covered: [], engine="span",
+                    )
+                    return EngineOutput(
+                        analyzed_text=text, marked_ranges=[], quoted_ranges=[],
+                        source_keys=set(), percent=result.total_similarity_percent,
+                        seconds=time.perf_counter() - started,
+                    )
+
+                candidates = ejecucion.evaluate_bases(bank_dir, run_alone, write)
+                transaction.set_rollback(True)
+
+        counts: dict[str, int] = {}
+        for candidate in candidates:
+            counts[f"{candidate.origin}:{candidate.status}"] = (
+                counts.get(f"{candidate.origin}:{candidate.status}", 0) + 1
+            )
+        write("Estado de las candidatas: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
 
     # --- construcción de casos -------------------------------------------
 
@@ -440,7 +591,7 @@ class Command(BaseCommand):
                     document=case_document,
                     analysis_content=case.content,
                     quoted_ranges=[],
-                    collect_web_pages=lambda: list(web_pages),
+                    collect_web_pages=lambda _covered: list(web_pages),
                     engine=engine,
                     retrieval=retrieval,
                 )

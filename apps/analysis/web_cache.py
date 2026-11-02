@@ -34,10 +34,20 @@ def _sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def search_cache_key(query: str, count: int, country: str, search_lang: str) -> str:
-    return _sha256(
-        json.dumps([query, count, country, search_lang], ensure_ascii=False)
-    )
+def search_cache_key(
+    query: str,
+    count: int,
+    country: str,
+    search_lang: str,
+    extra_snippets: bool = False,
+) -> str:
+    # Sin extra_snippets la clave es la de siempre: la caché vieja sigue sirviendo.
+    parts: list = [query, count, country, search_lang]
+
+    if extra_snippets:
+        parts.append("extra_snippets")
+
+    return _sha256(json.dumps(parts, ensure_ascii=False))
 
 
 def get_search_results(cache_key: str) -> list[dict] | None:

@@ -457,8 +457,21 @@ if AI_DETECTION_MODE not in {"global", "segments"}:
         "AI_DETECTION_MODE debe ser 'global' o 'segments'."
     )
 
-# Tramos en que se divide el documento para elegir frases de búsqueda web
-# (hasta 2 frases de 8-14 palabras por tramo).
+# Cómo se eligen las consultas a Brave:
+# - "parrafos": una frase distintiva (8-14 palabras, sin citas ni cifras)
+#   por párrafo de prosa, entre comillas, en orden de prioridad: prosa sin
+#   citas, con citas (Autor, año), listas/tablas y al final los párrafos que
+#   ya coincidieron con la base interna.
+# - "tramos": modo anterior (8 tramos, 2 frases con comillas + 1 sin).
+# Banco 2026-11-02, tesis completas con Brave real: recall de palabras web
+# 10,9 % (tramos, 24 consultas) -> 26,0 % (parrafos, 40), FP de originales
+# sin subir (6,76 -> 6,57 en los mismos 5).
+WEB_QUERY_MODE = os.getenv("WEB_QUERY_MODE", "parrafos").strip().lower()
+
+if WEB_QUERY_MODE not in {"parrafos", "tramos"}:
+    raise RuntimeError("WEB_QUERY_MODE debe ser 'parrafos' o 'tramos'.")
+
+# Solo modo "tramos": tramos en que se divide el documento.
 WEB_ANALYSIS_MAX_QUERY_PHRASES = env_int(
     "WEB_ANALYSIS_MAX_QUERY_PHRASES",
     8,
@@ -469,20 +482,49 @@ WEB_ANALYSIS_MAX_PAGES_TOTAL = env_int(
     16,
 )
 
-# Tope total de consultas a Brave por análisis. Por tramo del documento:
-# mejor frase entre comillas, segunda frase entre comillas y mejor frase
-# sin comillas, en ese orden de prioridad (8 tramos x 3 = 24).
+# Tope de consultas a Brave por documento (cada una cuesta; $5 por 1000).
 WEB_ANALYSIS_MAX_QUERIES = env_int(
     "WEB_ANALYSIS_MAX_QUERIES",
-    24,
+    40,
 )
 
-# Páginas que aporta como máximo cada consulta, para que el tope total de
-# páginas se reparta entre los tramos de todo el documento.
+# Páginas que aporta como máximo cada consulta en el reparto por rondas.
 WEB_ANALYSIS_MAX_PAGES_PER_QUERY = env_int(
     "WEB_ANALYSIS_MAX_PAGES_PER_QUERY",
-    2,
+    3,
 )
+
+# Resultados pedidos a Brave por consulta (máx. 20, mismo costo) y cuántos
+# de ellos usa el análisis; extra_snippets trae hasta 5 fragmentos más por
+# resultado.
+BRAVE_SEARCH_COUNT = env_int("BRAVE_SEARCH_COUNT", 20)
+BRAVE_EXTRA_SNIPPETS = env_bool("BRAVE_EXTRA_SNIPPETS", True)
+WEB_RESULTS_PER_QUERY = env_int("WEB_RESULTS_PER_QUERY", 20)
+WEB_USE_EXTRA_SNIPPETS = env_bool("WEB_USE_EXTRA_SNIPPETS", True)
+
+# Solo modo "parrafos":
+# - SNIPPET_MATCH: si un snippet trae >= 8 palabras seguidas de la frase
+#   buscada, ese resultado se compara también por sus snippets (aunque la
+#   página no se pueda descargar).
+# - UNQUOTED_RETRY: una consulta con comillas sin resultados se repite sin
+#   comillas solo si un párrafo vecino tuvo coincidencia.
+# - ADAPTIVE_NEIGHBORS: una coincidencia adelanta la consulta de los
+#   párrafos vecinos (la copia viene en bloques).
+# - PAGE_VOTES: se descargan primero las URLs con la frase en el snippet y
+#   las que salieron en varias consultas.
+WEB_SNIPPET_MATCH = env_bool("WEB_SNIPPET_MATCH", True)
+WEB_UNQUOTED_RETRY = env_bool("WEB_UNQUOTED_RETRY", True)
+WEB_ADAPTIVE_NEIGHBORS = env_bool("WEB_ADAPTIVE_NEIGHBORS", True)
+WEB_PAGE_VOTES = env_bool("WEB_PAGE_VOTES", True)
+
+# PDFs web con el extractor de documentos (hasta WEB_PDF_MAX_MB) y fichas
+# de repositorio que siguen su citation_pdf_url, respetando robots.txt.
+WEB_FOLLOW_PDF = env_bool("WEB_FOLLOW_PDF", True)
+WEB_PDF_MAX_MB = env_int("WEB_PDF_MAX_MB", 20)
+
+# Tope de tiempo total por descarga de página o PDF (el timeout anterior es
+# por lectura y no corta un servidor que manda a goteo).
+WEB_PAGE_MAX_DOWNLOAD_SECONDS = env_int("WEB_PAGE_MAX_DOWNLOAD_SECONDS", 30)
 
 # Vigencia de las caches web (apps/analysis/web_cache.py). Las respuestas de
 # Brave y las páginas leídas se reutilizan: menos cuota y el mismo % web al
@@ -556,6 +598,19 @@ SIMILARITY_COMMON_TEXT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_MIN_DOCS", 5)
 SIMILARITY_COMMON_TEXT_MIN_RATIO = float(
     os.getenv("SIMILARITY_COMMON_TEXT_MIN_RATIO", "0.7")
 )
+# Frases genéricas: un tramo de menos de SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS
+# palabras es común con SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS documentos (si
+# es menor que el umbral general; 0 = el mismo umbral). Banco: con 4 los
+# originales bajan 6,07 -> 5,39 % sin perder recall; con 3 las frases
+# sueltas en PDF caen a 42,2.
+SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS = env_int("SIMILARITY_COMMON_TEXT_SHORT_RUN_WORDS", 15)
+SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS = env_int("SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS", 4)
+
+# Plantilla que no cuenta para el %: recibo de Turnitin pegado (trn:oid,
+# "Página X de Y - ...") y cabecera de la tabla de operacionalización de
+# variables. Se descuenta como una cita (excluded_quote_ranges), aunque el
+# análisis no excluya citas.
+SIMILARITY_EXCLUDE_TEMPLATES = env_bool("SIMILARITY_EXCLUDE_TEMPLATES", True)
 
 # Repositorios con endpoint OAI-PMH confirmado manualmente (verb=Identify
 # respondió con <Identify> o <error> válido, probado en este orden:

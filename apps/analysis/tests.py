@@ -1516,6 +1516,22 @@ class AnalysisExclusionOptionsTests(TestCase):
         self.assertIn("Editorial Academica", report.analyzed_content)
         self.assertEqual(report.summary["excluded_quote_ranges"], [])
 
+    def test_template_is_excluded_even_without_excluding_quotes(self) -> None:
+        receipt = "Página 3 de 38 - Portada Identificador de la entrega trn:oid:::29566:556"
+        self.document_text.content = f"{receipt}\n\n{self.document_text.content}"
+        self.document_text.save()
+
+        with override_settings(SIMILARITY_EXCLUDE_TEMPLATES=True):
+            report = self._execute(exclude_quotes=False)
+
+        [[start, end]] = report.summary["excluded_quote_ranges"]
+        self.assertEqual(report.analyzed_content[start:end], receipt)
+
+        with override_settings(SIMILARITY_EXCLUDE_TEMPLATES=False):
+            report = self._execute(exclude_quotes=False)
+
+        self.assertEqual(report.summary["excluded_quote_ranges"], [])
+
     def test_knowledge_index_never_learns_bibliography(self) -> None:
         self._execute(exclude_bibliography=False)
 
@@ -2007,6 +2023,7 @@ class _FakeFetcher:
 
 @override_settings(
     WEB_ANALYSIS_ENABLED=True,
+    WEB_QUERY_MODE="tramos",
     WEB_ANALYSIS_MAX_QUERY_PHRASES=8,
     WEB_ANALYSIS_MAX_QUERIES=24,
     WEB_ANALYSIS_MAX_PAGES_TOTAL=16,
@@ -2659,7 +2676,7 @@ class CommonTextFilterTests(TestCase):
             document=self.current,
             analysis_content=self.content,
             quoted_ranges=[],
-            collect_web_pages=list,
+            collect_web_pages=lambda _covered: [],
             engine="span",
         )
 
@@ -2682,6 +2699,21 @@ class CommonTextFilterTests(TestCase):
 
         self.assertEqual(result.total_similarity_percent, Decimal("40.00"))
         self.assertEqual(result.span_alignment["common_text"], [])
+
+    def test_short_runs_can_need_fewer_documents(self) -> None:
+        # Frase genérica de 12 palabras en 3 documentos: con el umbral de
+        # tramos cortos en 3 es común; con el general (5) sigue contando.
+        phrase = " ".join(self.template.split()[:12])
+        self.content = f"{phrase} {self.original}"
+        self._records_with(3, phrase)
+
+        with override_settings(SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS=3):
+            short = self._run(min_documents=5)
+        with override_settings(SIMILARITY_COMMON_TEXT_SHORT_MIN_DOCS=0):
+            default = self._run(min_documents=5)
+
+        self.assertEqual(short.total_similarity_percent, Decimal("0.00"))
+        self.assertEqual(default.total_similarity_percent, Decimal("16.67"))
 
     def test_zero_turns_the_filter_off(self) -> None:
         self._records_with(3, self.template)
@@ -2889,7 +2921,7 @@ class SpanEngineServiceTests(TestCase):
             document=self.current,
             analysis_content=self.content,
             quoted_ranges=[],
-            collect_web_pages=lambda: [self.web_page],
+            collect_web_pages=lambda _covered: [self.web_page],
             engine=engine,
             retrieval=retrieval,
         )
@@ -2972,7 +3004,7 @@ class SpanEngineServiceTests(TestCase):
             document=self.current,
             analysis_content=self.content,
             quoted_ranges=[],
-            collect_web_pages=lambda: [],
+            collect_web_pages=lambda _covered: [],
         )
 
         self.assertEqual((result.engine, result.retrieval), ("chunk", "vieja"))

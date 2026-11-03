@@ -50,6 +50,43 @@ class ClassifierTests(SimpleTestCase):
             SegmentAIClassifier(model_dir="/no/existe").predict(["hola"])
 
 
+class MemoryTests(SimpleTestCase):
+    def test_batch_size_and_threads_are_small(self):
+        self.assertEqual(ai_classifier.BATCH_SIZE, 2)
+        self.assertEqual(ai_classifier.NUM_THREADS, 2)
+
+    def test_predict_runs_in_batches_of_two_and_frees_memory(self):
+        import torch
+
+        calls = []
+
+        class FakeModel:
+            def __call__(self, **batch):
+                calls.append(batch["input_ids"].shape[0])
+                return mock.Mock(logits=torch.zeros(batch["input_ids"].shape[0], 2))
+
+        def fake_tokenizer(texts, **kwargs):
+            return {"input_ids": torch.zeros(len(texts), 4, dtype=torch.long)}
+
+        ai_classifier._loaded["x"] = (fake_tokenizer, FakeModel(), 0.5, 384, torch)
+        try:
+            probabilities = SegmentAIClassifier(model_dir="x").predict(["a"] * 5)
+        finally:
+            ai_classifier._loaded.clear()
+        self.assertEqual(calls, [2, 2, 1])
+        self.assertEqual(len(probabilities), 5)
+
+    def test_analyze_unloads_model_and_threshold_does_not_load_it(self):
+        ai_classifier._loaded["x"] = ("tok", "model", 0.5, 384, None)
+        classifier = SegmentAIClassifier(model_dir="x")
+        with mock.patch.object(ai_classifier, "_read_config", return_value={"umbral": 0.7}) as cfg, \
+                mock.patch.object(SegmentAIClassifier, "predict", return_value=[]):
+            self.assertEqual(classifier.threshold, 0.7)
+            classifier.analyze("")
+        self.assertTrue(cfg.called)
+        self.assertNotIn("x", ai_classifier._loaded)
+
+
 class ServiceModeTests(SimpleTestCase):
     @override_settings(AI_DETECTION_MODE="classifier", PERPLEXITY_AI_DETECTION_ENABLED=False)
     def test_classifier_does_not_change_percent_or_detector(self):

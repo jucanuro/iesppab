@@ -18,6 +18,7 @@ de validación).
 
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import threading
@@ -34,7 +35,8 @@ logger = logging.getLogger(__name__)
 
 AI_LABEL_INDEX = 1
 DEFAULT_MAX_LENGTH = 384
-BATCH_SIZE = 8
+BATCH_SIZE = 2
+NUM_THREADS = 2
 
 _lock = threading.Lock()
 _loaded: dict[str, tuple] = {}
@@ -112,6 +114,26 @@ def classifier_pieces(segment_text: str) -> list[str]:
     return pieces
 
 
+def _read_config(model_dir: str) -> dict:
+    """Lee `umbral.json` sin cargar el modelo (barato)."""
+    path = Path(model_dir)
+    if not model_dir or not (path / "config.json").is_file():
+        raise ClassifierUnavailableError(
+            f"No hay modelo del clasificador en '{model_dir}' (AI_CLASSIFIER_MODEL_DIR)."
+        )
+    return json.loads((path / "umbral.json").read_text(encoding="utf-8"))
+
+
+def unload(model_dir: str | None = None) -> None:
+    """Libera el modelo de memoria (se vuelve a cargar solo al usarlo)."""
+    with _lock:
+        if model_dir is None:
+            _loaded.clear()
+        else:
+            _loaded.pop(model_dir, None)
+    gc.collect()
+
+
 def _load(model_dir: str):
     with _lock:
         if model_dir in _loaded:
@@ -124,11 +146,12 @@ def _load(model_dir: str):
             )
 
         import torch
+        torch.set_num_threads(NUM_THREADS)
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-        config = json.loads((path / "umbral.json").read_text(encoding="utf-8"))
+        config = _read_config(model_dir)
         tokenizer = AutoTokenizer.from_pretrained(path)
-        model = AutoModelForSequenceClassification.from_pretrained(path).eval()
+        model = AutoModelForSequenceClassification.from_pretrained(path, low_cpu_mem_usage=True).eval()
         _loaded[model_dir] = (
             tokenizer,
             model,
@@ -157,11 +180,13 @@ class SegmentAIClassifier:
                 )
                 logits = model(**batch).logits
                 probabilities += torch.softmax(logits, dim=-1)[:, AI_LABEL_INDEX].tolist()
+                del batch, logits
+                gc.collect()
         return probabilities
 
     @property
     def threshold(self) -> float:
-        return _load(self.model_dir)[2]
+        return float(_read_config(self.model_dir)["umbral"])
 
     def analyze(
         self,
@@ -185,7 +210,11 @@ class SegmentAIClassifier:
             segments.append(classified)
 
         pieces = [piece for segment in segments for piece in segment.pieces]
-        for piece, probability in zip(pieces, self.predict([p.text for p in pieces])):
+        try:
+            probabilities = self.predict([p.text for p in pieces])
+        finally:
+            unload(self.model_dir)
+        for piece, probability in zip(pieces, probabilities):
             piece.probability = probability
 
         threshold = self.threshold

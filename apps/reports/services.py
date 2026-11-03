@@ -850,10 +850,8 @@ class _HighlightedDocumentPdfBuilder:
     ) -> tuple[str, list[tuple[int, ReportSource]], dict[UUID, int]]:
         segments = self._build_segments(content=content, findings=findings)
 
-        similarity_bg, similarity_text = self.SIMILARITY_COLORS.get(
-            self.report.similarity_level,
-            self.SIMILARITY_COLORS["bajo"],
-        )
+        band = self.report.similarity_band
+        similarity_bg, similarity_text = band["bg"], band["fg"]
 
         source_numbers: dict[UUID, int] = {}
         cited_sources: list[tuple[int, ReportSource]] = []
@@ -982,22 +980,49 @@ class _HighlightedDocumentPdfBuilder:
     def _build_metrics_row(self, styles: dict[str, ParagraphStyle]) -> Table:
         owner = self.document.owner
 
-        def cell(value: Decimal, label: str, accent: bool = False) -> Paragraph:
+        def cell(
+            value: Decimal,
+            label: str,
+            accent: bool = False,
+            band: dict | None = None,
+            note: str = "",
+        ) -> Paragraph:
             number_style = styles["metric_number_accent" if accent else "metric_number"]
+            color = f' color="{band["fg"]}"' if band else ""
+            extra = (
+                f'<br/><font size="7"{color}><b>{note}</b></font>' if note else ""
+            )
             return Paragraph(
-                f'<font size="20"><b>{self._format_percent(value)}</b></font>'
-                f'<font size="9">%</font><br/>'
-                f'<font size="7.5" color="#64748B">{label}</font>',
+                f'<font size="20"{color}><b>{self._format_percent(value)}</b></font>'
+                f'<font size="9"{color}>%</font><br/>'
+                f'<font size="7.5" color="#64748B">{label}</font>{extra}',
                 number_style,
             )
+
+        clf = self.report.ai_classifier
 
         metrics = Table(
             [
                 [
-                    cell(self.report.similarity_percent, "ÍNDICE DE SIMILITUD", accent=True),
+                    cell(
+                        self.report.similarity_percent,
+                        "ÍNDICE DE SIMILITUD",
+                        accent=True,
+                        band=self.report.similarity_band,
+                        note=self.report.similarity_band["label"].upper(),
+                    ),
                     cell(self.report.web_similarity_percent, "FUENTES DE INTERNET"),
                     cell(self.report.internal_similarity_percent, "TRABAJOS / REPOSITORIOS"),
-                    cell(self.report.ai_probability_percent, "IA ESTIMADA"),
+                    (
+                        cell(
+                            clf["percent"],
+                            "IA ESTIMADA",
+                            band=clf,
+                            note=f'{clf["label"].upper()} · INDICATIVO',
+                        )
+                        if clf
+                        else cell(self.report.ai_probability_percent, "IA ESTIMADA")
+                    ),
                 ]
             ],
             colWidths=[4.15 * cm] * 4,
@@ -1051,10 +1076,8 @@ class _HighlightedDocumentPdfBuilder:
         return wrapper
 
     def _build_legend(self, styles: dict[str, ParagraphStyle]) -> Table:
-        similarity_bg, similarity_text = self.SIMILARITY_COLORS.get(
-            self.report.similarity_level,
-            self.SIMILARITY_COLORS["bajo"],
-        )
+        band = self.report.similarity_band
+        similarity_bg, similarity_text = band["bg"], band["fg"]
 
         return Table(
             [

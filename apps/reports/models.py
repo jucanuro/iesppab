@@ -23,6 +23,50 @@ AI_ESTIMATE_DISCLAIMER = (
 )
 
 
+# Escala de colores del índice de similitud (la de Turnitin).
+SIMILARITY_BANDS = {
+    "blue": {"label": "Sin coincidencias", "bg": "#DBEAFE", "fg": "#1E3A8A", "border": "#93C5FD"},
+    "green": {"label": "Similitud baja", "bg": "#D1FAE5", "fg": "#064E3B", "border": "#6EE7B7"},
+    "yellow": {"label": "Similitud media", "bg": "#FEF9C3", "fg": "#713F12", "border": "#FDE047"},
+    "orange": {"label": "Similitud alta", "bg": "#FFEDD5", "fg": "#7C2D12", "border": "#FDBA74"},
+    "red": {"label": "Similitud muy alta", "bg": "#FEE2E2", "fg": "#7F1D1D", "border": "#FCA5A5"},
+}
+SIMILARITY_LEGEND = [
+    ("blue", "0 %"),
+    ("green", "1-24 %"),
+    ("yellow", "25-49 %"),
+    ("orange", "50-74 %"),
+    ("red", "75-100 %"),
+]
+
+
+def similarity_band(percent) -> dict:
+    value = Decimal(str(percent))
+    if value <= 0:
+        key = "blue"
+    elif value < 25:
+        key = "green"
+    elif value < 50:
+        key = "yellow"
+    elif value < 75:
+        key = "orange"
+    else:
+        key = "red"
+    return {"key": key, **SIMILARITY_BANDS[key]}
+
+
+def ai_classifier_band(percent) -> dict:
+    value = Decimal(str(percent))
+    if value < 20:
+        return {"key": "low", "label": "Sin indicios", "bg": "#D1FAE5", "fg": "#064E3B", "border": "#6EE7B7"}
+    if value < 50:
+        return {"key": "mild", "label": "Indicios leves", "bg": "#FEF9C3", "fg": "#713F12", "border": "#FDE047"}
+    return {"key": "high", "label": "Posible IA: revisar", "bg": "#FEE2E2", "fg": "#7F1D1D", "border": "#FCA5A5"}
+
+
+AI_CLASSIFIER_NOTE = "Estimación indicativa, no es prueba."
+
+
 class ReportRiskLevel(models.TextChoices):
     LOW = "LOW", _("Bajo")
     MEDIUM = "MEDIUM", _("Medio")
@@ -36,6 +80,7 @@ class AnalysisReport(TimeStampedModel):
     """
 
     AI_DISCLAIMER = AI_ESTIMATE_DISCLAIMER
+    AI_CLASSIFIER_NOTE = AI_CLASSIFIER_NOTE
 
     document = models.OneToOneField(
         "documents.Document",
@@ -225,6 +270,29 @@ class AnalysisReport(TimeStampedModel):
             return "moderado"
 
         return "alto"
+
+    @property
+    def similarity_band(self) -> dict:
+        """Banda de color del índice de similitud (escala de Turnitin)."""
+        return similarity_band(self.similarity_percent)
+
+    @property
+    def similarity_legend(self) -> list[tuple[str, str, str]]:
+        return [
+            (key, label, SIMILARITY_BANDS[key]["bg"]) for key, label in SIMILARITY_LEGEND
+        ]
+
+    @property
+    def ai_classifier(self) -> dict | None:
+        """
+        % IA del clasificador (indicativo) con su rango, o None si el reporte
+        no se analizó con AI_DETECTION_MODE=classifier o el clasificador falló.
+        """
+        data = ((self.summary or {}).get("ai_score_breakdown") or {}).get("classifier")
+        if not data or data.get("error") or "ai_percent" not in data:
+            return None
+        percent = Decimal(str(data["ai_percent"]))
+        return {"percent": percent, **ai_classifier_band(percent)}
 
     @property
     def ai_level(self) -> str:

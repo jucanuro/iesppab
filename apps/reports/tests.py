@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1905,3 +1905,34 @@ class SourceDisplayTests(SourceExclusionTestMixin, TestCase):
     def _client_for(self, user: User):
         self.client.force_login(user)
         return self.client
+
+
+class BandasDePresentacionTests(SimpleTestCase):
+    def test_banda_similitud_turnitin(self):
+        from apps.reports.models import similarity_band
+
+        casos = [
+            ("0", "blue"), ("0.5", "green"), ("24.9", "green"), ("25", "yellow"),
+            ("49.9", "yellow"), ("50", "orange"), ("74.9", "orange"),
+            ("75", "red"), ("100", "red"),
+        ]
+        for valor, esperado in casos:
+            self.assertEqual(similarity_band(valor)["key"], esperado, valor)
+
+    def test_banda_clasificador_ia(self):
+        from apps.reports.models import ai_classifier_band
+
+        self.assertEqual(ai_classifier_band("19.9")["label"], "Sin indicios")
+        self.assertEqual(ai_classifier_band("20")["label"], "Indicios leves")
+        self.assertEqual(ai_classifier_band("49.9")["label"], "Indicios leves")
+        self.assertEqual(ai_classifier_band("50")["label"], "Posible IA: revisar")
+
+    def test_ai_classifier_solo_con_breakdown_valido(self):
+        from apps.reports.models import AnalysisReport
+
+        r = AnalysisReport(summary={})
+        self.assertIsNone(r.ai_classifier)
+        r.summary = {"ai_score_breakdown": {"classifier": {"error": True}}}
+        self.assertIsNone(r.ai_classifier)
+        r.summary = {"ai_score_breakdown": {"classifier": {"ai_percent": "55.0"}}}
+        self.assertEqual(r.ai_classifier["label"], "Posible IA: revisar")

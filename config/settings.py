@@ -452,10 +452,18 @@ PERPLEXITY_AI_DETECTION_ENABLED = env_bool(
 #   Turnitin). Ver apps/analysis/engines/ai_segments.py.
 AI_DETECTION_MODE = os.getenv("AI_DETECTION_MODE", "global").strip().lower()
 
-if AI_DETECTION_MODE not in {"global", "segments"}:
+if AI_DETECTION_MODE not in {"global", "segments", "classifier"}:
     raise RuntimeError(
-        "AI_DETECTION_MODE debe ser 'global' o 'segments'."
+        "AI_DETECTION_MODE debe ser 'global', 'segments' o 'classifier'."
     )
+
+# Modo "classifier": BETO afinado (apps/analysis/engines/ai_classifier.py).
+# Solo INDICATIVO: queda en ai_score_breakdown["classifier"] y no cambia el
+# % IA, el riesgo ni los certificados. El modelo (~420MB) vive fuera de git.
+AI_CLASSIFIER_MODEL_DIR = os.getenv(
+    "AI_CLASSIFIER_MODEL_DIR",
+    str(Path.home() / "models" / "clasificador_ia"),
+)
 
 # Cómo se eligen las consultas a Brave:
 # - "parrafos": una frase distintiva (8-14 palabras, sin citas ni cifras)

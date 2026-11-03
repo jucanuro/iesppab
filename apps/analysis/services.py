@@ -20,6 +20,7 @@ from apps.analysis.common_text import CommonTextFilter
 from apps.analysis.engines.ai_detector import AIAnalysisResult, SpanishAIDetector
 from apps.analysis.engines.exclusions import calculate_similarity_percent, merge_ranges
 from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.ai_classifier import SegmentAIClassifier
 from apps.analysis.engines.ai_segments import SegmentedPerplexityDetector
 from apps.analysis.engines.perplexity_detector import SpanishPerplexityDetector
 from apps.analysis.engines.similarity import (
@@ -375,6 +376,56 @@ class DocumentAnalysisService:
             ) from exc
 
     def _estimate_ai_probability(
+        self,
+        document: Document,
+        analysis_content: str,
+        heuristic_result: AIAnalysisResult,
+        quoted_ranges: list[tuple[int, int]] | None = None,
+    ) -> tuple[Decimal, dict, str]:
+        """
+        Con `AI_DETECTION_MODE=classifier` el % IA, el riesgo y el detector
+        son los del modo global/heurística de siempre; el clasificador solo
+        agrega `breakdown["classifier"]` (indicativo).
+        """
+        percent, breakdown, detector = self._estimate_ai_probability_base(
+            document, analysis_content, heuristic_result, quoted_ranges
+        )
+
+        if settings.AI_DETECTION_MODE == "classifier":
+            breakdown = {**breakdown, "classifier": self._classify_indicative(
+                document, analysis_content, quoted_ranges
+            )}
+
+        return percent, breakdown, detector
+
+    def _classify_indicative(
+        self,
+        document: Document,
+        analysis_content: str,
+        quoted_ranges: list[tuple[int, int]] | None,
+    ) -> dict:
+        started_at = time.monotonic()
+        try:
+            result = SegmentAIClassifier().analyze(
+                analysis_content, excluded_ranges=quoted_ranges
+            )
+        except Exception:
+            logger.exception(
+                "Fallo el clasificador de IA (indicativo); se omite. document_id=%s",
+                document.id,
+            )
+            return {"indicative": True, "error": True}
+
+        logger.info(
+            "Clasificador de IA (indicativo). document_id=%s ia=%s trozos=%s tiempo=%.2fs",
+            document.id,
+            result.ai_percent,
+            len(result.pieces),
+            time.monotonic() - started_at,
+        )
+        return result.to_breakdown()
+
+    def _estimate_ai_probability_base(
         self,
         document: Document,
         analysis_content: str,

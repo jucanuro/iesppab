@@ -371,6 +371,8 @@ class CertificateGenerationService:
         story.append(document_table)
         story.append(Spacer(1, 0.55 * cm))
 
+        band = report.similarity_band
+        clf = report.ai_classifier
         metrics_table = Table(
             [
                 [
@@ -380,11 +382,21 @@ class CertificateGenerationService:
                 ],
                 [
                     Paragraph(
-                        f"{self._format_decimal(report.similarity_percent)}%",
+                        f'<font color="{band["fg"]}">'
+                        f"{self._format_decimal(report.similarity_percent)}%</font>"
+                        f'<br/><font size="7" color="{band["fg"]}">'
+                        f'{band["label"].upper()}</font>',
                         styles["metric_value_red"],
                     ),
                     Paragraph(
-                        f"{self._format_decimal(report.ai_probability_percent)}%",
+                        (
+                            f'<font color="{clf["fg"]}">'
+                            f'{self._format_decimal(clf["percent"])}%</font>'
+                            f'<br/><font size="7" color="{clf["fg"]}">'
+                            f'{clf["label"].upper()} · INDICATIVO</font>'
+                            if clf
+                            else f"{self._format_decimal(report.ai_probability_percent)}%"
+                        ),
                         styles["metric_value_blue"],
                     ),
                     Paragraph(
@@ -400,7 +412,8 @@ class CertificateGenerationService:
         story.append(Spacer(1, 0.15 * cm))
         story.append(
             Paragraph(
-                f"<b>IA estimada:</b> {AI_ESTIMATE_DISCLAIMER}",
+                f"<b>IA estimada:</b> "
+                f"{report.AI_CLASSIFIER_NOTE if clf else AI_ESTIMATE_DISCLAIMER}",
                 styles["small"],
             )
         )

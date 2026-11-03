@@ -165,6 +165,11 @@ class SegmentosTests(SimpleTestCase):
         primera, segunda = ventanas[0].split(), ventanas[1].split()
         self.assertTrue(set(primera[-50:]) & set(segunda[:120]))
 
+    def test_pdf_con_texto_utf16_intercalado(self):
+        pagina = "\x00E\x00l\x00 \x00d\x00o\x00c\x00e\x00n\x00t\x00e\x00 observa.\x07\x7f"
+        with mock.patch("apps.documents.extractors.read_pdf_pages", return_value=[pagina]):
+            self.assertEqual(ia_dataset.pdf_bytes_to_text(b"%PDF"), "El docente observa.")
+
     def test_texto_generado_pasa_por_el_pdf(self):
         texto = "Introducción\n\n" + "\n\n".join(_prosa_variada(130, i) for i in range(5))
         extraido = ia_dataset.generated_text_via_pdf(texto)

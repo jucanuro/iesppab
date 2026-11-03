@@ -277,11 +277,18 @@ def render_as_thesis_pdf(text: str) -> bytes:
     return HTML(string=html).write_pdf()
 
 
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
 def pdf_bytes_to_text(pdf_bytes: bytes) -> str:
     """Igual que la cosecha OAI: `read_pdf_pages` + `normalize_pdf_pages`."""
     from apps.documents.extractors import normalize_pdf_pages, read_pdf_pages
 
-    return normalize_pdf_pages(read_pdf_pages(io.BytesIO(pdf_bytes)))
+    # Con algunas fuentes, el texto de WeasyPrint sale en UTF-16 con "\x00"
+    # intercalado ("E\x00l\x00"): sin limpiarlo, cada letra queda suelta y
+    # el segmento se descarta por palabras partidas.
+    pages = [_CONTROL_CHARS_RE.sub("", page) for page in read_pdf_pages(io.BytesIO(pdf_bytes))]
+    return normalize_pdf_pages(pages)
 
 
 def generated_text_via_pdf(text: str) -> str:

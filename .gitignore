@@ -86,3 +86,6 @@ yarn-error.log*
 *.dump
 # Banco privado de tesis para evaluar la detección de IA (no se sube)
 eval_ia/
+
+# Dataset del clasificador de IA (local, no versionar)
+dataset/

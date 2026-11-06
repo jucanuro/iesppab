@@ -19,6 +19,7 @@ from apps.documents.models import Document, DocumentKind, DocumentStatus
 from apps.documents.services import DocumentUploadDTO, DocumentUploadService
 
 DOCUMENTS_PER_PAGE = 10
+DOCUMENTS_PER_PAGE_CHOICES = (10, 25, 50, 100)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,8 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         scoped_documents = self._scoped_documents(user)
         filtered_documents = self._apply_filters(scoped_documents)
 
-        paginator = Paginator(filtered_documents, DOCUMENTS_PER_PAGE)
+        page_size = self._page_size()
+        paginator = Paginator(filtered_documents, page_size)
         page = paginator.get_page(self.request.GET.get("page"))
 
         active_filters = {
@@ -68,6 +70,9 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         context["active_filters"] = active_filters
         context["has_active_filters"] = any(active_filters.values())
         context["filter_querystring"] = self._filter_querystring()
+
+        context["page_size"] = page_size
+        context["page_size_choices"] = DOCUMENTS_PER_PAGE_CHOICES
 
         return context
 
@@ -207,6 +212,17 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             )
 
         return documents
+
+    def _page_size(self) -> int:
+        """Documentos por página (`?por_pagina=`), 10 por defecto."""
+        raw_value = self.request.GET.get("por_pagina", "").strip()
+
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return DOCUMENTS_PER_PAGE
+
+        return value if value in DOCUMENTS_PER_PAGE_CHOICES else DOCUMENTS_PER_PAGE
 
     def _filter_querystring(self) -> str:
         """Querystring de los filtros activos (sin `page`), con `&` inicial."""

@@ -2,6 +2,43 @@
 
 Registro de cambios del proyecto. Fechas en formato [YYYY-MM-DD].
 
+## [2026-09-13]
+
+### Added
+- Selector "Por página" en la bandeja de documentos (`templates/documents/upload.html`,
+  `apps/documents/views.py`): permite 10/25/50/100 resultados por página vía
+  `?por_pagina=`, con **10 por defecto**. Valores inválidos o fuera de esas opciones
+  caen de vuelta a 10 (`DocumentUploadView._page_size`). Se preserva junto al resto
+  de filtros al paginar (reutiliza `_filter_querystring`, que ya copiaba todos los
+  parámetros de la URL salvo `page`).
+
+### Changed
+- Tarjeta de `templates/accounts/login.html` y `register.html`: ancho máximo de
+  `max-w-[380px]` a `max-w-[480px]` (se probó `max-w-3xl`, pero a ese ancho los
+  campos de una sola columna —usuario/correo, contraseña— quedaban demasiado
+  estirados; `480px` da más aire sin ese efecto).
+
+## [2026-09-12]
+
+### Changed
+- Página de fallo de CSRF (`templates/403.html`, `apps/core/views.py::csrf_failure`):
+  el texto deja de asumir siempre "tu sesión expiró" (confuso en páginas públicas
+  como `/registro/`, donde no hay sesión que expirar) y ahora explica las causas
+  reales: formulario abierto demasiado tiempo, sesión caducada, o token CSRF
+  rotado por haber iniciado sesión en otra pestaña del mismo navegador. El botón
+  pasa a "Volver a intentarlo" y enlaza a la página de origen (`HTTP_REFERER`,
+  validado con `url_has_allowed_host_and_scheme` para no seguir un referer
+  externo) para reintentar con un formulario fresco; si no hay una URL de origen
+  segura, cae de vuelta al botón "Iniciar sesión" de antes.
+
+### Added
+- `docs/roles.md`: referencia del sistema de roles (ADMIN/DIRECTOR/TEACHER/STUDENT),
+  la regla de alcance por institución, una tabla de qué puede ver/hacer cada rol por
+  función (bandeja, reportes, análisis, certificados, panel admin) y las
+  inconsistencias detectadas en el código actual (p. ej. que TEACHER/DIRECTOR pueden
+  analizar o certificar documentos de su institución que no ven en su propia bandeja,
+  o que el rol ADMIN no otorga acceso real a `/admin/` porque no toca `is_staff`).
+
 ## [2026-09-08]
 
 ### Changed

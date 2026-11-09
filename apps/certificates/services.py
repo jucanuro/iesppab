@@ -15,6 +15,7 @@ import qrcode
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.template.defaultfilters import floatformat
 from django.urls import reverse
 from django.utils import timezone
 from reportlab.lib import colors
@@ -36,7 +37,8 @@ from reportlab.platypus import (
 from apps.accounts.models import User
 from apps.certificates.models import Certificate
 from apps.documents.models import DocumentStatus
-from apps.reports.models import AI_ESTIMATE_DISCLAIMER, AnalysisReport, ReportRiskLevel
+from apps.reports.ai_estimate import build_ai_estimate
+from apps.reports.models import AnalysisReport, ReportRiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -372,7 +374,7 @@ class CertificateGenerationService:
         story.append(Spacer(1, 0.55 * cm))
 
         band = report.similarity_band
-        clf = report.ai_classifier
+        ai = build_ai_estimate(report)
         metrics_table = Table(
             [
                 [
@@ -389,14 +391,10 @@ class CertificateGenerationService:
                         styles["metric_value_red"],
                     ),
                     Paragraph(
-                        (
-                            f'<font color="{clf["fg"]}">'
-                            f'{self._format_decimal(clf["percent"])}%</font>'
-                            f'<br/><font size="7" color="{clf["fg"]}">'
-                            f'{clf["label"].upper()} · INDICATIVO</font>'
-                            if clf
-                            else f"{self._format_decimal(report.ai_probability_percent)}%"
-                        ),
+                        f'<font color="{ai.band["fg"]}">'
+                        f"{floatformat(ai.percent, 1)}%</font>"
+                        f'<br/><font size="7" color="{ai.band["fg"]}">'
+                        f'{ai.band_label.upper()} · INDICATIVO</font>',
                         styles["metric_value_blue"],
                     ),
                     Paragraph(
@@ -412,8 +410,7 @@ class CertificateGenerationService:
         story.append(Spacer(1, 0.15 * cm))
         story.append(
             Paragraph(
-                f"<b>IA estimada:</b> "
-                f"{report.AI_CLASSIFIER_NOTE if clf else AI_ESTIMATE_DISCLAIMER}",
+                html.escape(ai.note),
                 styles["small"],
             )
         )
@@ -437,12 +434,12 @@ class CertificateGenerationService:
                 ],
                 [
                     Paragraph("<b>Motor de análisis</b>", styles["table_header"]),
-                    Paragraph(report.engine_version, styles["table_value"]),
+                    Paragraph(html.escape(ai.version_label), styles["table_value"]),
                 ],
                 [
                     Paragraph("<b>Reporte generado</b>", styles["table_header"]),
                     Paragraph(
-                        timezone.localtime(report.generated_at).strftime(
+                        timezone.localtime(ai.generated_at).strftime(
                             "%d/%m/%Y %H:%M"
                         ),
                         styles["table_value"],

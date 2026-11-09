@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -17,8 +19,110 @@ from apps.certificates.services import (
     CertificateGenerationError,
     CertificateGenerationService,
 )
+from apps.reports.ai_estimate import build_ai_estimate
+from apps.reports.models import (
+    AnalysisReport,
+    FindingType,
+    ReportSource,
+    SourceType,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+
+def _is_internal_only(source: ReportSource) -> bool:
+    """
+    Documento de la base interna. Los registros OAI también se guardan con
+    `source_type` INTERNAL pero son públicos y conservan su título.
+    """
+    return source.source_type == SourceType.INTERNAL and not source.is_oai
+
+
+def split_public_sources(
+    report: AnalysisReport,
+) -> tuple[list[ReportSource], dict[str, Any] | None]:
+    """
+    Fuentes visibles en la verificación pública (RN-CER-04, REQ-CER-08).
+
+    Devuelve (fuentes web/OAI no excluidas, resumen de la base interna). Las
+    fuentes internas nunca salen individualmente: solo "N fuentes, X %".
+    X es la unión de palabras cubiertas por fuentes internas (sin OAI), sin
+    sumar los % por fuente (RN-CER-06); se calcula aquí desde los hallazgos.
+    """
+    active = list(report.sources.filter(is_excluded=False))
+    public = [source for source in active if not _is_internal_only(source)]
+    internal = [source for source in active if _is_internal_only(source)]
+
+    if not internal:
+        return public, None
+
+    return public, {
+        "count": len(internal),
+        "percent": _internal_union_percent(report, internal),
+    }
+
+
+def _internal_union_percent(
+    report: AnalysisReport,
+    internal: list[ReportSource],
+) -> Decimal | None:
+    findings = list(
+        report.findings.filter(
+            finding_type=FindingType.SIMILARITY,
+            source__in=internal,
+        ).values("start_offset", "end_offset", "metadata")
+    )
+
+    if not findings:
+        return Decimal("0.0")
+
+    # Motor span: cada palabra se asigna a una sola fuente, así que los
+    # tramos no se solapan y basta sumar sus palabras contables.
+    countable = (report.span_alignment or {}).get("countable_word_count", 0)
+
+    if countable and all(
+        isinstance((item["metadata"] or {}).get("word_count"), int)
+        for item in findings
+    ):
+        covered = sum(item["metadata"]["word_count"] for item in findings)
+        return _percent(covered, countable)
+
+    # Motor por fragmentos: los tramos de distintas fuentes pueden solaparse;
+    # se unen los intervalos y se cuentan las palabras del texto cubiertas.
+    try:
+        content = report.document.extracted_text.content
+    except Exception:
+        return None
+
+    total_words = len(_WORD_RE.findall(content))
+
+    if not total_words:
+        return None
+
+    intervals = sorted((item["start_offset"], item["end_offset"]) for item in findings)
+    merged: list[list[int]] = []
+
+    for start, end in intervals:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    covered = sum(
+        len(_WORD_RE.findall(content[start:end])) for start, end in merged
+    )
+    return _percent(covered, total_words)
+
+
+def _percent(part: int, total: int) -> Decimal:
+    if not total:
+        return Decimal("0.0")
+
+    value = Decimal(part) / Decimal(total) * Decimal("100")
+    return min(value, Decimal("100")).quantize(Decimal("0.1"))
 
 
 class CertificateGenerateView(LoginRequiredMixin, View):
@@ -165,24 +269,43 @@ class CertificateVerifyView(View):
         *args: Any,
         **kwargs: Any,
     ) -> HttpResponse:
-        certificate = (
-            Certificate.objects.select_related(
-                "report",
-                "report__document",
-                "report__document__institution",
-                "report__document__owner",
+        certificate = None
+        sources: list = []
+        internal_summary = None
+        ai_estimate = None
+
+        try:
+            certificate = (
+                Certificate.objects.select_related(
+                    "report",
+                    "report__document",
+                    "report__document__institution",
+                    "report__document__owner",
+                )
+                .filter(
+                    verification_hash=verification_hash,
+                    is_active=True,
+                )
+                .first()
             )
-            .filter(
-                verification_hash=verification_hash,
-                is_active=True,
+
+            if certificate is not None:
+                report = certificate.report
+                document = report.document
+                # Fuerza la carga de las relaciones que usa la plantilla: si
+                # alguna está rota, falla aquí y no al renderizar (REQ-CER-02).
+                _ = (document.owner, document.institution)
+                sources, internal_summary = split_public_sources(report)
+                ai_estimate = build_ai_estimate(report)
+        except Exception:
+            logger.exception(
+                "Error al verificar el certificado. verification_hash=%s",
+                verification_hash,
             )
-            .first()
-        )
-        sources = (
-            list(certificate.report.sources.filter(is_excluded=False))
-            if certificate
-            else []
-        )
+            certificate = None
+            sources = []
+            internal_summary = None
+            ai_estimate = None
 
         return render(
             request,
@@ -191,5 +314,7 @@ class CertificateVerifyView(View):
                 "certificate": certificate,
                 "verification_hash": verification_hash,
                 "sources": sources,
+                "internal_summary": internal_summary,
+                "ai_estimate": ai_estimate,
             },
         )

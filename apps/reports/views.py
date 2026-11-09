@@ -36,6 +36,7 @@ from apps.reports.services import (
     ReportSourceExclusionError,
     ReportSourceExclusionPermissionError,
     ReportSourceExclusionService,
+    build_ai_report_pdf,
     build_highlighted_document_pdf,
     findings_in_paint_order,
     resolve_analyzed_content,
@@ -44,6 +45,7 @@ from apps.reports.services import (
     split_similarity_around_exclusions,
 )
 from apps.reports.suggestions import build_improvement_suggestions
+from apps.reports.ai_estimate import build_ai_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +128,7 @@ class ReportDetailView(LoginRequiredMixin, View):
             context = {
                 "document": document,
                 "report": report,
+                "ai_estimate": build_ai_estimate(report) if report else None,
                 "certificate": certificate,
                 "highlighted_segments": highlighted_segments,
                 "analysis_job": analysis_job,
@@ -453,87 +456,48 @@ class ReportStatusView(LoginRequiredMixin, View):
         )
 
 
-class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
+class ReportDownloadMixin(LoginRequiredMixin):
     """
-    Descarga en PDF el texto del documento con los mismos hallazgos
-    resaltados que el visor interactivo del reporte. No reemplaza al
-    certificado institucional: es el documento señalado, no un resumen.
+    Permisos y carga comunes de las descargas de informes PDF (REQ-CER-07).
+
+    Pueden descargar: el estudiante dueño del documento y el personal
+    (admin, director, docente) de la institución del documento; el
+    superusuario no tiene restricción. Cualquier otro caso es 403.
     """
-
-    def get(
-        self,
-        request: HttpRequest,
-        pk: UUID,
-        *args: Any,
-        **kwargs: Any,
-    ) -> HttpResponse:
-        user = request.user
-
-        try:
-            document = self._get_allowed_document(
-                document_id=pk,
-                user=user,
-            )
-
-            report = self._get_report(document=document)
-
-            if report is None:
-                raise Http404("Este documento aún no tiene reporte.")
-
-            pdf_content = build_highlighted_document_pdf(report=report)
-
-            return FileResponse(
-                BytesIO(pdf_content),
-                as_attachment=True,
-                filename=f"informe-originalidad-{document.id}.pdf",
-                content_type="application/pdf",
-            )
-
-        except PermissionDenied:
-            logger.warning(
-                "Permiso denegado al descargar documento señalado. "
-                "user_id=%s document_id=%s",
-                user.id,
-                pk,
-                exc_info=True,
-            )
-            raise
-
-        except Document.DoesNotExist as exc:
-            raise Http404("Documento no encontrado.") from exc
-
-        except HighlightedDocumentPdfError as exc:
-            messages.error(request, str(exc))
-            return redirect("reports:detail", pk=pk)
 
     def _get_allowed_document(
         self,
         document_id: UUID,
         user: User,
     ) -> Document:
-        queryset = Document.objects.select_related(
-            "institution",
-            "owner",
-            "uploaded_by",
-            "extracted_text",
-        ).filter(id=document_id)
-
-        if user.is_superuser or user.is_admin_role:
-            if not user.is_superuser:
-                if user.institution_id is None:
-                    raise PermissionDenied(
-                        "Tu usuario no tiene institución asignada."
-                    )
-
-                queryset = queryset.filter(institution=user.institution)
-
-        else:
-            queryset = queryset.filter(Q(owner=user) | Q(uploaded_by=user))
-
-        document = queryset.first()
+        document = (
+            Document.objects.select_related(
+                "institution",
+                "owner",
+                "uploaded_by",
+                "extracted_text",
+            )
+            .filter(id=document_id)
+            .first()
+        )
 
         if document is None:
             raise Document.DoesNotExist
+
+        if user.is_superuser:
+            return document
+
+        if user.is_student_role:
+            if document.owner_id != user.id:
+                raise PermissionDenied("No tienes permiso para este documento.")
+
+            return document
+
+        if user.institution_id is None:
+            raise PermissionDenied("Tu usuario no tiene institución asignada.")
+
+        if document.institution_id != user.institution_id:
+            raise PermissionDenied("No tienes permiso para este documento.")
 
         return document
 
@@ -566,3 +530,100 @@ class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
             .filter(document=document)
             .first()
         )
+
+
+REPORT_NOT_READY_MESSAGE = (
+    "El informe aún no está disponible: el análisis del documento no ha "
+    "terminado. Vuelve a intentarlo cuando el reporte esté completo."
+)
+
+
+class _ReportPdfDownloadView(ReportDownloadMixin, View):
+    """
+    Descarga de un informe PDF generado al vuelo desde el reporte (no se
+    guarda en disco). Las subclases indican qué PDF y cómo se llama.
+    """
+
+    filename_prefix = ""
+    log_label = ""
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        raise NotImplementedError
+
+    def get(
+        self,
+        request: HttpRequest,
+        pk: UUID,
+        *args: Any,
+        **kwargs: Any,
+    ) -> HttpResponse:
+        user = request.user
+
+        try:
+            document = self._get_allowed_document(
+                document_id=pk,
+                user=user,
+            )
+
+            report = self._get_report(document=document)
+
+            # REQ-CER-10: sin reporte final de un documento completado no se
+            # genera el PDF; se explica el motivo en la página del reporte.
+            if (
+                report is None
+                or not report.is_final
+                or document.status != DocumentStatus.COMPLETED
+            ):
+                messages.error(request, REPORT_NOT_READY_MESSAGE)
+                return redirect("reports:detail", pk=pk)
+
+            pdf_content = self.build_pdf(report)
+
+            return FileResponse(
+                BytesIO(pdf_content),
+                as_attachment=True,
+                filename=f"{self.filename_prefix}-{document.id}.pdf",
+                content_type="application/pdf",
+            )
+
+        except PermissionDenied:
+            logger.warning(
+                "Permiso denegado al descargar %s. user_id=%s document_id=%s",
+                self.log_label,
+                user.id,
+                pk,
+                exc_info=True,
+            )
+            raise
+
+        except Document.DoesNotExist as exc:
+            raise Http404("Documento no encontrado.") from exc
+
+        except HighlightedDocumentPdfError as exc:
+            messages.error(request, str(exc))
+            return redirect("reports:detail", pk=pk)
+
+
+class DownloadHighlightedDocumentView(_ReportPdfDownloadView):
+    """
+    Descarga el informe de similitud en PDF (texto del documento con los
+    hallazgos de similitud resaltados). No reemplaza al certificado.
+    """
+
+    filename_prefix = "informe-originalidad"
+    log_label = "documento señalado"
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        return build_highlighted_document_pdf(report=report)
+
+
+class DownloadAiReportView(_ReportPdfDownloadView):
+    """
+    Descarga el informe de IA estimada en PDF (REQ-CER-05).
+    """
+
+    filename_prefix = "informe-ia"
+    log_label = "informe de IA"
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        return build_ai_report_pdf(report=report)

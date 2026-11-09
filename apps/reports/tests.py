@@ -35,7 +35,9 @@ from apps.documents.models import (
     DocumentText,
 )
 from apps.reports.models import (
+    AI_CLASSIFIER_NOTE,
     AI_ESTIMATE_DISCLAIMER,
+    AI_RESPONSIBLE_USE_NOTE,
     AnalysisReport,
     FindingType,
     ReportRiskLevel,
@@ -43,10 +45,12 @@ from apps.reports.models import (
     SourceType,
 )
 from apps.reports.services import (
+    AI_LIMITATIONS,
     ReportSourceExclusionError,
     ReportSourceExclusionService,
     SpanReportWriter,
     _HighlightedDocumentPdfBuilder,
+    build_ai_report_pdf,
     build_highlighted_document_pdf,
     findings_in_paint_order,
     resolve_analyzed_content,
@@ -93,6 +97,7 @@ class ReportsTestCaseMixin:
             mime_type="application/pdf",
             file_size_bytes=len(SAMPLE_TEXT),
             sha256_hash="hash-tesis-prueba",
+            status=DocumentStatus.COMPLETED,
         )
         self.document.original_file.save(
             "documento.pdf",
@@ -176,6 +181,391 @@ class HighlightedDocumentPdfServiceTests(ReportsTestCaseMixin, TestCase):
         self.assertIn("TEXTO ANALIZADO", text)
         # el dominio de la fuente citada aparece en la lista de fuentes primarias
         self.assertIn("example.com", text)
+
+
+class SimilarityPdfContentTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-03, REQ-CER-04, RN-CER-06, RN-CER-09."""
+
+    def _text(self, report=None) -> str:
+        from pypdf import PdfReader
+
+        pdf = build_highlighted_document_pdf(report=report or self.report)
+        return " ".join(
+            " ".join(page.extract_text().split())
+            for page in PdfReader(BytesIO(pdf)).pages
+        )
+
+    def test_has_institution_header_and_total_internal_web_percents(self) -> None:
+        self.report.similarity_percent = Decimal("50.00")
+        self.report.internal_similarity_percent = Decimal("12.50")
+        self.report.web_similarity_percent = Decimal("41.30")
+        self.report.save()
+
+        text = self._text()
+
+        self.assertIn(self.institution.name.upper(), text)
+        self.assertIn("ÍNDICE DE SIMILITUD (TOTAL)", text)
+        self.assertIn("TRABAJOS / REPOSITORIOS (INTERNA)", text)
+        self.assertIn("FUENTES DE INTERNET (WEB)", text)
+        self.assertIn("50,0", text)
+        self.assertIn("12,5", text)
+        self.assertIn("41,3", text)
+
+    def test_sources_table_has_percent_column_and_type(self) -> None:
+        text = self._text()
+
+        self.assertIn("Coincidencia con la fuente", text)
+        self.assertIn("no acumulable", text)
+        self.assertIn("35,0%", text)
+        self.assertIn("Web · example.com", text)
+
+    def test_includes_calculation_note_exactly(self) -> None:
+        from apps.reports.services import SIMILARITY_CALC_NOTE
+
+        self.assertIn(" ".join(SIMILARITY_CALC_NOTE.split()), self._text())
+
+    def test_does_not_paint_ai_findings(self) -> None:
+        builder = _HighlightedDocumentPdfBuilder(report=self.report)
+
+        markup, _, _ = builder._render_body_markup(
+            content=SAMPLE_TEXT,
+            findings=list(self.report.findings.all()),
+            sources_by_id={self.source.id: self.source},
+        )
+
+        self.assertNotIn(builder.AI_BACKGROUND, markup)
+
+    def test_overlapping_sources_print_total_not_sum(self) -> None:
+        # Los % persistidos de dos fuentes que se solapan en el documento:
+        # 40 % y 30 % (suma 70) con total 50 %. El PDF imprime lo persistido.
+        self.report.similarity_percent = Decimal("50.00")
+        self.report.save()
+        self.source.matched_percent = Decimal("40.00")
+        self.source.save()
+        second_start = SAMPLE_TEXT.index("Este")
+        second = ReportSource.objects.create(
+            report=self.report,
+            source_type=SourceType.WEB,
+            title="Segunda fuente solapada",
+            url="https://example.org/otra",
+            domain="example.org",
+            matched_percent=Decimal("30.00"),
+        )
+        self.report.findings.create(
+            source=second,
+            finding_type=FindingType.SIMILARITY,
+            start_offset=second_start,
+            end_offset=second_start + len("Este parrafo"),
+            text_excerpt="Este parrafo",
+            confidence_percent=Decimal("30.00"),
+        )
+
+        text = self._text()
+
+        self.assertIn("50,0", text)
+        self.assertIn("40,0%", text)
+        self.assertIn("30,0%", text)
+        self.assertNotIn("70,0", text)
+        total = self.report.similarity_percent
+        self.assertLess(total, Decimal("40.00") + Decimal("30.00"))
+
+    def test_logs_warning_when_sources_sum_is_below_total(self) -> None:
+        # Fixture: total 35 % con una fuente de 0,4 % (inconsistente).
+        self.source.matched_percent = Decimal("0.40")
+        self.source.save()
+
+        with self.assertLogs("apps.reports.services", level="WARNING"):
+            text = self._text()
+
+        self.assertIn("ÍNDICE DE SIMILITUD", text)  # se imprime igual
+
+    def test_download_highlighted_serves_the_similarity_pdf(self) -> None:
+        from pypdf import PdfReader
+
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        text = " ".join(
+            page.extract_text()
+            for page in PdfReader(BytesIO(response.getvalue())).pages
+        )
+        self.assertIn("ÍNDICE DE SIMILITUD (TOTAL)", text)
+        self.assertNotIn("IA estimada", text)
+
+    def test_detail_button_is_labeled_similarity_report(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertContains(response, "Informe de similitud")
+
+
+class AiReportPdfTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-05, REQ-CER-06 (informe de IA estimada)."""
+
+    def _text(self, pdf: bytes) -> str:
+        from pypdf import PdfReader
+
+        return " ".join(
+            " ".join(page.extract_text().split())
+            for page in PdfReader(BytesIO(pdf)).pages
+        )
+
+    def test_has_estimate_band_date_version_segments_method_limits_and_note(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+        from apps.reports.models import AI_RESPONSIBLE_USE_NOTE
+
+        self.report.engine_version = "motor-historico-0.9"
+        self.report.save(update_fields=["engine_version"])
+        estimate = build_ai_estimate(self.report)
+
+        text = self._text(build_ai_report_pdf(self.report))
+
+        self.assertIn("INFORME DE IA ESTIMADA", text)
+        self.assertIn(f"IA estimada: {floatformat(estimate.percent, 1)}%", text)
+        self.assertIn(estimate.band_label, text)
+        self.assertIn("motor-historico-0.9", text)
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y %H:%M"),
+            text,
+        )
+        # Probabilidad del segmento señalado (hallazgo AI_GENERATED de 40 %).
+        self.assertIn("SEGMENTOS SEÑALADOS", text)
+        self.assertIn("40,0%", text)
+        self.assertIn("modelo de lenguaje", text)
+        self.assertIn("MÉTODO", text)
+        self.assertIn(estimate.method, text)
+        self.assertIn("LIMITACIONES", text)
+        for limitation in AI_LIMITATIONS:
+            self.assertIn(" ".join(limitation.split()), text)
+        self.assertIn(" ".join(AI_RESPONSIBLE_USE_NOTE.split()), text)
+
+    def test_values_match_certificate_verification(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        estimate = build_ai_estimate(self.report)
+        certificate = Certificate.objects.create(
+            report=self.report,
+            code="CERT-IA-1",
+            verification_hash="c" * 64,
+            issued_by=self.student,
+        )
+
+        text = self._text(build_ai_report_pdf(self.report))
+        verify = self.client.get(
+            reverse("certificates:verify", args=[certificate.verification_hash])
+        )
+
+        for value in (
+            f"{floatformat(estimate.percent, 1)}%",
+            estimate.band_label,
+            estimate.version_label,
+        ):
+            self.assertIn(value, text)
+            self.assertContains(verify, value)
+
+    def test_report_keeps_its_own_engine_version(self) -> None:
+        self.report.engine_version = "version-anterior-1.0"
+        self.report.save(update_fields=["engine_version"])
+
+        text = self._text(build_ai_report_pdf(self.report))
+
+        self.assertIn("version-anterior-1.0", text)
+
+    def test_without_findings_pdf_is_valid_with_empty_marker(self) -> None:
+        self.report.findings.filter(finding_type=FindingType.AI_GENERATED).delete()
+
+        pdf = build_ai_report_pdf(self.report)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn("Sin segmentos señalados", self._text(pdf))
+
+    def test_download_view_permissions(self) -> None:
+        url = reverse("reports:download_ai_report", kwargs={"pk": self.document.id})
+
+        self.assertEqual(self.client.get(url).status_code, 302)
+
+        self.client.force_login(self.other_student)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+        self.client.force_login(self.student)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("INFORME DE IA ESTIMADA", self._text(response.getvalue()))
+
+    def test_detail_has_ai_report_button(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertContains(response, "Informe de IA")
+        self.assertContains(
+            response,
+            reverse("reports:download_ai_report", kwargs={"pk": self.document.id}),
+        )
+
+
+class UnfinishedReportDownloadTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-10: sin reporte terminado se muestra un mensaje, no un PDF."""
+
+    URL_NAMES = ("reports:download_highlighted", "reports:download_ai_report")
+
+    def _assert_redirects_with_message(self, url_name: str) -> None:
+        from django.contrib.messages import get_messages
+
+        self.client.force_login(self.student)
+        detail_url = reverse("reports:detail", kwargs={"pk": self.document.id})
+
+        response = self.client.get(
+            reverse(url_name, kwargs={"pk": self.document.id})
+        )
+
+        self.assertRedirects(response, detail_url, fetch_redirect_response=False)
+        self.assertNotEqual(response.get("Content-Type"), "application/pdf")
+        # Los mensajes se acumulan entre subTests en la misma sesión: se
+        # comprueba el último, que es el de esta petición.
+        messages_text = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("no ha terminado", messages_text[-1])
+
+    def test_report_not_final_redirects_with_message(self) -> None:
+        self.report.is_final = False
+        self.report.save(update_fields=["is_final"])
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                self._assert_redirects_with_message(url_name)
+
+    def test_document_not_completed_redirects_with_message(self) -> None:
+        for status in (DocumentStatus.QUEUED, DocumentStatus.PROCESSING, DocumentStatus.FAILED):
+            self.document.status = status
+            self.document.save(update_fields=["status"])
+
+            for url_name in self.URL_NAMES:
+                with self.subTest(status=status, url_name=url_name):
+                    self._assert_redirects_with_message(url_name)
+
+    def test_document_without_report_redirects_with_message(self) -> None:
+        self.report.delete()
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                self._assert_redirects_with_message(url_name)
+
+    def test_pdf_error_redirects_with_its_message(self) -> None:
+        from django.contrib.messages import get_messages
+
+        self.document.extracted_text.delete()
+        self.report.analyzed_content = ""
+        self.report.save(update_fields=["analyzed_content"])
+        self.client.force_login(self.student)
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(url_name, kwargs={"pk": self.document.id})
+                )
+
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("texto extraído", str(list(get_messages(response.wsgi_request))[-1]))
+
+    def test_finished_report_still_downloads(self) -> None:
+        self.client.force_login(self.student)
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(url_name, kwargs={"pk": self.document.id})
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "application/pdf")
+
+
+class PrintDesignTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-12, RN-CER-07: A4, paginación y rótulos de texto."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Texto largo para que el PDF ocupe varias páginas (los hallazgos
+        # están dentro de los primeros caracteres, sus offsets siguen valiendo).
+        self.report.analyzed_content = SAMPLE_TEXT + " " + (SAMPLE_TEXT + " ") * 150
+        self.report.save(update_fields=["analyzed_content"])
+
+    def _pdfs(self) -> dict[str, bytes]:
+        return {
+            "similitud": build_highlighted_document_pdf(report=self.report),
+            "ia": build_ai_report_pdf(report=self.report),
+        }
+
+    def _reader(self, pdf: bytes):
+        from pypdf import PdfReader
+
+        return PdfReader(BytesIO(pdf))
+
+    def test_pages_are_a4(self) -> None:
+        for name, pdf in self._pdfs().items():
+            with self.subTest(pdf=name):
+                for page in self._reader(pdf).pages:
+                    self.assertAlmostEqual(float(page.mediabox.width), 595.28, delta=1)
+                    self.assertAlmostEqual(float(page.mediabox.height), 841.89, delta=1)
+
+    def test_pages_are_numbered_x_of_n(self) -> None:
+        for name, pdf in self._pdfs().items():
+            with self.subTest(pdf=name):
+                pages = self._reader(pdf).pages
+                total = len(pages)
+
+                self.assertGreater(total, 1)
+                for number, page in enumerate(pages, start=1):
+                    text = " ".join(page.extract_text().split())
+                    self.assertIn(f"Página {number} de {total}", text)
+
+    def test_text_labels_besides_color(self) -> None:
+        import re
+
+        sim_text = " ".join(
+            page.extract_text()
+            for page in self._reader(self._pdfs()["similitud"]).pages
+        )
+        ai_text = " ".join(
+            " ".join(page.extract_text().split())
+            for page in self._reader(self._pdfs()["ia"]).pages
+        )
+
+        self.assertIn("Coincidencia con fuente 1", " ".join(sim_text.split()))
+        self.assertRegex(ai_text, r"IA 40,0 %")
+        self.assertTrue(re.search(r"\[1 · IA 40,0 %\]", ai_text))
+
+    def test_all_text_is_at_least_8pt(self) -> None:
+        from apps.reports.services import MIN_PDF_FONT_SIZE
+
+        for name, pdf in self._pdfs().items():
+            sizes: set[float] = set()
+
+            def visitor(text, cm, tm, font_dict, font_size, sizes=sizes):
+                if text.strip():
+                    # Tamaño efectivo: el del operador Tf por la escala de la matriz.
+                    sizes.add(round(font_size * abs(tm[3]), 2))
+
+            for page in self._reader(pdf).pages:
+                page.extract_text(visitor_text=visitor)
+
+            with self.subTest(pdf=name):
+                self.assertTrue(sizes)
+                self.assertGreaterEqual(min(sizes), MIN_PDF_FONT_SIZE, sorted(sizes))
 
 
 class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):
@@ -305,11 +695,78 @@ class DownloadHighlightedDocumentViewTests(ReportsTestCaseMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
 
+    def _download(self, user=None):
+        if user is not None:
+            self.client.force_login(user)
+
+        return self.client.get(
+            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+        )
+
+    def _staff(self, username, role, institution):
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="clave-segura-123",
+            role=role,
+            institution=institution,
+        )
+
     def test_other_students_cannot_download_the_pdf(self) -> None:
-        self.client.force_login(self.other_student)
+        # REQ-CER-07: un estudiante ajeno recibe 403 (antes 404).
+        self.assertEqual(self._download(self.other_student).status_code, 403)
+
+    def test_staff_of_the_institution_can_download(self) -> None:
+        for role in (UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN):
+            with self.subTest(role=role):
+                staff = self._staff(f"staff-{role}", role, self.institution)
+
+                response = self._download(staff)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "application/pdf")
+
+    def test_staff_of_another_institution_cannot_download(self) -> None:
+        other = Institution.objects.create(
+            name="Otra institución",
+            slug="otra-institucion-descarga",
+        )
+
+        for role in (UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN):
+            with self.subTest(role=role):
+                staff = self._staff(f"ajeno-{role}", role, other)
+
+                self.assertEqual(self._download(staff).status_code, 403)
+
+    def test_staff_without_institution_cannot_download(self) -> None:
+        teacher = self._staff("sin-inst", UserRole.TEACHER, None)
+
+        self.assertEqual(self._download(teacher).status_code, 403)
+
+    def test_anonymous_is_redirected_to_login(self) -> None:
+        response = self._download()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/"))
+        self.assertNotEqual(response["Content-Type"], "application/pdf")
+
+    def test_superuser_can_download_from_any_institution(self) -> None:
+        superuser = User.objects.create_superuser(
+            username="root-descarga",
+            email="root-descarga@example.com",
+            password="clave-segura-123",
+        )
+
+        self.assertEqual(self._download(superuser).status_code, 200)
+
+    def test_unknown_document_is_404(self) -> None:
+        self.client.force_login(self.student)
 
         response = self.client.get(
-            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+            reverse(
+                "reports:download_highlighted",
+                kwargs={"pk": "00000000-0000-0000-0000-000000000000"},
+            )
         )
 
         self.assertEqual(response.status_code, 404)
@@ -1635,9 +2092,8 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
 
         self.assertContains(response, AI_ESTIMATE_DISCLAIMER)
 
-    def test_pdf_shows_ai_disclaimer(self) -> None:
-        from io import BytesIO
-
+    def test_similarity_pdf_has_no_ai_content(self) -> None:
+        # REQ-CER-03 / design §4.3-5: la IA va en su propio informe.
         from pypdf import PdfReader
 
         pdf_bytes = build_highlighted_document_pdf(report=self.report)
@@ -1645,7 +2101,66 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
             page.extract_text() for page in PdfReader(BytesIO(pdf_bytes)).pages
         )
 
-        self.assertIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))
+        self.assertNotIn("IA estimada", text)
+        self.assertNotIn("IA ESTIMADA", text)
+        self.assertNotIn("Posible IA", text)
+        self.assertNotIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))
+
+
+class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
+    """T14 / REQ-CER-06: el detalle del reporte muestra lo mismo que AiEstimate."""
+
+    def _detail(self) -> str:
+        self.client.force_login(self.student)
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+        self.assertEqual(response.status_code, 200)
+        return " ".join(response.content.decode().split())
+
+    def test_detalle_coincide_con_ai_estimate(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        self.report.ai_probability_percent = Decimal("37.46")
+        self.report.engine_version = "motor-historico-1"
+        self.report.save()
+        estimate = build_ai_estimate(self.report)
+
+        html = self._detail()
+
+        self.assertIn(f"{floatformat(estimate.percent, 1)}%", html)
+        self.assertIn(estimate.band_label, html)
+        self.assertIn(estimate.version_label, html)
+        self.assertIn("motor-historico-1", html)
+        self.assertIn(" ".join(estimate.note.split()), html)
+        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), html)
+
+    def test_bandas_en_los_bordes_usan_20_y_50(self) -> None:
+        casos = {
+            "19.90": "Sin indicios",
+            "20.00": "Indicios leves",
+            "49.90": "Indicios leves",
+            "50.00": "Posible IA: revisar",
+        }
+        for valor, banda in casos.items():
+            with self.subTest(valor=valor):
+                self.report.ai_probability_percent = Decimal(valor)
+                self.report.save()
+                self.assertIn(banda, self._detail())
+
+    def test_no_usa_umbrales_ni_textos_propios_anteriores(self) -> None:
+        # 16 % era "moderado" con el umbral 15/30 antiguo.
+        self.report.ai_probability_percent = Decimal("16.00")
+        self.report.save()
+
+        html = self._detail()
+
+        self.assertNotIn("Nivel moderado", html)
+        self.assertNotIn("Nivel alto", html)
+        self.assertNotIn("Nivel bajo", html)
+        self.assertIn("Sin indicios", html)
 
 
 class RecalculateRiskLevelsCommandTests(SourceExclusionTestMixin, TestCase):
@@ -1891,8 +2406,9 @@ class SourceDisplayTests(SourceExclusionTestMixin, TestCase):
         )
 
         self.assertContains(response, "Certificado válido")
-        self.assertContains(response, "Tesis sobre convivencia")
-        self.assertContains(response, "Repositorio interno")
+        # RN-CER-04: la fuente interna solo sale agregada, sin título.
+        self.assertContains(response, "Base interna: 1 fuente")
+        self.assertNotContains(response, "Tesis sobre convivencia")
         self.assertNotContains(response, "alumno2")
 
     def test_verify_page_unknown_hash(self) -> None:
@@ -1936,3 +2452,96 @@ class BandasDePresentacionTests(SimpleTestCase):
         self.assertIsNone(r.ai_classifier)
         r.summary = {"ai_score_breakdown": {"classifier": {"ai_percent": "55.0"}}}
         self.assertEqual(r.ai_classifier["label"], "Posible IA: revisar")
+
+
+class ResponsibleUseNoteTests(TestCase):
+    """RN-CER-08: un único texto para la nota de uso responsable."""
+
+    EXPECTED = (
+        "IA estimada: valor probabilístico calculado por un modelo automático. "
+        "No constituye prueba del uso de inteligencia artificial y requiere la "
+        "revisión de un docente antes de cualquier decisión académica."
+    )
+
+    def test_nota_exacta(self) -> None:
+        self.assertEqual(AI_RESPONSIBLE_USE_NOTE, self.EXPECTED)
+
+    def test_alias_son_la_misma_nota(self) -> None:
+        self.assertEqual(AI_ESTIMATE_DISCLAIMER, self.EXPECTED)
+        self.assertEqual(AI_CLASSIFIER_NOTE, self.EXPECTED)
+        self.assertEqual(AnalysisReport.AI_DISCLAIMER, self.EXPECTED)
+        self.assertEqual(AnalysisReport.AI_CLASSIFIER_NOTE, self.EXPECTED)
+
+
+class AiEstimateTests(TestCase):
+    """REQ-CER-06 / RN-CER-03: AiEstimate como fuente única de la IA."""
+
+    def _report(self, **kwargs) -> AnalysisReport:
+        return AnalysisReport(
+            ai_probability_percent=Decimal("40.00"),
+            generated_at=timezone.now(),
+            **kwargs,
+        )
+
+    def test_usa_porcentaje_del_clasificador_si_existe(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(
+            summary={"ai_score_breakdown": {"classifier": {"ai_percent": "62.5"}}}
+        )
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("62.5"))
+
+    def test_sin_clasificador_usa_ai_probability_percent(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(summary={})
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("40.00"))
+
+    def test_clasificador_con_error_cae_a_ai_probability_percent(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(
+            summary={"ai_score_breakdown": {"classifier": {"error": True}}}
+        )
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("40.00"))
+
+    def test_bandas_20_50(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        casos = [
+            ("0", "Sin indicios"),
+            ("19.99", "Sin indicios"),
+            ("20", "Indicios leves"),
+            ("49.99", "Indicios leves"),
+            ("50", "Posible IA: revisar"),
+            ("100", "Posible IA: revisar"),
+        ]
+        for valor, etiqueta in casos:
+            report = AnalysisReport(
+                ai_probability_percent=Decimal(valor), generated_at=timezone.now()
+            )
+            self.assertEqual(build_ai_estimate(report).band_label, etiqueta, valor)
+
+    def test_version_detector_y_fecha_salen_del_reporte(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        fecha = timezone.now() - timezone.timedelta(days=90)
+        report = AnalysisReport(
+            ai_probability_percent=Decimal("10.00"),
+            engine_version="vql-antiguo-0.0.1",
+            ai_detector="perplexity",
+            generated_at=fecha,
+        )
+        with override_settings(AI_DETECTION_MODE="classifier"):
+            estimate = build_ai_estimate(report)
+        self.assertEqual(estimate.engine_version, "vql-antiguo-0.0.1")
+        self.assertEqual(estimate.ai_detector, "perplexity")
+        self.assertEqual(estimate.generated_at, fecha)
+        self.assertIn("vql-antiguo-0.0.1", estimate.version_label)
+
+    def test_nota_es_la_de_uso_responsable(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        self.assertEqual(
+            build_ai_estimate(self._report(summary={})).note, AI_RESPONSIBLE_USE_NOTE
+        )

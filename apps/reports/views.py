@@ -530,6 +530,12 @@ class ReportDownloadMixin(LoginRequiredMixin):
         )
 
 
+REPORT_NOT_READY_MESSAGE = (
+    "El informe aún no está disponible: el análisis del documento no ha "
+    "terminado. Vuelve a intentarlo cuando el reporte esté completo."
+)
+
+
 class _ReportPdfDownloadView(ReportDownloadMixin, View):
     """
     Descarga de un informe PDF generado al vuelo desde el reporte (no se
@@ -559,8 +565,15 @@ class _ReportPdfDownloadView(ReportDownloadMixin, View):
 
             report = self._get_report(document=document)
 
-            if report is None:
-                raise Http404("Este documento aún no tiene reporte.")
+            # REQ-CER-10: sin reporte final de un documento completado no se
+            # genera el PDF; se explica el motivo en la página del reporte.
+            if (
+                report is None
+                or not report.is_final
+                or document.status != DocumentStatus.COMPLETED
+            ):
+                messages.error(request, REPORT_NOT_READY_MESSAGE)
+                return redirect("reports:detail", pk=pk)
 
             pdf_content = self.build_pdf(report)
 

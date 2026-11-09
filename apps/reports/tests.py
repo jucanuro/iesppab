@@ -97,6 +97,7 @@ class ReportsTestCaseMixin:
             mime_type="application/pdf",
             file_size_bytes=len(SAMPLE_TEXT),
             sha256_hash="hash-tesis-prueba",
+            status=DocumentStatus.COMPLETED,
         )
         self.document.original_file.save(
             "documento.pdf",
@@ -415,6 +416,82 @@ class AiReportPdfTests(ReportsTestCaseMixin, TestCase):
             response,
             reverse("reports:download_ai_report", kwargs={"pk": self.document.id}),
         )
+
+
+class UnfinishedReportDownloadTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-10: sin reporte terminado se muestra un mensaje, no un PDF."""
+
+    URL_NAMES = ("reports:download_highlighted", "reports:download_ai_report")
+
+    def _assert_redirects_with_message(self, url_name: str) -> None:
+        from django.contrib.messages import get_messages
+
+        self.client.force_login(self.student)
+        detail_url = reverse("reports:detail", kwargs={"pk": self.document.id})
+
+        response = self.client.get(
+            reverse(url_name, kwargs={"pk": self.document.id})
+        )
+
+        self.assertRedirects(response, detail_url, fetch_redirect_response=False)
+        self.assertNotEqual(response.get("Content-Type"), "application/pdf")
+        # Los mensajes se acumulan entre subTests en la misma sesión: se
+        # comprueba el último, que es el de esta petición.
+        messages_text = [str(message) for message in get_messages(response.wsgi_request)]
+        self.assertIn("no ha terminado", messages_text[-1])
+
+    def test_report_not_final_redirects_with_message(self) -> None:
+        self.report.is_final = False
+        self.report.save(update_fields=["is_final"])
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                self._assert_redirects_with_message(url_name)
+
+    def test_document_not_completed_redirects_with_message(self) -> None:
+        for status in (DocumentStatus.QUEUED, DocumentStatus.PROCESSING, DocumentStatus.FAILED):
+            self.document.status = status
+            self.document.save(update_fields=["status"])
+
+            for url_name in self.URL_NAMES:
+                with self.subTest(status=status, url_name=url_name):
+                    self._assert_redirects_with_message(url_name)
+
+    def test_document_without_report_redirects_with_message(self) -> None:
+        self.report.delete()
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                self._assert_redirects_with_message(url_name)
+
+    def test_pdf_error_redirects_with_its_message(self) -> None:
+        from django.contrib.messages import get_messages
+
+        self.document.extracted_text.delete()
+        self.report.analyzed_content = ""
+        self.report.save(update_fields=["analyzed_content"])
+        self.client.force_login(self.student)
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(url_name, kwargs={"pk": self.document.id})
+                )
+
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("texto extraído", str(list(get_messages(response.wsgi_request))[-1]))
+
+    def test_finished_report_still_downloads(self) -> None:
+        self.client.force_login(self.student)
+
+        for url_name in self.URL_NAMES:
+            with self.subTest(url_name=url_name):
+                response = self.client.get(
+                    reverse(url_name, kwargs={"pk": self.document.id})
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "application/pdf")
 
 
 class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):

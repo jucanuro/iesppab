@@ -45,6 +45,7 @@ from apps.reports.services import (
     split_similarity_around_exclusions,
 )
 from apps.reports.suggestions import build_improvement_suggestions
+from apps.reports.ai_estimate import build_ai_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,7 @@ class ReportDetailView(LoginRequiredMixin, View):
             context = {
                 "document": document,
                 "report": report,
+                "ai_estimate": build_ai_estimate(report) if report else None,
                 "certificate": certificate,
                 "highlighted_segments": highlighted_segments,
                 "analysis_job": analysis_job,

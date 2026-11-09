@@ -2107,6 +2107,62 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
         self.assertNotIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))
 
 
+class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
+    """T14 / REQ-CER-06: el detalle del reporte muestra lo mismo que AiEstimate."""
+
+    def _detail(self) -> str:
+        self.client.force_login(self.student)
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+        self.assertEqual(response.status_code, 200)
+        return " ".join(response.content.decode().split())
+
+    def test_detalle_coincide_con_ai_estimate(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        self.report.ai_probability_percent = Decimal("37.46")
+        self.report.engine_version = "motor-historico-1"
+        self.report.save()
+        estimate = build_ai_estimate(self.report)
+
+        html = self._detail()
+
+        self.assertIn(f"{floatformat(estimate.percent, 1)}%", html)
+        self.assertIn(estimate.band_label, html)
+        self.assertIn(estimate.version_label, html)
+        self.assertIn("motor-historico-1", html)
+        self.assertIn(" ".join(estimate.note.split()), html)
+        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), html)
+
+    def test_bandas_en_los_bordes_usan_20_y_50(self) -> None:
+        casos = {
+            "19.90": "Sin indicios",
+            "20.00": "Indicios leves",
+            "49.90": "Indicios leves",
+            "50.00": "Posible IA: revisar",
+        }
+        for valor, banda in casos.items():
+            with self.subTest(valor=valor):
+                self.report.ai_probability_percent = Decimal(valor)
+                self.report.save()
+                self.assertIn(banda, self._detail())
+
+    def test_no_usa_umbrales_ni_textos_propios_anteriores(self) -> None:
+        # 16 % era "moderado" con el umbral 15/30 antiguo.
+        self.report.ai_probability_percent = Decimal("16.00")
+        self.report.save()
+
+        html = self._detail()
+
+        self.assertNotIn("Nivel moderado", html)
+        self.assertNotIn("Nivel alto", html)
+        self.assertNotIn("Nivel bajo", html)
+        self.assertIn("Sin indicios", html)
+
+
 class RecalculateRiskLevelsCommandTests(SourceExclusionTestMixin, TestCase):
     """`recalculate_risk_levels` corrige el riesgo heredado del % de IA."""
 

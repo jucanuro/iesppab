@@ -36,6 +36,7 @@ from apps.reports.services import (
     ReportSourceExclusionError,
     ReportSourceExclusionPermissionError,
     ReportSourceExclusionService,
+    build_ai_report_pdf,
     build_highlighted_document_pdf,
     findings_in_paint_order,
     resolve_analyzed_content,
@@ -529,12 +530,17 @@ class ReportDownloadMixin(LoginRequiredMixin):
         )
 
 
-class DownloadHighlightedDocumentView(ReportDownloadMixin, View):
+class _ReportPdfDownloadView(ReportDownloadMixin, View):
     """
-    Descarga en PDF el texto del documento con los mismos hallazgos
-    resaltados que el visor interactivo del reporte. No reemplaza al
-    certificado institucional: es el documento señalado, no un resumen.
+    Descarga de un informe PDF generado al vuelo desde el reporte (no se
+    guarda en disco). Las subclases indican qué PDF y cómo se llama.
     """
+
+    filename_prefix = ""
+    log_label = ""
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        raise NotImplementedError
 
     def get(
         self,
@@ -556,19 +562,19 @@ class DownloadHighlightedDocumentView(ReportDownloadMixin, View):
             if report is None:
                 raise Http404("Este documento aún no tiene reporte.")
 
-            pdf_content = build_highlighted_document_pdf(report=report)
+            pdf_content = self.build_pdf(report)
 
             return FileResponse(
                 BytesIO(pdf_content),
                 as_attachment=True,
-                filename=f"informe-originalidad-{document.id}.pdf",
+                filename=f"{self.filename_prefix}-{document.id}.pdf",
                 content_type="application/pdf",
             )
 
         except PermissionDenied:
             logger.warning(
-                "Permiso denegado al descargar documento señalado. "
-                "user_id=%s document_id=%s",
+                "Permiso denegado al descargar %s. user_id=%s document_id=%s",
+                self.log_label,
                 user.id,
                 pk,
                 exc_info=True,
@@ -581,3 +587,28 @@ class DownloadHighlightedDocumentView(ReportDownloadMixin, View):
         except HighlightedDocumentPdfError as exc:
             messages.error(request, str(exc))
             return redirect("reports:detail", pk=pk)
+
+
+class DownloadHighlightedDocumentView(_ReportPdfDownloadView):
+    """
+    Descarga el informe de similitud en PDF (texto del documento con los
+    hallazgos de similitud resaltados). No reemplaza al certificado.
+    """
+
+    filename_prefix = "informe-originalidad"
+    log_label = "documento señalado"
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        return build_highlighted_document_pdf(report=report)
+
+
+class DownloadAiReportView(_ReportPdfDownloadView):
+    """
+    Descarga el informe de IA estimada en PDF (REQ-CER-05).
+    """
+
+    filename_prefix = "informe-ia"
+    log_label = "informe de IA"
+
+    def build_pdf(self, report: AnalysisReport) -> bytes:
+        return build_ai_report_pdf(report=report)

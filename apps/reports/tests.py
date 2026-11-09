@@ -45,10 +45,12 @@ from apps.reports.models import (
     SourceType,
 )
 from apps.reports.services import (
+    AI_LIMITATIONS,
     ReportSourceExclusionError,
     ReportSourceExclusionService,
     SpanReportWriter,
     _HighlightedDocumentPdfBuilder,
+    build_ai_report_pdf,
     build_highlighted_document_pdf,
     findings_in_paint_order,
     resolve_analyzed_content,
@@ -301,6 +303,118 @@ class SimilarityPdfContentTests(ReportsTestCaseMixin, TestCase):
         )
 
         self.assertContains(response, "Informe de similitud")
+
+
+class AiReportPdfTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-05, REQ-CER-06 (informe de IA estimada)."""
+
+    def _text(self, pdf: bytes) -> str:
+        from pypdf import PdfReader
+
+        return " ".join(
+            " ".join(page.extract_text().split())
+            for page in PdfReader(BytesIO(pdf)).pages
+        )
+
+    def test_has_estimate_band_date_version_segments_method_limits_and_note(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+        from apps.reports.models import AI_RESPONSIBLE_USE_NOTE
+
+        self.report.engine_version = "motor-historico-0.9"
+        self.report.save(update_fields=["engine_version"])
+        estimate = build_ai_estimate(self.report)
+
+        text = self._text(build_ai_report_pdf(self.report))
+
+        self.assertIn("INFORME DE IA ESTIMADA", text)
+        self.assertIn(f"IA estimada: {floatformat(estimate.percent, 1)}%", text)
+        self.assertIn(estimate.band_label, text)
+        self.assertIn("motor-historico-0.9", text)
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y %H:%M"),
+            text,
+        )
+        # Probabilidad del segmento señalado (hallazgo AI_GENERATED de 40 %).
+        self.assertIn("SEGMENTOS SEÑALADOS", text)
+        self.assertIn("40,0%", text)
+        self.assertIn("modelo de lenguaje", text)
+        self.assertIn("MÉTODO", text)
+        self.assertIn(estimate.method, text)
+        self.assertIn("LIMITACIONES", text)
+        for limitation in AI_LIMITATIONS:
+            self.assertIn(" ".join(limitation.split()), text)
+        self.assertIn(" ".join(AI_RESPONSIBLE_USE_NOTE.split()), text)
+
+    def test_values_match_certificate_verification(self) -> None:
+        from django.template.defaultfilters import floatformat
+
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        estimate = build_ai_estimate(self.report)
+        certificate = Certificate.objects.create(
+            report=self.report,
+            code="CERT-IA-1",
+            verification_hash="c" * 64,
+            issued_by=self.student,
+        )
+
+        text = self._text(build_ai_report_pdf(self.report))
+        verify = self.client.get(
+            reverse("certificates:verify", args=[certificate.verification_hash])
+        )
+
+        for value in (
+            f"{floatformat(estimate.percent, 1)}%",
+            estimate.band_label,
+            estimate.version_label,
+        ):
+            self.assertIn(value, text)
+            self.assertContains(verify, value)
+
+    def test_report_keeps_its_own_engine_version(self) -> None:
+        self.report.engine_version = "version-anterior-1.0"
+        self.report.save(update_fields=["engine_version"])
+
+        text = self._text(build_ai_report_pdf(self.report))
+
+        self.assertIn("version-anterior-1.0", text)
+
+    def test_without_findings_pdf_is_valid_with_empty_marker(self) -> None:
+        self.report.findings.filter(finding_type=FindingType.AI_GENERATED).delete()
+
+        pdf = build_ai_report_pdf(self.report)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn("Sin segmentos señalados", self._text(pdf))
+
+    def test_download_view_permissions(self) -> None:
+        url = reverse("reports:download_ai_report", kwargs={"pk": self.document.id})
+
+        self.assertEqual(self.client.get(url).status_code, 302)
+
+        self.client.force_login(self.other_student)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+        self.client.force_login(self.student)
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("INFORME DE IA ESTIMADA", self._text(response.getvalue()))
+
+    def test_detail_has_ai_report_button(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertContains(response, "Informe de IA")
+        self.assertContains(
+            response,
+            reverse("reports:download_ai_report", kwargs={"pk": self.document.id}),
+        )
 
 
 class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):

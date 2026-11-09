@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from django.db import transaction
+from django.template.defaultfilters import floatformat
 from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -41,6 +42,7 @@ from apps.analysis.engines.text_filters import AcademicTextFilter
 from apps.analysis.models import OaiFullText
 from apps.certificates.models import Certificate
 from apps.documents.models import Document
+from apps.reports.ai_estimate import build_ai_estimate
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
@@ -708,6 +710,21 @@ SIMILARITY_CALC_NOTE = (
 SIMILARITY_SUM_TOLERANCE = Decimal("0.05")
 
 
+AI_PDF_BACKGROUND = "#E3ECFF"
+AI_PDF_TEXT_COLOR = "#123F9E"
+
+# Limitaciones que acompañan siempre al informe de IA estimada (REQ-CER-05).
+AI_LIMITATIONS = (
+    "El resultado no es concluyente: es una estimación probabilística.",
+    "Es sensible al texto técnico, las tablas, las listas y el paratexto "
+    "(portadas, índices, numeración).",
+    "Puede dar falsos positivos en prosa académica formal.",
+    "El mismo texto en DOCX y en PDF puede dar resultados distintos por la "
+    "forma de extraer el texto.",
+    "No evalúa autoría: no identifica quién escribió el documento.",
+)
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -743,6 +760,19 @@ class _BasePdfBuilder:
     def _escape(self, text: str) -> str:
         escaped = html.escape(text, quote=False)
         return escaped.replace("\n", "<br/>\n")
+
+    def _new_document(self, buffer: BytesIO, title: str) -> SimpleDocTemplate:
+        """Documento A4 con los márgenes comunes de los informes."""
+        return SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=1.7 * cm,
+            leftMargin=1.7 * cm,
+            topMargin=1.8 * cm,
+            bottomMargin=1.5 * cm,
+            title=title,
+            author=self.document.institution.name,
+        )
 
     def _truncate(self, value: str, max_length: int) -> str:
         value = value or ""
@@ -811,6 +841,15 @@ class _BasePdfBuilder:
                 fontSize=9,
                 leading=11,
                 alignment=TA_CENTER,
+            ),
+            "source_num_dark": ParagraphStyle(
+                "hd_source_num_dark",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=11,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#334155"),
             ),
             "source_name": ParagraphStyle(
                 "hd_source_name",
@@ -984,6 +1023,201 @@ class _BasePdfBuilder:
         canvas.restoreState()
 
 
+def build_ai_report_pdf(report: AnalysisReport) -> bytes:
+    """
+    Informe PDF de IA estimada (REQ-CER-05): % con banda, fecha y versión
+    (de `AiEstimate`, iguales a las del certificado y la verificación),
+    segmentos señalados con su probabilidad, método, limitaciones y la nota
+    de uso responsable.
+    """
+    return _AiReportPdfBuilder(report=report).build()
+
+
+class _AiReportPdfBuilder(_BasePdfBuilder):
+    HEADER_LABEL = "INFORME DE IA ESTIMADA"
+
+    def build(self) -> bytes:
+        content = resolve_analyzed_content(self.report)
+
+        if not content:
+            raise HighlightedDocumentPdfError(
+                "El documento no tiene texto extraído para generar el informe de IA."
+            )
+
+        estimate = build_ai_estimate(self.report)
+        buffer = BytesIO()
+
+        self._prepare_letterhead(institution=self.document.institution)
+
+        doc = self._new_document(
+            buffer,
+            title=f"Informe de IA estimada - {self.document.title}",
+        )
+        styles = self._build_styles()
+        story: list[Any] = [
+            Paragraph(self._escape(self.document.title), styles["title"]),
+            Spacer(1, 0.15 * cm),
+            Paragraph("INFORME DE IA ESTIMADA", styles["kicker"]),
+            Spacer(1, 0.35 * cm),
+            self._build_estimate_block(estimate, styles),
+            Spacer(1, 0.15 * cm),
+            Paragraph(html.escape(estimate.note), styles["legend_note"]),
+            Spacer(1, 0.4 * cm),
+        ]
+
+        findings = [
+            finding
+            for finding in self.report.findings.order_by("start_offset")
+            if finding.finding_type == FindingType.AI_GENERATED
+        ]
+        pieces = findings_in_paint_order(findings, len(content))
+
+        story.append(Paragraph("SEGMENTOS SEÑALADOS", styles["kicker"]))
+        story.append(Spacer(1, 0.2 * cm))
+
+        if pieces:
+            story.append(self._build_segments_table(pieces, content, styles))
+        else:
+            story.append(Paragraph("Sin segmentos señalados.", styles["small"]))
+
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph("MÉTODO", styles["kicker"]))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(
+            Paragraph(
+                f"<b>Método:</b> {self._escape(estimate.method)}<br/>"
+                f"<b>Versión del motor:</b> {self._escape(estimate.version_label)}<br/>"
+                f"<b>Análisis generado el:</b> "
+                f"{timezone.localtime(estimate.generated_at).strftime('%d/%m/%Y %H:%M')}",
+                styles["small"],
+            )
+        )
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph("LIMITACIONES", styles["kicker"]))
+        story.append(Spacer(1, 0.15 * cm))
+        story.append(
+            Paragraph(
+                "<br/>".join(f"• {self._escape(item)}" for item in AI_LIMITATIONS),
+                styles["small"],
+            )
+        )
+        story.append(Spacer(1, 0.5 * cm))
+        story.append(Paragraph("TEXTO ANALIZADO", styles["kicker"]))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(self._body_markup(content, pieces), styles["body"]))
+
+        doc.build(
+            story,
+            onFirstPage=self._decorate_page,
+            onLaterPages=self._decorate_page,
+        )
+
+        return buffer.getvalue()
+
+    def _build_estimate_block(self, estimate: Any, styles: dict[str, ParagraphStyle]) -> Table:
+        band = estimate.band
+        block = Table(
+            [
+                [
+                    Paragraph(
+                        f'<font size="20" color="{band["fg"]}"><b>'
+                        f"{floatformat(estimate.percent, 1)}%</b></font><br/>"
+                        f'<font size="7.5" color="#64748B">IA ESTIMADA</font><br/>'
+                        f'<font size="7" color="{band["fg"]}"><b>'
+                        f'{band["label"].upper()} · INDICATIVO</b></font>',
+                        styles["metric_number"],
+                    ),
+                    Paragraph(
+                        f"<b>IA estimada:</b> {floatformat(estimate.percent, 1)}%<br/>"
+                        f"<b>Banda:</b> {band['label']}<br/>"
+                        f"<b>Fecha:</b> "
+                        f"{timezone.localtime(estimate.generated_at).strftime('%d/%m/%Y %H:%M')}<br/>"
+                        f"<b>Versión:</b> {self._escape(estimate.version_label)}",
+                        styles["small"],
+                    ),
+                ]
+            ],
+            colWidths=[6.0 * cm, 10.6 * cm],
+        )
+        block.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LINEBELOW", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
+                    ("LINEABOVE", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+        return block
+
+    def _build_segments_table(
+        self,
+        pieces: list[tuple[int, int, ReportFinding]],
+        content: str,
+        styles: dict[str, ParagraphStyle],
+    ) -> Table:
+        rows = [
+            [
+                Paragraph("N.º", styles["sources_header_dark"]),
+                Paragraph("Probabilidad", styles["sources_header_dark"]),
+                Paragraph("Segmento", styles["sources_header_dark"]),
+            ]
+        ]
+
+        for number, (start, end, finding) in enumerate(pieces, start=1):
+            rows.append(
+                [
+                    Paragraph(f"<b>{number}</b>", styles["source_num_dark"]),
+                    Paragraph(
+                        f"{floatformat(finding.confidence_percent, 1)}%",
+                        styles["sources_percent"],
+                    ),
+                    Paragraph(
+                        self._escape(self._truncate(content[start:end], 220)),
+                        styles["sources_cell"],
+                    ),
+                ]
+            )
+
+        table = Table(rows, colWidths=[1.0 * cm, 2.6 * cm, 13.0 * cm], repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+                    ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#0F172A")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (0, -1), 0),
+                ]
+            )
+        )
+        return table
+
+    def _body_markup(
+        self,
+        content: str,
+        pieces: list[tuple[int, int, ReportFinding]],
+    ) -> str:
+        parts: list[str] = []
+        cursor = 0
+
+        for number, (start, end, _finding) in enumerate(pieces, start=1):
+            parts.append(self._escape(content[cursor:start]))
+            parts.append(
+                f'<span backColor="{AI_PDF_BACKGROUND}" color="{AI_PDF_TEXT_COLOR}">'
+                f"{self._escape(content[start:end])}</span>"
+                f'<super><font size="6" color="{AI_PDF_TEXT_COLOR}"> [{number}]</font></super>'
+            )
+            cursor = end
+
+        parts.append(self._escape(content[cursor:]))
+        return "".join(parts)
+
+
 class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
     """
     PDF de similitud (REQ-CER-03/04): % total, interno y web, fuentes con su
@@ -1040,15 +1274,9 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
 
         self._prepare_letterhead(institution=institution)
 
-        doc = SimpleDocTemplate(
+        doc = self._new_document(
             buffer,
-            pagesize=A4,
-            rightMargin=1.7 * cm,
-            leftMargin=1.7 * cm,
-            topMargin=1.8 * cm,
-            bottomMargin=1.5 * cm,
             title=f"Informe de originalidad - {self.document.title}",
-            author=institution.name,
         )
 
         styles = self._build_styles()

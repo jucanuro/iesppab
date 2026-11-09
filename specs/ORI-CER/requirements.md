@@ -75,8 +75,8 @@ Estado: Aprobado por Gerente TI 2026-11-08
 
 ### REQ-CER-08 · Confidencialidad en verificación
 - **HU:** HU-CER-09 · **RN:** RN-CER-04
-- **Criterio:** EL SISTEMA NO DEBE exponer en la verificación pública el texto del documento ni sus segmentos. La verificación mantiene el nombre del estudiante (Respuesta 4).
-- **Verificación:** test (la respuesta no contiene texto del documento).
+- **Criterio:** EL SISTEMA NO DEBE exponer en la verificación pública el texto del documento ni sus segmentos. Las fuentes internas (INTERNAL) se muestran solo agregadas ("Base interna: N fuentes, X %"), sin título ni URL; las web y de repositorios públicos (OAI) conservan título. La verificación mantiene el nombre del estudiante (Respuesta 4).
+- **Verificación:** test (la respuesta no contiene texto del documento ni título/URL de fuentes internas).
 - **Etiqueta:** [Supuesto] (confidencialidad) / [Decisión Gerente] (nombre del estudiante)
 
 ### REQ-CER-09 · Bloqueo de certificado por riesgo
@@ -109,7 +109,7 @@ Estado: Aprobado por Gerente TI 2026-11-08
 | RN-CER-01 | Riesgo Alto o Crítico bloquea el certificado (solo por similitud) | [Decisión Gerente] D-03/D-04 |
 | RN-CER-02 | Todo % de IA se rotula "IA estimada" con la nota de uso responsable: estimación, no prueba, requiere revisión humana | [Decisión Gerente] D-08 |
 | RN-CER-03 | Certificado, PDF de IA y QR muestran el mismo valor, banda, fecha, versión del motor y nota | [Decisión Gerente] D-08 |
-| RN-CER-04 | La verificación pública no expone el texto del documento ni sus segmentos | [Supuesto] |
+| RN-CER-04 | La verificación pública no expone el texto del documento ni sus segmentos. Las fuentes internas (INTERNAL) se muestran solo agregadas ("Base interna: N fuentes, X %"), sin título ni URL; las web y de repositorios públicos (OAI) conservan título. | [Supuesto] / [Decisión Gerente] (fuentes internas agregadas) |
 | RN-CER-05 | Los 13 certificados emitidos siguen válidos | [Decisión Gerente] D-11 |
 | RN-CER-06 | El % total es la unión de segmentos sin doble conteo; la suma de % por fuente puede superarlo porque un segmento coincide con varias fuentes. La spec debe documentarlo | [Decisión Gerente] D-09 |
 | RN-CER-07 | PDF para impresión A4, paginación "Página X de N", sin depender del color | [Propuesto] |

@@ -35,7 +35,9 @@ from apps.documents.models import (
     DocumentText,
 )
 from apps.reports.models import (
+    AI_CLASSIFIER_NOTE,
     AI_ESTIMATE_DISCLAIMER,
+    AI_RESPONSIBLE_USE_NOTE,
     AnalysisReport,
     FindingType,
     ReportRiskLevel,
@@ -1936,3 +1938,22 @@ class BandasDePresentacionTests(SimpleTestCase):
         self.assertIsNone(r.ai_classifier)
         r.summary = {"ai_score_breakdown": {"classifier": {"ai_percent": "55.0"}}}
         self.assertEqual(r.ai_classifier["label"], "Posible IA: revisar")
+
+
+class ResponsibleUseNoteTests(TestCase):
+    """RN-CER-08: un único texto para la nota de uso responsable."""
+
+    EXPECTED = (
+        "IA estimada: valor probabilístico calculado por un modelo automático. "
+        "No constituye prueba del uso de inteligencia artificial y requiere la "
+        "revisión de un docente antes de cualquier decisión académica."
+    )
+
+    def test_nota_exacta(self) -> None:
+        self.assertEqual(AI_RESPONSIBLE_USE_NOTE, self.EXPECTED)
+
+    def test_alias_son_la_misma_nota(self) -> None:
+        self.assertEqual(AI_ESTIMATE_DISCLAIMER, self.EXPECTED)
+        self.assertEqual(AI_CLASSIFIER_NOTE, self.EXPECTED)
+        self.assertEqual(AnalysisReport.AI_DISCLAIMER, self.EXPECTED)
+        self.assertEqual(AnalysisReport.AI_CLASSIFIER_NOTE, self.EXPECTED)

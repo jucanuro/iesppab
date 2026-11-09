@@ -5,7 +5,7 @@ Estado: Aprobado por Gerente TI 2026-11-08
 > Etiquetas: [Validado con usuario] [Propuesto] [Decisión Gerente] [Supuesto]. Todo el plan es [Propuesto] hasta la revisión del Gerente TI. Tareas ≤ ~½ día, ordenadas por dependencia. Sin migraciones (design §2). Sin commit ni push hasta aprobación; los tests se corren con `python manage.py test`.
 
 ## Fundamentos
-- [ ] **T01 — Nota única de uso responsable (RN-CER-08)** · REQ: RN-CER-02, RN-CER-08 (soporta REQ-CER-01/05/06) · Archivos: `apps/reports/models.py` (`AI_RESPONSIBLE_USE_NOTE`; `AI_ESTIMATE_DISCLAIMER` y `AI_CLASSIFIER_NOTE` pasan a alias), `apps/reports/tests.py` · Verificación: test que ambos alias == texto exacto de RN-CER-08; suite `apps.reports` y `apps.certificates` sin regresiones · Rama: `ORI-CER/T01-nota-uso-responsable`
+- [x] **T01 — Nota única de uso responsable (RN-CER-08)** · REQ: RN-CER-02, RN-CER-08 (soporta REQ-CER-01/05/06) · Archivos: `apps/reports/models.py` (`AI_RESPONSIBLE_USE_NOTE`; `AI_ESTIMATE_DISCLAIMER` y `AI_CLASSIFIER_NOTE` pasan a alias), `apps/reports/tests.py` · Verificación: test que ambos alias == texto exacto de RN-CER-08; suite `apps.reports` y `apps.certificates` sin regresiones · Rama: `ORI-CER/T01-nota-uso-responsable`
 - [ ] **T02 — `AiEstimate` (fuente única de IA)** · REQ: REQ-CER-06, RN-CER-03 · Archivos: `apps/reports/ai_estimate.py` (nuevo), `apps/reports/tests.py` · Verificación: tests: % clasificador vs `ai_probability_percent`; bandas <20/20-49/≥50; `engine_version`/`ai_detector`/`generated_at` salen **del reporte** (reporte con versión distinta a la actual la conserva) · Depende: T01 · Rama: `ORI-CER/T02-ai-estimate`
 
 ## Verificación pública y certificado

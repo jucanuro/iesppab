@@ -1,4 +1,4 @@
-Estado: Aprobado por Gerente TI 2026-11-08
+Estado: Aprobado por Gerente TI 2026-11-09
 
 # ORI-CER · Requisitos v1 (fuente: docs/proc/CER.md, G1 aprobado por Gerente TI 2026-11-08)
 
@@ -61,11 +61,11 @@ Estado: Aprobado por Gerente TI 2026-11-08
 - **Verificación:** test de contenido PDF.
 - **Etiqueta:** [Decisión Gerente]
 
-### REQ-CER-06 · Coherencia certificado ↔ QR
+### REQ-CER-06 · Coherencia certificado ↔ QR ↔ detalle del reporte
 - **HU:** HU-CER-08, HU-CER-09 · **AC:** AC-CER-06
-- **Criterio:** CUANDO se muestran el certificado y su verificación QR, EL SISTEMA DEBE mostrar valores idénticos de % de IA, banda, fecha, versión del motor y nota (y los mismos que el PDF de IA, RN-CER-03).
-- **Verificación:** Playwright + test de contenido PDF.
-- **Etiqueta:** [Decisión Gerente]
+- **Criterio:** CUANDO se muestran el certificado, su verificación QR y la página de detalle del reporte (`reports:detail`), EL SISTEMA DEBE mostrar valores idénticos de % de IA (con 1 decimal), banda (con rótulo de texto), fecha, versión del motor y nota, derivados de `AiEstimate` (y los mismos que el PDF de IA, RN-CER-03). En el detalle del reporte, el % de IA, la banda y la nota NO DEBEN calcularse con umbrales ni textos propios distintos de `AiEstimate` (bandas <20 / 20-49 / ≥50).
+- **Verificación:** Playwright + test de contenido PDF + test de la página de detalle (contexto y HTML == `AiEstimate`).
+- **Etiqueta:** [Decisión Gerente] (certificado/QR/PDF) / [Propuesto] (ampliación al detalle del reporte, pendiente de aprobación)
 
 ### REQ-CER-07 · Permisos de descarga
 - **HU:** HU-CER-06, HU-CER-07 · **AC:** AC-CER-07

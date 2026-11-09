@@ -1,4 +1,4 @@
-Estado: Aprobado por Gerente TI 2026-11-08
+Estado: Aprobado por Gerente TI 2026-11-09
 
 # ORI-CER · Design v1 (base: requirements aprobado por Gerente TI 2026-11-08; código leído en solo lectura)
 
@@ -34,7 +34,7 @@ Salvaguardas de presentación: (1) el PDF lee los % persistidos, no recalcula; (
 ## 4. Componentes y servicios
 ### 4.1 `AiEstimate` (nuevo) — `apps/reports/ai_estimate.py`
 `build_ai_estimate(report) -> AiEstimate` con: `percent` (clasificador si `report.ai_classifier`, si no `ai_probability_percent`), `band` (etiqueta de texto + color), `generated_at` (`report.generated_at`), `engine_version` (`report.engine_version` + `report.ai_detector` si existe), `method` (detector/modelo), `note` (= RN-CER-08). Banda: unifica los dos umbrales hoy divergentes (`ai_level` 15/30 vs `ai_classifier_band` 20/50). **Bandas fijadas: <20 / 20-49 / ≥50 (`ai_classifier_band`), sin cambios, siempre con rótulo de texto.** [Decisión Gerente, §9-1] `engine_version`, `ai_detector` y `generated_at` se leen **siempre del reporte**, nunca de la versión actual del motor (un reporte antiguo conserva su versión). [Decisión Gerente]
-- Consumidores: certificado, PDF de IA, `CertificateVerifyView`. REQ-CER-06. [Propuesto]
+- Consumidores: certificado, PDF de IA, `CertificateVerifyView` y la página de detalle del reporte (`reports:detail` / `templates/reports/detail.html`), que debe mostrar bandas, % con 1 decimal (`_format_decimal`) y nota desde `AiEstimate`, sustituyendo los umbrales/textos propios actuales (`ai_level` 15/30, `AI_DISCLAIMER`) en esa página. REQ-CER-06. [Propuesto]
 
 ### 4.2 Nota de uso responsable (RN-CER-08)
 - Constante `AI_RESPONSIBLE_USE_NOTE` en `apps/reports/models.py` con el texto exacto aprobado. [Decisión Gerente]
@@ -128,7 +128,7 @@ Verificaciones exigidas por el Gerente (cubiertas por tests, ver §7): (a) `AiEs
 | REQ-CER-03 | Builder similitud: cabecera, % total/interno/web, tabla de fuentes con %, texto señalado | 3, 4.3 |
 | REQ-CER-04 | `SIMILARITY_CALC_NOTE` en el PDF de similitud | 3, 4.3 |
 | REQ-CER-05 | `build_ai_report_pdf` + `AiEstimate` (versión/fecha del reporte, bandas 20/50) + `AI_LIMITATIONS` | 4.1, 4.4 |
-| REQ-CER-06 | `AiEstimate` como fuente única para certificado, PDF de IA y QR | 4.1, 4.5 |
+| REQ-CER-06 | `AiEstimate` como fuente única para certificado, PDF de IA, QR y página de detalle del reporte (`reports:detail`, bandas 20/50, % 1 decimal, nota única) | 4.1, 4.5 |
 | REQ-CER-07 | `ReportDownloadMixin._get_allowed_document` (403) en ambas descargas | 4.6 |
 | REQ-CER-08 | Plantilla pública sin texto/hallazgos/`snippet` ni fuentes INTERNAL individuales (agregadas, [Decisión Gerente]; verificado + test); nombre del estudiante se mantiene | 4.5, 7 |
 | REQ-CER-09 | `_validate_report` + `CERTIFICATE_BLOCKING_RISK_LEVELS` (existe) + test | 4.5 |

@@ -1893,8 +1893,9 @@ class SourceDisplayTests(SourceExclusionTestMixin, TestCase):
         )
 
         self.assertContains(response, "Certificado válido")
-        self.assertContains(response, "Tesis sobre convivencia")
-        self.assertContains(response, "Repositorio interno")
+        # RN-CER-04: la fuente interna solo sale agregada, sin título.
+        self.assertContains(response, "Base interna: 1 fuente")
+        self.assertNotContains(response, "Tesis sobre convivencia")
         self.assertNotContains(response, "alumno2")
 
     def test_verify_page_unknown_hash(self) -> None:

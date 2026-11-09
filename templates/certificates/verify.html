@@ -99,6 +99,15 @@
             </div>
 
             <div class="space-y-3 p-4">
+                {% if internal_summary %}
+                    <article class="rounded-lg border border-slate-200 bg-[#eef3ff] p-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <p class="text-sm font-bold text-[#123f9e]">
+                                Base interna: {{ internal_summary.count }} fuente{{ internal_summary.count|pluralize }}{% if internal_summary.percent is not None %}, {{ internal_summary.percent|floatformat:1 }} %{% endif %}
+                            </p>
+                        </div>
+                    </article>
+                {% endif %}
                 {% for source in sources %}
                     <article class="rounded-lg border border-slate-200 bg-[#eef3ff] p-3">
                         <div class="flex items-start justify-between gap-3">
@@ -115,9 +124,11 @@
                         </div>
                     </article>
                 {% empty %}
+                    {% if not internal_summary %}
                     <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
                         No se detectaron fuentes relevantes.
                     </p>
+                    {% endif %}
                 {% endfor %}
             </div>
         </section>

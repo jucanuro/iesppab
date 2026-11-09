@@ -494,6 +494,80 @@ class UnfinishedReportDownloadTests(ReportsTestCaseMixin, TestCase):
                 self.assertEqual(response["Content-Type"], "application/pdf")
 
 
+class PrintDesignTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-12, RN-CER-07: A4, paginación y rótulos de texto."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        # Texto largo para que el PDF ocupe varias páginas (los hallazgos
+        # están dentro de los primeros caracteres, sus offsets siguen valiendo).
+        self.report.analyzed_content = SAMPLE_TEXT + " " + (SAMPLE_TEXT + " ") * 150
+        self.report.save(update_fields=["analyzed_content"])
+
+    def _pdfs(self) -> dict[str, bytes]:
+        return {
+            "similitud": build_highlighted_document_pdf(report=self.report),
+            "ia": build_ai_report_pdf(report=self.report),
+        }
+
+    def _reader(self, pdf: bytes):
+        from pypdf import PdfReader
+
+        return PdfReader(BytesIO(pdf))
+
+    def test_pages_are_a4(self) -> None:
+        for name, pdf in self._pdfs().items():
+            with self.subTest(pdf=name):
+                for page in self._reader(pdf).pages:
+                    self.assertAlmostEqual(float(page.mediabox.width), 595.28, delta=1)
+                    self.assertAlmostEqual(float(page.mediabox.height), 841.89, delta=1)
+
+    def test_pages_are_numbered_x_of_n(self) -> None:
+        for name, pdf in self._pdfs().items():
+            with self.subTest(pdf=name):
+                pages = self._reader(pdf).pages
+                total = len(pages)
+
+                self.assertGreater(total, 1)
+                for number, page in enumerate(pages, start=1):
+                    text = " ".join(page.extract_text().split())
+                    self.assertIn(f"Página {number} de {total}", text)
+
+    def test_text_labels_besides_color(self) -> None:
+        import re
+
+        sim_text = " ".join(
+            page.extract_text()
+            for page in self._reader(self._pdfs()["similitud"]).pages
+        )
+        ai_text = " ".join(
+            " ".join(page.extract_text().split())
+            for page in self._reader(self._pdfs()["ia"]).pages
+        )
+
+        self.assertIn("Coincidencia con fuente 1", " ".join(sim_text.split()))
+        self.assertRegex(ai_text, r"IA 40,0 %")
+        self.assertTrue(re.search(r"\[1 · IA 40,0 %\]", ai_text))
+
+    def test_all_text_is_at_least_8pt(self) -> None:
+        from apps.reports.services import MIN_PDF_FONT_SIZE
+
+        for name, pdf in self._pdfs().items():
+            sizes: set[float] = set()
+
+            def visitor(text, cm, tm, font_dict, font_size, sizes=sizes):
+                if text.strip():
+                    # Tamaño efectivo: el del operador Tf por la escala de la matriz.
+                    sizes.add(round(font_size * abs(tm[3]), 2))
+
+            for page in self._reader(pdf).pages:
+                page.extract_text(visitor_text=visitor)
+
+            with self.subTest(pdf=name):
+                self.assertTrue(sizes)
+                self.assertGreaterEqual(min(sizes), MIN_PDF_FONT_SIZE, sorted(sizes))
+
+
 class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):
     """
     Un pasaje de una fuente dentro de un párrafo marcado como IA suma al % y

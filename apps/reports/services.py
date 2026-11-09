@@ -17,6 +17,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
@@ -744,6 +745,47 @@ def build_highlighted_document_pdf(report: AnalysisReport) -> bytes:
     return _HighlightedDocumentPdfBuilder(report=report).build()
 
 
+# Tamaño mínimo de letra de los informes PDF para que se lean impresos (RN-CER-07).
+MIN_PDF_FONT_SIZE = 8
+
+
+class NumberedCanvas(Canvas):
+    """
+    Canvas de dos pasadas: guarda cada página y, al cerrar el documento,
+    dibuja "Página X de N" cuando ya se conoce el total (REQ-CER-12).
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list[dict] = []
+
+    def showPage(self) -> None:
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self) -> None:
+        total_pages = len(self._saved_page_states)
+
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page_number(total_pages)
+            super().showPage()
+
+        super().save()
+
+    def _draw_page_number(self, total_pages: int) -> None:
+        width, _height = A4
+        self.saveState()
+        self.setFillColor(colors.white)
+        self.setFont("Helvetica", MIN_PDF_FONT_SIZE)
+        self.drawRightString(
+            width - 1.7 * cm,
+            0.2 * cm,
+            f"Página {self._pageNumber} de {total_pages}",
+        )
+        self.restoreState()
+
+
 class _BasePdfBuilder:
     """
     Base común de los informes PDF (similitud, IA): documento A4 con sus
@@ -895,7 +937,7 @@ class _BasePdfBuilder:
                 "hd_legend_note",
                 parent=base["Normal"],
                 fontName="Helvetica",
-                fontSize=7.5,
+                fontSize=MIN_PDF_FONT_SIZE,
                 leading=11,
                 textColor=colors.HexColor("#64748B"),
             ),
@@ -928,7 +970,7 @@ class _BasePdfBuilder:
                 "hd_sources_header_dark",
                 parent=base["Normal"],
                 fontName="Helvetica-Bold",
-                fontSize=7.5,
+                fontSize=MIN_PDF_FONT_SIZE,
                 leading=10,
                 textColor=colors.HexColor("#334155"),
             ),
@@ -985,7 +1027,7 @@ class _BasePdfBuilder:
         canvas.rect(0, height - bar_height - 0.06 * cm, width, 0.06 * cm, fill=1, stroke=0)
 
         canvas.setFillColor(colors.HexColor("#0F172A"))
-        canvas.rect(0, 0, width, 0.45 * cm, fill=1, stroke=0)
+        canvas.rect(0, 0, width, 0.55 * cm, fill=1, stroke=0)
 
         text_x = 1.7 * cm
         logo = getattr(self, "_letterhead_logo", None)
@@ -1006,18 +1048,11 @@ class _BasePdfBuilder:
         institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
 
         canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFont("Helvetica-Bold", MIN_PDF_FONT_SIZE)
         canvas.drawString(
             text_x,
             height - 0.65 * cm,
             f"{institution_name} - {self.HEADER_LABEL}",
-        )
-
-        canvas.setFont("Helvetica", 6.5)
-        canvas.drawRightString(
-            width - 1.7 * cm,
-            0.17 * cm,
-            f"Pagina {doc.page}",
         )
 
         canvas.restoreState()
@@ -1110,6 +1145,7 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
             story,
             onFirstPage=self._decorate_page,
             onLaterPages=self._decorate_page,
+            canvasmaker=NumberedCanvas,
         )
 
         return buffer.getvalue()
@@ -1122,8 +1158,8 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
                     Paragraph(
                         f'<font size="20" color="{band["fg"]}"><b>'
                         f"{floatformat(estimate.percent, 1)}%</b></font><br/>"
-                        f'<font size="7.5" color="#64748B">IA ESTIMADA</font><br/>'
-                        f'<font size="7" color="{band["fg"]}"><b>'
+                        f'<font size="8" color="#64748B">IA ESTIMADA</font><br/>'
+                        f'<font size="8" color="{band["fg"]}"><b>'
                         f'{band["label"].upper()} · INDICATIVO</b></font>',
                         styles["metric_number"],
                     ),
@@ -1205,12 +1241,14 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
         parts: list[str] = []
         cursor = 0
 
-        for number, (start, end, _finding) in enumerate(pieces, start=1):
+        for number, (start, end, finding) in enumerate(pieces, start=1):
             parts.append(self._escape(content[cursor:start]))
+            # Rótulo de texto además del color: legible en blanco y negro.
             parts.append(
                 f'<span backColor="{AI_PDF_BACKGROUND}" color="{AI_PDF_TEXT_COLOR}">'
                 f"{self._escape(content[start:end])}</span>"
-                f'<super><font size="6" color="{AI_PDF_TEXT_COLOR}"> [{number}]</font></super>'
+                f'<font size="{MIN_PDF_FONT_SIZE}" color="{AI_PDF_TEXT_COLOR}">'
+                f"<b> [{number} · IA {floatformat(finding.confidence_percent, 1)} %]</b></font>"
             )
             cursor = end
 
@@ -1343,6 +1381,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             story,
             onFirstPage=self._decorate_page,
             onLaterPages=self._decorate_page,
+            canvasmaker=NumberedCanvas,
         )
 
         return buffer.getvalue()
@@ -1386,7 +1425,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                 parts.append(
                     f'<span backColor="{similarity_bg}" color="{similarity_text}">'
                     f"{escaped}</span>"
-                    f'<super><font size="6"> '
+                    f'<super><font size="8"> '
                     f'<span backColor="{chip_color}" color="#FFFFFF">'
                     f"&nbsp;{number}&nbsp;</span></font></super>"
                 )
@@ -1491,12 +1530,12 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             number_style = styles["metric_number_accent" if accent else "metric_number"]
             color = f' color="{band["fg"]}"' if band else ""
             extra = (
-                f'<br/><font size="7"{color}><b>{note}</b></font>' if note else ""
+                f'<br/><font size="8"{color}><b>{note}</b></font>' if note else ""
             )
             return Paragraph(
                 f'<font size="20"{color}><b>{self._format_source_percent(value)}</b></font>'
                 f'<font size="9"{color}>%</font><br/>'
-                f'<font size="7.5" color="#64748B">{label}</font>{extra}',
+                f'<font size="8" color="#64748B">{label}</font>{extra}',
                 number_style,
             )
 
@@ -1650,6 +1689,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                 title = f'<a href="{html.escape(link, quote=True)}" color="{color}">{title}</a>'
 
             subtitle = (
+                f"Coincidencia con fuente {number} · "
                 f"{self._source_kind_label(source)} · "
                 f"{self._escape(source.display_subtitle)}"
             )
@@ -1658,7 +1698,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                 subtitle += f" · {self._escape(self._truncate(link, 70))}"
 
             badge = (
-                '<br/><font size="7" color="#B91C1C"><b>Posible reenvío del mismo '
+                '<br/><font size="8" color="#B91C1C"><b>Posible reenvío del mismo '
                 "trabajo</b></font>"
                 if source.is_possible_resubmission
                 else ""
@@ -1669,7 +1709,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                     Paragraph(f'<font color="#FFFFFF"><b>{number}</b></font>', styles["source_num"]),
                     Paragraph(
                         f'<font color="{color}"><b>{title}</b></font><br/>'
-                        f'<font size="7" color="#64748B">{subtitle}</font>'
+                        f'<font size="8" color="#64748B">{subtitle}</font>'
                         f"{badge}",
                         styles["source_name"],
                     ),

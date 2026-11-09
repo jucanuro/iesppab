@@ -17,6 +17,7 @@ from apps.certificates.services import (
     CertificateGenerationError,
     CertificateGenerationService,
 )
+from apps.reports.ai_estimate import build_ai_estimate
 
 logger = logging.getLogger(__name__)
 
@@ -165,24 +166,41 @@ class CertificateVerifyView(View):
         *args: Any,
         **kwargs: Any,
     ) -> HttpResponse:
-        certificate = (
-            Certificate.objects.select_related(
-                "report",
-                "report__document",
-                "report__document__institution",
-                "report__document__owner",
+        certificate = None
+        sources: list = []
+        ai_estimate = None
+
+        try:
+            certificate = (
+                Certificate.objects.select_related(
+                    "report",
+                    "report__document",
+                    "report__document__institution",
+                    "report__document__owner",
+                )
+                .filter(
+                    verification_hash=verification_hash,
+                    is_active=True,
+                )
+                .first()
             )
-            .filter(
-                verification_hash=verification_hash,
-                is_active=True,
+
+            if certificate is not None:
+                report = certificate.report
+                document = report.document
+                # Fuerza la carga de las relaciones que usa la plantilla: si
+                # alguna está rota, falla aquí y no al renderizar (REQ-CER-02).
+                _ = (document.owner, document.institution)
+                sources = list(report.sources.filter(is_excluded=False))
+                ai_estimate = build_ai_estimate(report)
+        except Exception:
+            logger.exception(
+                "Error al verificar el certificado. verification_hash=%s",
+                verification_hash,
             )
-            .first()
-        )
-        sources = (
-            list(certificate.report.sources.filter(is_excluded=False))
-            if certificate
-            else []
-        )
+            certificate = None
+            sources = []
+            ai_estimate = None
 
         return render(
             request,
@@ -191,5 +209,6 @@ class CertificateVerifyView(View):
                 "certificate": certificate,
                 "verification_hash": verification_hash,
                 "sources": sources,
+                "ai_estimate": ai_estimate,
             },
         )

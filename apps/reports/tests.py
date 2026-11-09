@@ -1957,3 +1957,77 @@ class ResponsibleUseNoteTests(TestCase):
         self.assertEqual(AI_CLASSIFIER_NOTE, self.EXPECTED)
         self.assertEqual(AnalysisReport.AI_DISCLAIMER, self.EXPECTED)
         self.assertEqual(AnalysisReport.AI_CLASSIFIER_NOTE, self.EXPECTED)
+
+
+class AiEstimateTests(TestCase):
+    """REQ-CER-06 / RN-CER-03: AiEstimate como fuente única de la IA."""
+
+    def _report(self, **kwargs) -> AnalysisReport:
+        return AnalysisReport(
+            ai_probability_percent=Decimal("40.00"),
+            generated_at=timezone.now(),
+            **kwargs,
+        )
+
+    def test_usa_porcentaje_del_clasificador_si_existe(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(
+            summary={"ai_score_breakdown": {"classifier": {"ai_percent": "62.5"}}}
+        )
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("62.5"))
+
+    def test_sin_clasificador_usa_ai_probability_percent(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(summary={})
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("40.00"))
+
+    def test_clasificador_con_error_cae_a_ai_probability_percent(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        report = self._report(
+            summary={"ai_score_breakdown": {"classifier": {"error": True}}}
+        )
+        self.assertEqual(build_ai_estimate(report).percent, Decimal("40.00"))
+
+    def test_bandas_20_50(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        casos = [
+            ("0", "Sin indicios"),
+            ("19.99", "Sin indicios"),
+            ("20", "Indicios leves"),
+            ("49.99", "Indicios leves"),
+            ("50", "Posible IA: revisar"),
+            ("100", "Posible IA: revisar"),
+        ]
+        for valor, etiqueta in casos:
+            report = AnalysisReport(
+                ai_probability_percent=Decimal(valor), generated_at=timezone.now()
+            )
+            self.assertEqual(build_ai_estimate(report).band_label, etiqueta, valor)
+
+    def test_version_detector_y_fecha_salen_del_reporte(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        fecha = timezone.now() - timezone.timedelta(days=90)
+        report = AnalysisReport(
+            ai_probability_percent=Decimal("10.00"),
+            engine_version="vql-antiguo-0.0.1",
+            ai_detector="perplexity",
+            generated_at=fecha,
+        )
+        with override_settings(AI_DETECTION_MODE="classifier"):
+            estimate = build_ai_estimate(report)
+        self.assertEqual(estimate.engine_version, "vql-antiguo-0.0.1")
+        self.assertEqual(estimate.ai_detector, "perplexity")
+        self.assertEqual(estimate.generated_at, fecha)
+        self.assertIn("vql-antiguo-0.0.1", estimate.version_label)
+
+    def test_nota_es_la_de_uso_responsable(self) -> None:
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        self.assertEqual(
+            build_ai_estimate(self._report(summary={})).note, AI_RESPONSIBLE_USE_NOTE
+        )

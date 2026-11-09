@@ -1,4 +1,4 @@
-Estado: Borrador — BLOQUEADO hasta G1
+Estado: Borrador
 
 # ORI-CER · Requisitos (v0, plantilla)
 

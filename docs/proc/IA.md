@@ -1,4 +1,4 @@
-G1: Pendiente — el Gerente TI aprueba cambiando esta línea a "G1: Aprobado por Gerente TI <fecha>"
+G1: Aprobado por Gerente TI 2026-11-08
 
 # ORI-IA_HU_CU_v2 — Detección de contenido IA
 Estado: G1 en curso · Dueño: ASP (Gerente, D-05) · Alcance v2: #3, #5 y requisito del cliente (D-08, D-10)

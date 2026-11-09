@@ -1,4 +1,4 @@
-G1: Pendiente — el Gerente TI aprueba cambiando esta línea a "G1: Aprobado por Gerente TI <fecha>"
+G1: Aprobado por Gerente TI 2026-11-08
 
 # ORI-CER_HU_CU_v1 — Reportes, certificado e informes PDF
 Estado: G0 (requisito nuevo del cliente) · Dueño: ASP (Gerente, D-05)

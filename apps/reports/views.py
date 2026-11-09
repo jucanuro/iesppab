@@ -453,7 +453,83 @@ class ReportStatusView(LoginRequiredMixin, View):
         )
 
 
-class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
+class ReportDownloadMixin(LoginRequiredMixin):
+    """
+    Permisos y carga comunes de las descargas de informes PDF (REQ-CER-07).
+
+    Pueden descargar: el estudiante dueño del documento y el personal
+    (admin, director, docente) de la institución del documento; el
+    superusuario no tiene restricción. Cualquier otro caso es 403.
+    """
+
+    def _get_allowed_document(
+        self,
+        document_id: UUID,
+        user: User,
+    ) -> Document:
+        document = (
+            Document.objects.select_related(
+                "institution",
+                "owner",
+                "uploaded_by",
+                "extracted_text",
+            )
+            .filter(id=document_id)
+            .first()
+        )
+
+        if document is None:
+            raise Document.DoesNotExist
+
+        if user.is_superuser:
+            return document
+
+        if user.is_student_role:
+            if document.owner_id != user.id:
+                raise PermissionDenied("No tienes permiso para este documento.")
+
+            return document
+
+        if user.institution_id is None:
+            raise PermissionDenied("Tu usuario no tiene institución asignada.")
+
+        if document.institution_id != user.institution_id:
+            raise PermissionDenied("No tienes permiso para este documento.")
+
+        return document
+
+    def _get_report(
+        self,
+        document: Document,
+    ) -> AnalysisReport | None:
+        return (
+            AnalysisReport.objects.select_related(
+                "document",
+                "document__institution",
+                "document__owner",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "sources",
+                    queryset=ReportSource.objects.select_related(
+                        "excluded_by",
+                    ).order_by(
+                        "-matched_percent",
+                    ),
+                ),
+                Prefetch(
+                    "findings",
+                    queryset=ReportFinding.objects.select_related(
+                        "source",
+                    ).order_by("start_offset"),
+                ),
+            )
+            .filter(document=document)
+            .first()
+        )
+
+
+class DownloadHighlightedDocumentView(ReportDownloadMixin, View):
     """
     Descarga en PDF el texto del documento con los mismos hallazgos
     resaltados que el visor interactivo del reporte. No reemplaza al
@@ -505,64 +581,3 @@ class DownloadHighlightedDocumentView(LoginRequiredMixin, View):
         except HighlightedDocumentPdfError as exc:
             messages.error(request, str(exc))
             return redirect("reports:detail", pk=pk)
-
-    def _get_allowed_document(
-        self,
-        document_id: UUID,
-        user: User,
-    ) -> Document:
-        queryset = Document.objects.select_related(
-            "institution",
-            "owner",
-            "uploaded_by",
-            "extracted_text",
-        ).filter(id=document_id)
-
-        if user.is_superuser or user.is_admin_role:
-            if not user.is_superuser:
-                if user.institution_id is None:
-                    raise PermissionDenied(
-                        "Tu usuario no tiene institución asignada."
-                    )
-
-                queryset = queryset.filter(institution=user.institution)
-
-        else:
-            queryset = queryset.filter(Q(owner=user) | Q(uploaded_by=user))
-
-        document = queryset.first()
-
-        if document is None:
-            raise Document.DoesNotExist
-
-        return document
-
-    def _get_report(
-        self,
-        document: Document,
-    ) -> AnalysisReport | None:
-        return (
-            AnalysisReport.objects.select_related(
-                "document",
-                "document__institution",
-                "document__owner",
-            )
-            .prefetch_related(
-                Prefetch(
-                    "sources",
-                    queryset=ReportSource.objects.select_related(
-                        "excluded_by",
-                    ).order_by(
-                        "-matched_percent",
-                    ),
-                ),
-                Prefetch(
-                    "findings",
-                    queryset=ReportFinding.objects.select_related(
-                        "source",
-                    ).order_by("start_offset"),
-                ),
-            )
-            .filter(document=document)
-            .first()
-        )

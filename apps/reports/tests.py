@@ -307,11 +307,78 @@ class DownloadHighlightedDocumentViewTests(ReportsTestCaseMixin, TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "application/pdf")
 
+    def _download(self, user=None):
+        if user is not None:
+            self.client.force_login(user)
+
+        return self.client.get(
+            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+        )
+
+    def _staff(self, username, role, institution):
+        return User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="clave-segura-123",
+            role=role,
+            institution=institution,
+        )
+
     def test_other_students_cannot_download_the_pdf(self) -> None:
-        self.client.force_login(self.other_student)
+        # REQ-CER-07: un estudiante ajeno recibe 403 (antes 404).
+        self.assertEqual(self._download(self.other_student).status_code, 403)
+
+    def test_staff_of_the_institution_can_download(self) -> None:
+        for role in (UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN):
+            with self.subTest(role=role):
+                staff = self._staff(f"staff-{role}", role, self.institution)
+
+                response = self._download(staff)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response["Content-Type"], "application/pdf")
+
+    def test_staff_of_another_institution_cannot_download(self) -> None:
+        other = Institution.objects.create(
+            name="Otra institución",
+            slug="otra-institucion-descarga",
+        )
+
+        for role in (UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN):
+            with self.subTest(role=role):
+                staff = self._staff(f"ajeno-{role}", role, other)
+
+                self.assertEqual(self._download(staff).status_code, 403)
+
+    def test_staff_without_institution_cannot_download(self) -> None:
+        teacher = self._staff("sin-inst", UserRole.TEACHER, None)
+
+        self.assertEqual(self._download(teacher).status_code, 403)
+
+    def test_anonymous_is_redirected_to_login(self) -> None:
+        response = self._download()
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/"))
+        self.assertNotEqual(response["Content-Type"], "application/pdf")
+
+    def test_superuser_can_download_from_any_institution(self) -> None:
+        superuser = User.objects.create_superuser(
+            username="root-descarga",
+            email="root-descarga@example.com",
+            password="clave-segura-123",
+        )
+
+        self.assertEqual(self._download(superuser).status_code, 200)
+
+    def test_unknown_document_is_404(self) -> None:
+        self.client.force_login(self.student)
 
         response = self.client.get(
-            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+            reverse(
+                "reports:download_highlighted",
+                kwargs={"pk": "00000000-0000-0000-0000-000000000000"},
+            )
         )
 
         self.assertEqual(response.status_code, 404)

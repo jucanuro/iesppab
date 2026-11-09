@@ -23,7 +23,7 @@ Estado: Aprobado por Gerente TI 2026-11-08
 - [x] **T12 — Diseño para impresión** · REQ: REQ-CER-12, RN-CER-07 · Archivos: `apps/reports/services.py` (`NumberedCanvas`, rótulos de texto, fuentes ≥ 8 pt) · Verificación: tests `pypdf`: `mediabox` A4, "Página X de N" en ambos PDF, rótulos "Coincidencia con fuente N" / "IA NN %" además del color · Depende: T09, T10 · Rama: `ORI-CER/T12-impresion`
 
 ## QA de extremo a extremo
-- [ ] **T13 — Playwright local** · REQ: REQ-CER-01, REQ-CER-02, REQ-CER-06, REQ-CER-07 · Archivos: `qa/test_cer_playwright.py` (nuevo; usa `conftest.py` raíz; solo local, SQLite y datos de prueba) · Verificación: (1) verify == detalle del reporte en % IA, banda, fecha, versión y nota; (2) hash inválido → "no válido" sin 500; (3) ambos PDF descargables y ajeno recibe 403; (4) `page.pdf(format="A4")` de verify sin desbordar. Capturas en el directorio temporal · Depende: T03–T05, T08–T10 · Rama: `ORI-CER/T13-qa-playwright`
+- [x] **T13 — Playwright local** · REQ: REQ-CER-01, REQ-CER-02, REQ-CER-06, REQ-CER-07 · Archivos: `qa/test_cer_playwright.py` (nuevo; usa `conftest.py` raíz; solo local, SQLite y datos de prueba) · Verificación: (1) verify == detalle del reporte en % IA, banda, fecha, versión y nota; (2) hash inválido → "no válido" sin 500; (3) ambos PDF descargables y ajeno recibe 403; (4) `page.pdf(format="A4")` de verify sin desbordar. Capturas en el directorio temporal · Depende: T03–T05, T08–T10 · Rama: `ORI-CER/T13-qa-playwright`
 
 ## Cobertura REQ → tareas
 | REQ | Tareas |

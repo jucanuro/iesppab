@@ -118,6 +118,44 @@ class CertificateRiskGateTests(TestCase):
         self.assertTrue(certificate.pdf_file)
         self.assertEqual(certificate.report_id, self.report.id)
 
+    def test_certificate_pdf_uses_ai_estimate_same_as_verification(self) -> None:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        from apps.reports.ai_estimate import build_ai_estimate
+
+        self.report.engine_version = "motor-historico-0.9"
+        self.report.save(update_fields=["engine_version"])
+
+        certificate = self.service.execute(document_id=self.document.id)
+        estimate = build_ai_estimate(self.report)
+
+        with certificate.pdf_file.open("rb") as handle:
+            reader = PdfReader(BytesIO(handle.read()))
+        pdf_text = " ".join(
+            " ".join(page.extract_text().split()) for page in reader.pages
+        )
+
+        self.assertIn("IA ESTIMADA", pdf_text)
+        self.assertIn(f"{floatformat(estimate.percent, 1)}%", pdf_text)
+        self.assertIn(estimate.band_label.upper(), pdf_text)
+        self.assertIn("motor-historico-0.9", pdf_text)
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y %H:%M"),
+            pdf_text,
+        )
+        self.assertIn(" ".join(AI_RESPONSIBLE_USE_NOTE.split()), pdf_text)
+
+        # RN-CER-03: lo mismo que muestra la verificación pública.
+        verify = self.client.get(
+            reverse("certificates:verify", args=[certificate.verification_hash])
+        )
+        self.assertContains(verify, f"{floatformat(estimate.percent, 1)}%")
+        self.assertContains(verify, estimate.band_label)
+        self.assertContains(verify, estimate.version_label)
+        self.assertContains(verify, AI_RESPONSIBLE_USE_NOTE)
+
 
 class CertificateVerifyViewTests(TestCase):
     """Verificación pública por QR (REQ-CER-01, REQ-CER-02)."""

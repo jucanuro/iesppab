@@ -238,7 +238,7 @@ class CertificateVerifyViewTests(TestCase):
         self.assertContains(response, "CER-TEST-0001")
         self.assertContains(response, "motor-test-1")
         self.assertContains(response, "IA estimada")
-        self.assertContains(response, "Indicios leves")  # banda 20-49
+        self.assertContains(response, "Sin indicios concluyentes")  # banda <40
         self.assertContains(response, floatformat(Decimal("35.00"), 1))
         self.assertContains(response, floatformat(Decimal("12.00"), 0))
         self.assertContains(response, AI_RESPONSIBLE_USE_NOTE)

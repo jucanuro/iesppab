@@ -59,12 +59,18 @@ def similarity_band(percent) -> dict:
     return {"key": key, **SIMILARITY_BANDS[key]}
 
 
+# Umbrales (en %) de las bandas de IA estimada. Único lugar donde se definen:
+# web, PDF, certificado y verificación consumen `ai_classifier_band`.
+AI_BAND_REVIEW_THRESHOLD = Decimal("40")
+AI_BAND_POSSIBLE_THRESHOLD = Decimal("70")
+
+
 def ai_classifier_band(percent) -> dict:
     value = Decimal(str(percent))
-    if value < 20:
-        return {"key": "low", "label": "Sin indicios", "bg": "#D1FAE5", "fg": "#064E3B", "border": "#6EE7B7"}
-    if value < 50:
-        return {"key": "mild", "label": "Indicios leves", "bg": "#FEF9C3", "fg": "#713F12", "border": "#FDE047"}
+    if value < AI_BAND_REVIEW_THRESHOLD:
+        return {"key": "low", "label": "Sin indicios concluyentes", "bg": "#D1FAE5", "fg": "#064E3B", "border": "#6EE7B7"}
+    if value < AI_BAND_POSSIBLE_THRESHOLD:
+        return {"key": "mild", "label": "Indicios: revisar con criterio docente", "bg": "#FEF9C3", "fg": "#713F12", "border": "#FDE047"}
     return {"key": "high", "label": "Posible IA: revisar", "bg": "#FEE2E2", "fg": "#7F1D1D", "border": "#FCA5A5"}
 
 

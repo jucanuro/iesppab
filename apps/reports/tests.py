@@ -2137,12 +2137,12 @@ class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
         self.assertIn(" ".join(estimate.note.split()), html)
         self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), html)
 
-    def test_bandas_en_los_bordes_usan_20_y_50(self) -> None:
+    def test_bandas_en_los_bordes_usan_40_y_70(self) -> None:
         casos = {
-            "19.90": "Sin indicios",
-            "20.00": "Indicios leves",
-            "49.90": "Indicios leves",
-            "50.00": "Posible IA: revisar",
+            "39.90": "Sin indicios concluyentes",
+            "40.00": "Indicios: revisar con criterio docente",
+            "69.90": "Indicios: revisar con criterio docente",
+            "70.00": "Posible IA: revisar",
         }
         for valor, banda in casos.items():
             with self.subTest(valor=valor):
@@ -2160,7 +2160,7 @@ class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
         self.assertNotIn("Nivel moderado", html)
         self.assertNotIn("Nivel alto", html)
         self.assertNotIn("Nivel bajo", html)
-        self.assertIn("Sin indicios", html)
+        self.assertIn("Sin indicios concluyentes", html)
 
 
 class RecalculateRiskLevelsCommandTests(SourceExclusionTestMixin, TestCase):
@@ -2438,10 +2438,10 @@ class BandasDePresentacionTests(SimpleTestCase):
     def test_banda_clasificador_ia(self):
         from apps.reports.models import ai_classifier_band
 
-        self.assertEqual(ai_classifier_band("19.9")["label"], "Sin indicios")
-        self.assertEqual(ai_classifier_band("20")["label"], "Indicios leves")
-        self.assertEqual(ai_classifier_band("49.9")["label"], "Indicios leves")
-        self.assertEqual(ai_classifier_band("50")["label"], "Posible IA: revisar")
+        self.assertEqual(ai_classifier_band("39.9")["label"], "Sin indicios concluyentes")
+        self.assertEqual(ai_classifier_band("40")["label"], "Indicios: revisar con criterio docente")
+        self.assertEqual(ai_classifier_band("69.9")["label"], "Indicios: revisar con criterio docente")
+        self.assertEqual(ai_classifier_band("70")["label"], "Posible IA: revisar")
 
     def test_ai_classifier_solo_con_breakdown_valido(self):
         from apps.reports.models import AnalysisReport
@@ -2450,7 +2450,7 @@ class BandasDePresentacionTests(SimpleTestCase):
         self.assertIsNone(r.ai_classifier)
         r.summary = {"ai_score_breakdown": {"classifier": {"error": True}}}
         self.assertIsNone(r.ai_classifier)
-        r.summary = {"ai_score_breakdown": {"classifier": {"ai_percent": "55.0"}}}
+        r.summary = {"ai_score_breakdown": {"classifier": {"ai_percent": "75.0"}}}
         self.assertEqual(r.ai_classifier["label"], "Posible IA: revisar")
 
 
@@ -2505,15 +2505,15 @@ class AiEstimateTests(TestCase):
         )
         self.assertEqual(build_ai_estimate(report).percent, Decimal("40.00"))
 
-    def test_bandas_20_50(self) -> None:
+    def test_bandas_40_70(self) -> None:
         from apps.reports.ai_estimate import build_ai_estimate
 
         casos = [
-            ("0", "Sin indicios"),
-            ("19.99", "Sin indicios"),
-            ("20", "Indicios leves"),
-            ("49.99", "Indicios leves"),
-            ("50", "Posible IA: revisar"),
+            ("0", "Sin indicios concluyentes"),
+            ("39.99", "Sin indicios concluyentes"),
+            ("40", "Indicios: revisar con criterio docente"),
+            ("69.99", "Indicios: revisar con criterio docente"),
+            ("70", "Posible IA: revisar"),
             ("100", "Posible IA: revisar"),
         ]
         for valor, etiqueta in casos:

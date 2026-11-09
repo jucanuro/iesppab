@@ -118,6 +118,27 @@ class CertificateRiskGateTests(TestCase):
         self.assertTrue(certificate.pdf_file)
         self.assertEqual(certificate.report_id, self.report.id)
 
+    def test_medium_risk_report_is_certified(self) -> None:
+        self.report.risk_level = ReportRiskLevel.MEDIUM
+        self.report.save(update_fields=["risk_level"])
+
+        certificate = self.service.execute(document_id=self.document.id)
+
+        self.assertTrue(certificate.pdf_file)
+
+    def test_high_ai_estimate_does_not_block_certificate(self) -> None:
+        # RN-CER-01: solo la similitud bloquea; la IA es indicativa.
+        self.report.ai_probability_percent = Decimal("95.00")
+        self.report.risk_level = ReportRiskLevel.LOW
+        self.report.save(update_fields=["ai_probability_percent", "risk_level"])
+
+        certificate = self.service.execute(document_id=self.document.id)
+
+        self.assertTrue(certificate.is_active)
+        self.assertTrue(
+            Certificate.objects.filter(report=self.report).exists()
+        )
+
     def test_certificate_pdf_uses_ai_estimate_same_as_verification(self) -> None:
         from io import BytesIO
 

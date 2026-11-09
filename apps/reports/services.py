@@ -42,7 +42,6 @@ from apps.analysis.models import OaiFullText
 from apps.certificates.models import Certificate
 from apps.documents.models import Document
 from apps.reports.models import (
-    AI_ESTIMATE_DISCLAIMER,
     AnalysisReport,
     FindingType,
     ReportFinding,
@@ -694,6 +693,21 @@ def findings_in_paint_order(
     return sorted(pieces, key=lambda item: item[0])
 
 
+# Texto único de la nota de cálculo del PDF de similitud (REQ-CER-04, RN-CER-06).
+SIMILARITY_CALC_NOTE = (
+    "El porcentaje total es la proporción de palabras del documento que "
+    "coinciden con alguna fuente, contadas una sola vez. El porcentaje de cada "
+    "fuente es la proporción coincidente con esa fuente; como un mismo "
+    "fragmento puede coincidir con varias fuentes, la suma de los porcentajes "
+    "por fuente puede superar al porcentaje total. No se cuentan citas, "
+    "bibliografía, texto común ni fuentes excluidas."
+)
+
+# Diferencia tolerada (puntos porcentuales) entre el total y la suma de las
+# fuentes antes de registrar una inconsistencia de datos.
+SIMILARITY_SUM_TOLERANCE = Decimal("0.05")
+
+
 class HighlightedDocumentPdfError(Exception):
     """
     Error controlado al generar el PDF del documento señalado.
@@ -871,6 +885,14 @@ class _BasePdfBuilder:
                 leading=11,
                 textColor=colors.white,
             ),
+            "sources_header_dark": ParagraphStyle(
+                "hd_sources_header_dark",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=7.5,
+                leading=10,
+                textColor=colors.HexColor("#334155"),
+            ),
             "sources_cell": ParagraphStyle(
                 "hd_sources_cell",
                 parent=base["Normal"],
@@ -963,6 +985,12 @@ class _BasePdfBuilder:
 
 
 class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
+    """
+    PDF de similitud (REQ-CER-03/04): % total, interno y web, fuentes con su
+    % y el texto señalado. `mode="similarity"` no pinta ni menciona la IA,
+    que va en su propio informe (RN-CER-09).
+    """
+
     # Mismos colores dinámicos que templates/reports/detail.html según
     # report.similarity_level (bajo/moderado/alto). Los hallazgos de IA
     # siempre usan el azul institucional, igual que en el visor web.
@@ -991,6 +1019,10 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
         "#0F766E",
     ]
 
+
+    def __init__(self, report: AnalysisReport, mode: str = "similarity") -> None:
+        super().__init__(report)
+        self.mode = mode
 
     def _source_color(self, number: int) -> str:
         return self.SOURCE_PALETTE[(number - 1) % len(self.SOURCE_PALETTE)]
@@ -1028,20 +1060,16 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
         story.append(Spacer(1, 0.35 * cm))
 
         story.append(self._build_metrics_row(styles=styles))
-        story.append(Spacer(1, 0.15 * cm))
-        story.append(
-            Paragraph(
-                f"<b>IA estimada:</b> {AI_ESTIMATE_DISCLAIMER}",
-                styles["legend_note"],
-            )
-        )
         story.append(Spacer(1, 0.4 * cm))
 
-        findings = list(
-            self.report.findings.select_related("source").order_by(
+        findings = [
+            finding
+            for finding in self.report.findings.select_related("source").order_by(
                 "start_offset",
             )
-        )
+            if self.mode != "similarity"
+            or finding.finding_type == FindingType.SIMILARITY
+        ]
         sources_by_id = {source.id: source for source in self.report.sources.all()}
 
         body_markup, cited_sources, word_counts = self._render_body_markup(
@@ -1065,7 +1093,11 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                     styles=styles,
                 )
             )
-            story.append(Spacer(1, 0.5 * cm))
+            story.append(Spacer(1, 0.2 * cm))
+
+        self._warn_if_sources_sum_below_total(all_sources)
+        story.append(Paragraph(SIMILARITY_CALC_NOTE, styles["legend_note"]))
+        story.append(Spacer(1, 0.5 * cm))
 
         excluded_sources = [source for source in all_sources if source.is_excluded]
 
@@ -1131,7 +1163,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                     f"&nbsp;{number}&nbsp;</span></font></super>"
                 )
 
-            elif finding_type == FindingType.AI_GENERATED:
+            elif finding_type == FindingType.AI_GENERATED and self.mode != "similarity":
                 parts.append(
                     f'<span backColor="{self.AI_BACKGROUND}" color="{self.AI_TEXT_COLOR}">'
                     f"{escaped}</span>"
@@ -1234,39 +1266,33 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                 f'<br/><font size="7"{color}><b>{note}</b></font>' if note else ""
             )
             return Paragraph(
-                f'<font size="20"{color}><b>{self._format_percent(value)}</b></font>'
+                f'<font size="20"{color}><b>{self._format_source_percent(value)}</b></font>'
                 f'<font size="9"{color}>%</font><br/>'
                 f'<font size="7.5" color="#64748B">{label}</font>{extra}',
                 number_style,
             )
-
-        clf = self.report.ai_classifier
 
         metrics = Table(
             [
                 [
                     cell(
                         self.report.similarity_percent,
-                        "ÍNDICE DE SIMILITUD",
+                        "ÍNDICE DE SIMILITUD (TOTAL)",
                         accent=True,
                         band=self.report.similarity_band,
                         note=self.report.similarity_band["label"].upper(),
                     ),
-                    cell(self.report.web_similarity_percent, "FUENTES DE INTERNET"),
-                    cell(self.report.internal_similarity_percent, "TRABAJOS / REPOSITORIOS"),
-                    (
-                        cell(
-                            clf["percent"],
-                            "IA ESTIMADA",
-                            band=clf,
-                            note=f'{clf["label"].upper()} · INDICATIVO',
-                        )
-                        if clf
-                        else cell(self.report.ai_probability_percent, "IA ESTIMADA")
+                    cell(
+                        self.report.internal_similarity_percent,
+                        "TRABAJOS / REPOSITORIOS (INTERNA)",
+                    ),
+                    cell(
+                        self.report.web_similarity_percent,
+                        "FUENTES DE INTERNET (WEB)",
                     ),
                 ]
             ],
-            colWidths=[4.15 * cm] * 4,
+            colWidths=[5.53 * cm] * 3,
         )
         metrics.setStyle(
             TableStyle(
@@ -1329,11 +1355,6 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                         styles["legend"],
                     ),
                     Paragraph(
-                        f'<span backColor="{self.AI_BACKGROUND}" color="{self.AI_TEXT_COLOR}">'
-                        "&nbsp;Posible IA&nbsp;</span>",
-                        styles["legend"],
-                    ),
-                    Paragraph(
                         "Los números junto a cada pasaje remiten a la lista "
                         "«Fuentes primarias»."
                         + (
@@ -1350,7 +1371,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                     ),
                 ]
             ],
-            colWidths=[3.4 * cm, 3.4 * cm, 9.8 * cm],
+            colWidths=[3.4 * cm, 13.2 * cm],
         )
 
     def _build_primary_sources(
@@ -1364,7 +1385,16 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             Spacer(1, 0.2 * cm),
         ]
 
-        rows: list[list[Any]] = []
+        rows: list[list[Any]] = [
+            [
+                Paragraph("N.º", styles["sources_header_dark"]),
+                Paragraph("Fuente y tipo", styles["sources_header_dark"]),
+                Paragraph(
+                    "Coincidencia con la fuente (% del documento, no acumulable)",
+                    styles["sources_header_dark"],
+                ),
+            ]
+        ]
         row_styles: list[tuple] = [
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
@@ -1376,7 +1406,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             ("LEFTPADDING", (0, 0), (0, -1), 0),
         ]
 
-        for index, (number, source) in enumerate(cited_sources):
+        for index, (number, source) in enumerate(cited_sources, start=1):
             color = self._source_color(number)
             row_styles.append(
                 ("BACKGROUND", (0, index), (0, index), colors.HexColor(color))
@@ -1391,7 +1421,10 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             if link:
                 title = f'<a href="{html.escape(link, quote=True)}" color="{color}">{title}</a>'
 
-            subtitle = self._escape(source.display_subtitle)
+            subtitle = (
+                f"{self._source_kind_label(source)} · "
+                f"{self._escape(source.display_subtitle)}"
+            )
 
             if link:
                 subtitle += f" · {self._escape(self._truncate(link, 70))}"
@@ -1420,11 +1453,48 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                 ]
             )
 
-        table = Table(rows, colWidths=[0.8 * cm, 11.3 * cm, 4.5 * cm])
+        table = Table(
+            rows,
+            colWidths=[0.8 * cm, 10.1 * cm, 5.7 * cm],
+            repeatRows=1,
+        )
         table.setStyle(TableStyle(row_styles))
         section.append(table)
 
         return section
+
+    @staticmethod
+    def _source_kind_label(source: ReportSource) -> str:
+        if source.is_web:
+            return "Web"
+
+        if source.is_oai:
+            return "Repositorio"
+
+        return "Interno"
+
+    def _warn_if_sources_sum_below_total(
+        self,
+        sources: list[ReportSource],
+    ) -> None:
+        """
+        La suma de los % por fuente nunca debería quedar por debajo del total
+        (cada palabra coincidente pertenece al menos a una fuente). Si pasa,
+        es una inconsistencia de datos: se registra y el PDF se imprime igual.
+        """
+        total_by_sources = sum(
+            (source.matched_percent for source in sources if not source.is_excluded),
+            Decimal("0"),
+        )
+
+        if total_by_sources + SIMILARITY_SUM_TOLERANCE < self.report.similarity_percent:
+            logger.warning(
+                "La suma de los porcentajes por fuente es menor que el total "
+                "de similitud. report_id=%s total=%s suma_fuentes=%s",
+                self.report.id,
+                self.report.similarity_percent,
+                total_by_sources,
+            )
 
     def _build_resubmission_warning(
         self,

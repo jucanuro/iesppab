@@ -84,7 +84,7 @@
 
                     {% if report %}
                         <a href="{% url 'reports:download_highlighted' document.id %}"
-                           title="Descargar el informe de originalidad en PDF"
+                           title="Descargar el informe de similitud en PDF"
                            class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
 
                             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -99,7 +99,7 @@
                                       stroke-linecap="round"/>
                             </svg>
 
-                            Informe en PDF
+                            Informe de similitud
                         </a>
                     {% endif %}
 

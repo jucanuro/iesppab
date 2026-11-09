@@ -180,6 +180,129 @@ class HighlightedDocumentPdfServiceTests(ReportsTestCaseMixin, TestCase):
         self.assertIn("example.com", text)
 
 
+class SimilarityPdfContentTests(ReportsTestCaseMixin, TestCase):
+    """REQ-CER-03, REQ-CER-04, RN-CER-06, RN-CER-09."""
+
+    def _text(self, report=None) -> str:
+        from pypdf import PdfReader
+
+        pdf = build_highlighted_document_pdf(report=report or self.report)
+        return " ".join(
+            " ".join(page.extract_text().split())
+            for page in PdfReader(BytesIO(pdf)).pages
+        )
+
+    def test_has_institution_header_and_total_internal_web_percents(self) -> None:
+        self.report.similarity_percent = Decimal("50.00")
+        self.report.internal_similarity_percent = Decimal("12.50")
+        self.report.web_similarity_percent = Decimal("41.30")
+        self.report.save()
+
+        text = self._text()
+
+        self.assertIn(self.institution.name.upper(), text)
+        self.assertIn("ÍNDICE DE SIMILITUD (TOTAL)", text)
+        self.assertIn("TRABAJOS / REPOSITORIOS (INTERNA)", text)
+        self.assertIn("FUENTES DE INTERNET (WEB)", text)
+        self.assertIn("50,0", text)
+        self.assertIn("12,5", text)
+        self.assertIn("41,3", text)
+
+    def test_sources_table_has_percent_column_and_type(self) -> None:
+        text = self._text()
+
+        self.assertIn("Coincidencia con la fuente", text)
+        self.assertIn("no acumulable", text)
+        self.assertIn("35,0%", text)
+        self.assertIn("Web · example.com", text)
+
+    def test_includes_calculation_note_exactly(self) -> None:
+        from apps.reports.services import SIMILARITY_CALC_NOTE
+
+        self.assertIn(" ".join(SIMILARITY_CALC_NOTE.split()), self._text())
+
+    def test_does_not_paint_ai_findings(self) -> None:
+        builder = _HighlightedDocumentPdfBuilder(report=self.report)
+
+        markup, _, _ = builder._render_body_markup(
+            content=SAMPLE_TEXT,
+            findings=list(self.report.findings.all()),
+            sources_by_id={self.source.id: self.source},
+        )
+
+        self.assertNotIn(builder.AI_BACKGROUND, markup)
+
+    def test_overlapping_sources_print_total_not_sum(self) -> None:
+        # Los % persistidos de dos fuentes que se solapan en el documento:
+        # 40 % y 30 % (suma 70) con total 50 %. El PDF imprime lo persistido.
+        self.report.similarity_percent = Decimal("50.00")
+        self.report.save()
+        self.source.matched_percent = Decimal("40.00")
+        self.source.save()
+        second_start = SAMPLE_TEXT.index("Este")
+        second = ReportSource.objects.create(
+            report=self.report,
+            source_type=SourceType.WEB,
+            title="Segunda fuente solapada",
+            url="https://example.org/otra",
+            domain="example.org",
+            matched_percent=Decimal("30.00"),
+        )
+        self.report.findings.create(
+            source=second,
+            finding_type=FindingType.SIMILARITY,
+            start_offset=second_start,
+            end_offset=second_start + len("Este parrafo"),
+            text_excerpt="Este parrafo",
+            confidence_percent=Decimal("30.00"),
+        )
+
+        text = self._text()
+
+        self.assertIn("50,0", text)
+        self.assertIn("40,0%", text)
+        self.assertIn("30,0%", text)
+        self.assertNotIn("70,0", text)
+        total = self.report.similarity_percent
+        self.assertLess(total, Decimal("40.00") + Decimal("30.00"))
+
+    def test_logs_warning_when_sources_sum_is_below_total(self) -> None:
+        # Fixture: total 35 % con una fuente de 0,4 % (inconsistente).
+        self.source.matched_percent = Decimal("0.40")
+        self.source.save()
+
+        with self.assertLogs("apps.reports.services", level="WARNING"):
+            text = self._text()
+
+        self.assertIn("ÍNDICE DE SIMILITUD", text)  # se imprime igual
+
+    def test_download_highlighted_serves_the_similarity_pdf(self) -> None:
+        from pypdf import PdfReader
+
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:download_highlighted", kwargs={"pk": self.document.id}),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        text = " ".join(
+            page.extract_text()
+            for page in PdfReader(BytesIO(response.getvalue())).pages
+        )
+        self.assertIn("ÍNDICE DE SIMILITUD (TOTAL)", text)
+        self.assertNotIn("IA estimada", text)
+
+    def test_detail_button_is_labeled_similarity_report(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertContains(response, "Informe de similitud")
+
+
 class SimilarityInsideAiFindingTests(ReportsTestCaseMixin, TestCase):
     """
     Un pasaje de una fuente dentro de un párrafo marcado como IA suma al % y
@@ -1704,9 +1827,8 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
 
         self.assertContains(response, AI_ESTIMATE_DISCLAIMER)
 
-    def test_pdf_shows_ai_disclaimer(self) -> None:
-        from io import BytesIO
-
+    def test_similarity_pdf_has_no_ai_content(self) -> None:
+        # REQ-CER-03 / design §4.3-5: la IA va en su propio informe.
         from pypdf import PdfReader
 
         pdf_bytes = build_highlighted_document_pdf(report=self.report)
@@ -1714,7 +1836,10 @@ class AiDisclaimerDisplayTests(ReportsTestCaseMixin, TestCase):
             page.extract_text() for page in PdfReader(BytesIO(pdf_bytes)).pages
         )
 
-        self.assertIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))
+        self.assertNotIn("IA estimada", text)
+        self.assertNotIn("IA ESTIMADA", text)
+        self.assertNotIn("Posible IA", text)
+        self.assertNotIn(" ".join(AI_ESTIMATE_DISCLAIMER.split()), " ".join(text.split()))
 
 
 class RecalculateRiskLevelsCommandTests(SourceExclusionTestMixin, TestCase):

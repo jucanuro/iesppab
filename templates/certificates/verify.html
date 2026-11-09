@@ -36,6 +36,16 @@
                         <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Emitido el</dt>
                         <dd class="mt-1 font-semibold text-slate-800">{{ certificate.created_at|date:"d/m/Y H:i" }}</dd>
                     </div>
+                    {% if ai_estimate %}
+                    <div>
+                        <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Análisis generado el</dt>
+                        <dd class="mt-1 font-semibold text-slate-800">{{ ai_estimate.generated_at|date:"d/m/Y H:i" }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Versión del motor</dt>
+                        <dd class="mt-1 font-semibold text-slate-800">{{ ai_estimate.version_label }}</dd>
+                    </div>
+                    {% endif %}
                     <div class="sm:col-span-2">
                         <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Hash de verificación</dt>
                         <dd class="mt-1 break-all font-mono text-xs text-slate-600">{{ verification_hash }}</dd>
@@ -68,6 +78,18 @@
             </article>
         </section>
 
+        {% if ai_estimate %}
+        <!-- IA ESTIMADA -->
+        {% with band=ai_estimate.band %}
+        <section class="rounded-xl border p-5 shadow-sm" style="background-color:{{ band.bg }};border-color:{{ band.border }};color:{{ band.fg }};">
+            <p class="text-[11px] font-bold uppercase tracking-[0.18em]">IA estimada</p>
+            <p class="mt-3 text-4xl font-bold">{{ ai_estimate.percent|floatformat:1 }}%</p>
+            <p class="mt-1 text-sm font-semibold">{{ band.label }}</p>
+            <p class="mt-3 text-xs">{{ ai_estimate.note }}</p>
+        </section>
+        {% endwith %}
+        {% endif %}
+
         <!-- FUENTES -->
         <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
             <div class="border-b border-slate-200 px-5 py-4">
@@ -77,6 +99,15 @@
             </div>
 
             <div class="space-y-3 p-4">
+                {% if internal_summary %}
+                    <article class="rounded-lg border border-slate-200 bg-[#eef3ff] p-3">
+                        <div class="flex items-start justify-between gap-3">
+                            <p class="text-sm font-bold text-[#123f9e]">
+                                Base interna: {{ internal_summary.count }} fuente{{ internal_summary.count|pluralize }}{% if internal_summary.percent is not None %}, {{ internal_summary.percent|floatformat:1 }} %{% endif %}
+                            </p>
+                        </div>
+                    </article>
+                {% endif %}
                 {% for source in sources %}
                     <article class="rounded-lg border border-slate-200 bg-[#eef3ff] p-3">
                         <div class="flex items-start justify-between gap-3">
@@ -93,9 +124,11 @@
                         </div>
                     </article>
                 {% empty %}
+                    {% if not internal_summary %}
                     <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
                         No se detectaron fuentes relevantes.
                     </p>
+                    {% endif %}
                 {% endfor %}
             </div>
         </section>
@@ -107,7 +140,7 @@
                 Certificado no encontrado
             </h2>
             <p class="mt-2 text-sm text-red-700">
-                El código de verificación no corresponde a ningún certificado vigente.
+                Certificado no válido: el código de verificación no corresponde a ningún certificado vigente.
                 Puede haber sido revocado o el enlace es incorrecto.
             </p>
             <p class="mt-3 break-all font-mono text-xs text-red-600">{{ verification_hash }}</p>

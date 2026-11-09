@@ -16,11 +16,15 @@ PERCENTAGE_VALIDATORS = [
     MaxValueValidator(Decimal("100.00")),
 ]
 
-# Aviso que acompaña siempre al % de IA (reporte web, PDF, certificado).
-AI_ESTIMATE_DISCLAIMER = (
-    "Estimación indicativa. La detección de IA no es concluyente y no "
-    "constituye prueba; debe ser revisada por el docente."
+# Texto único de la nota de uso responsable (RN-CER-08). Acompaña siempre al
+# % de IA (reporte web, PDF de IA, certificado y verificación pública).
+AI_RESPONSIBLE_USE_NOTE = (
+    "IA estimada: valor probabilístico calculado por un modelo automático. "
+    "No constituye prueba del uso de inteligencia artificial y requiere la "
+    "revisión de un docente antes de cualquier decisión académica."
 )
+# Alias conservados para no romper plantillas, servicios ni tests existentes.
+AI_ESTIMATE_DISCLAIMER = AI_RESPONSIBLE_USE_NOTE
 
 
 # Escala de colores del índice de similitud (la de Turnitin).
@@ -64,7 +68,7 @@ def ai_classifier_band(percent) -> dict:
     return {"key": "high", "label": "Posible IA: revisar", "bg": "#FEE2E2", "fg": "#7F1D1D", "border": "#FCA5A5"}
 
 
-AI_CLASSIFIER_NOTE = "Estimación indicativa, no es prueba."
+AI_CLASSIFIER_NOTE = AI_RESPONSIBLE_USE_NOTE
 
 
 class ReportRiskLevel(models.TextChoices):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from django.urls import path
 
 from apps.reports.views import (
+    DownloadAiReportView,
     DownloadHighlightedDocumentView,
     ExcludeReportSourceView,
     ReportDetailView,
@@ -27,6 +28,11 @@ urlpatterns = [
         "documentos/<uuid:pk>/reporte/descargar-senalado/",
         DownloadHighlightedDocumentView.as_view(),
         name="download_highlighted",
+    ),
+    path(
+        "documentos/<uuid:pk>/reporte/informe-ia/",
+        DownloadAiReportView.as_view(),
+        name="download_ai_report",
     ),
     path(
         "documentos/<uuid:pk>/reporte/fuentes/<uuid:source_pk>/excluir/",

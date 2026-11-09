@@ -3518,6 +3518,7 @@ class AIDetectionModeServiceTests(TestCase):
             for sentence in (SEGMENT_HUMAN_SENTENCE, SEGMENT_AI_SENTENCE)
         )
 
+    @override_settings(AI_DETECTION_MODE="global")
     def test_default_mode_is_global(self) -> None:
         self.assertEqual(settings.AI_DETECTION_MODE, "global")
 

@@ -713,7 +713,256 @@ def build_highlighted_document_pdf(report: AnalysisReport) -> bytes:
     return _HighlightedDocumentPdfBuilder(report=report).build()
 
 
-class _HighlightedDocumentPdfBuilder:
+class _BasePdfBuilder:
+    """
+    Base común de los informes PDF (similitud, IA): documento A4 con sus
+    márgenes, membrete institucional, estilos, formateo y decoración de
+    página. Las subclases arman el contenido en `build`.
+    """
+
+    HEADER_LABEL = "INFORME DE ORIGINALIDAD"
+
+    def __init__(self, report: AnalysisReport) -> None:
+        self.report = report
+        self.document = report.document
+
+    def _escape(self, text: str) -> str:
+        escaped = html.escape(text, quote=False)
+        return escaped.replace("\n", "<br/>\n")
+
+    def _truncate(self, value: str, max_length: int) -> str:
+        value = value or ""
+
+        if len(value) <= max_length:
+            return value
+
+        return f"{value[: max_length - 1].rstrip()}…"
+
+    def _format_decimal(self, value: Decimal) -> str:
+        return f"{value:.2f}"
+
+    def _format_percent(self, value: Decimal) -> str:
+        return f"{value:.0f}"
+
+    def _format_source_percent(self, value: Decimal) -> str:
+        # Con un decimal: una fuente de 0,4 % no puede salir como 0 %. Mismo
+        # redondeo que `floatformat:1` en la web.
+        rounded = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        return f"{rounded}".replace(".", ",")
+
+    def _build_styles(self) -> dict[str, ParagraphStyle]:
+        base = getSampleStyleSheet()
+
+        return {
+            "title": ParagraphStyle(
+                "hd_title",
+                parent=base["Title"],
+                fontName="Helvetica-Bold",
+                fontSize=15,
+                leading=19,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
+                spaceAfter=2,
+            ),
+            "kicker": ParagraphStyle(
+                "hd_kicker",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=9,
+                leading=12,
+                textColor=colors.HexColor("#E2483D"),
+            ),
+            "metric_number": ParagraphStyle(
+                "hd_metric_number",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=20,
+                leading=22,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "metric_number_accent": ParagraphStyle(
+                "hd_metric_number_accent",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=20,
+                leading=22,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#E2483D"),
+            ),
+            "source_num": ParagraphStyle(
+                "hd_source_num",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=9,
+                leading=11,
+                alignment=TA_CENTER,
+            ),
+            "source_name": ParagraphStyle(
+                "hd_source_name",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=9,
+                leading=12,
+            ),
+            "source_meta": ParagraphStyle(
+                "hd_source_meta",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8.5,
+                leading=13,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "subtitle": ParagraphStyle(
+                "hd_subtitle",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=9,
+                leading=12,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#64748B"),
+            ),
+            "small": ParagraphStyle(
+                "hd_small",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=11,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "legend": ParagraphStyle(
+                "hd_legend",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=14,
+            ),
+            "legend_note": ParagraphStyle(
+                "hd_legend_note",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=7.5,
+                leading=11,
+                textColor=colors.HexColor("#64748B"),
+            ),
+            "body": ParagraphStyle(
+                "hd_body",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=9.5,
+                leading=15,
+                alignment=TA_LEFT,
+                textColor=colors.HexColor("#0F172A"),
+            ),
+            "sources_title": ParagraphStyle(
+                "hd_sources_title",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=11,
+                leading=14,
+                textColor=colors.HexColor("#123F9E"),
+            ),
+            "sources_header": ParagraphStyle(
+                "hd_sources_header",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=11,
+                textColor=colors.white,
+            ),
+            "sources_cell": ParagraphStyle(
+                "hd_sources_cell",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=11,
+                textColor=colors.HexColor("#334155"),
+            ),
+            "sources_percent": ParagraphStyle(
+                "hd_sources_percent",
+                parent=base["Normal"],
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                leading=11,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#123F9E"),
+            ),
+        }
+
+    def _prepare_letterhead(self, institution: Any) -> None:
+        self._letterhead_name = institution.name.upper()
+        self._letterhead_logo: ImageReader | None = None
+
+        if not institution.logo:
+            return
+
+        try:
+            institution.logo.open("rb")
+            image_bytes = institution.logo.read()
+            self._letterhead_logo = ImageReader(BytesIO(image_bytes))
+        except Exception:
+            logger.warning(
+                "No se pudo cargar el logo institucional para el documento "
+                "señalado. institution_id=%s",
+                institution.id,
+                exc_info=True,
+            )
+        finally:
+            institution.logo.close()
+
+    def _decorate_page(self, canvas: Any, doc: Any) -> None:
+        width, height = A4
+        bar_height = 1.0 * cm
+
+        canvas.saveState()
+
+        canvas.setFillColor(colors.HexColor("#123F9E"))
+        canvas.rect(0, height - bar_height, width, bar_height, fill=1, stroke=0)
+
+        canvas.setFillColor(colors.HexColor("#F5B400"))
+        canvas.rect(0, height - bar_height - 0.06 * cm, width, 0.06 * cm, fill=1, stroke=0)
+
+        canvas.setFillColor(colors.HexColor("#0F172A"))
+        canvas.rect(0, 0, width, 0.45 * cm, fill=1, stroke=0)
+
+        text_x = 1.7 * cm
+        logo = getattr(self, "_letterhead_logo", None)
+
+        if logo is not None:
+            logo_size = bar_height - 0.2 * cm
+            canvas.drawImage(
+                logo,
+                1.4 * cm,
+                height - bar_height + 0.1 * cm,
+                width=logo_size,
+                height=logo_size,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
+            text_x = 1.4 * cm + logo_size + 0.3 * cm
+
+        institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
+
+        canvas.setFillColor(colors.white)
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.drawString(
+            text_x,
+            height - 0.65 * cm,
+            f"{institution_name} - {self.HEADER_LABEL}",
+        )
+
+        canvas.setFont("Helvetica", 6.5)
+        canvas.drawRightString(
+            width - 1.7 * cm,
+            0.17 * cm,
+            f"Pagina {doc.page}",
+        )
+
+        canvas.restoreState()
+
+
+class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
     # Mismos colores dinámicos que templates/reports/detail.html según
     # report.similarity_level (bajo/moderado/alto). Los hallazgos de IA
     # siempre usan el azul institucional, igual que en el visor web.
@@ -742,10 +991,6 @@ class _HighlightedDocumentPdfBuilder:
         "#0F766E",
     ]
 
-
-    def __init__(self, report: AnalysisReport) -> None:
-        self.report = report
-        self.document = report.document
 
     def _source_color(self, number: int) -> str:
         return self.SOURCE_PALETTE[(number - 1) % len(self.SOURCE_PALETTE)]
@@ -972,10 +1217,6 @@ class _HighlightedDocumentPdfBuilder:
             segments.extend(plain(cursor, len(content)))
 
         return segments
-
-    def _escape(self, text: str) -> str:
-        escaped = html.escape(text, quote=False)
-        return escaped.replace("\n", "<br/>\n")
 
     def _build_metrics_row(self, styles: dict[str, ParagraphStyle]) -> Table:
         owner = self.document.owner
@@ -1278,234 +1519,3 @@ class _HighlightedDocumentPdfBuilder:
             )
 
         return section
-
-    def _truncate(self, value: str, max_length: int) -> str:
-        value = value or ""
-
-        if len(value) <= max_length:
-            return value
-
-        return f"{value[: max_length - 1].rstrip()}…"
-
-    def _format_decimal(self, value: Decimal) -> str:
-        return f"{value:.2f}"
-
-    def _format_percent(self, value: Decimal) -> str:
-        return f"{value:.0f}"
-
-    def _format_source_percent(self, value: Decimal) -> str:
-        # Con un decimal: una fuente de 0,4 % no puede salir como 0 %. Mismo
-        # redondeo que `floatformat:1` en la web.
-        rounded = value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-        return f"{rounded}".replace(".", ",")
-
-    def _build_styles(self) -> dict[str, ParagraphStyle]:
-        base = getSampleStyleSheet()
-
-        return {
-            "title": ParagraphStyle(
-                "hd_title",
-                parent=base["Title"],
-                fontName="Helvetica-Bold",
-                fontSize=15,
-                leading=19,
-                alignment=TA_LEFT,
-                textColor=colors.HexColor("#334155"),
-                spaceAfter=2,
-            ),
-            "kicker": ParagraphStyle(
-                "hd_kicker",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=9,
-                leading=12,
-                textColor=colors.HexColor("#E2483D"),
-            ),
-            "metric_number": ParagraphStyle(
-                "hd_metric_number",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=20,
-                leading=22,
-                alignment=TA_LEFT,
-                textColor=colors.HexColor("#334155"),
-            ),
-            "metric_number_accent": ParagraphStyle(
-                "hd_metric_number_accent",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=20,
-                leading=22,
-                alignment=TA_LEFT,
-                textColor=colors.HexColor("#E2483D"),
-            ),
-            "source_num": ParagraphStyle(
-                "hd_source_num",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=9,
-                leading=11,
-                alignment=TA_CENTER,
-            ),
-            "source_name": ParagraphStyle(
-                "hd_source_name",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=9,
-                leading=12,
-            ),
-            "source_meta": ParagraphStyle(
-                "hd_source_meta",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=8.5,
-                leading=13,
-                alignment=TA_LEFT,
-                textColor=colors.HexColor("#334155"),
-            ),
-            "subtitle": ParagraphStyle(
-                "hd_subtitle",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=9,
-                leading=12,
-                alignment=TA_CENTER,
-                textColor=colors.HexColor("#64748B"),
-            ),
-            "small": ParagraphStyle(
-                "hd_small",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=8,
-                leading=11,
-                textColor=colors.HexColor("#334155"),
-            ),
-            "legend": ParagraphStyle(
-                "hd_legend",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=8,
-                leading=14,
-            ),
-            "legend_note": ParagraphStyle(
-                "hd_legend_note",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=7.5,
-                leading=11,
-                textColor=colors.HexColor("#64748B"),
-            ),
-            "body": ParagraphStyle(
-                "hd_body",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=9.5,
-                leading=15,
-                alignment=TA_LEFT,
-                textColor=colors.HexColor("#0F172A"),
-            ),
-            "sources_title": ParagraphStyle(
-                "hd_sources_title",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=11,
-                leading=14,
-                textColor=colors.HexColor("#123F9E"),
-            ),
-            "sources_header": ParagraphStyle(
-                "hd_sources_header",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=8,
-                leading=11,
-                textColor=colors.white,
-            ),
-            "sources_cell": ParagraphStyle(
-                "hd_sources_cell",
-                parent=base["Normal"],
-                fontName="Helvetica",
-                fontSize=8,
-                leading=11,
-                textColor=colors.HexColor("#334155"),
-            ),
-            "sources_percent": ParagraphStyle(
-                "hd_sources_percent",
-                parent=base["Normal"],
-                fontName="Helvetica-Bold",
-                fontSize=8,
-                leading=11,
-                alignment=TA_CENTER,
-                textColor=colors.HexColor("#123F9E"),
-            ),
-        }
-
-    def _prepare_letterhead(self, institution: Any) -> None:
-        self._letterhead_name = institution.name.upper()
-        self._letterhead_logo: ImageReader | None = None
-
-        if not institution.logo:
-            return
-
-        try:
-            institution.logo.open("rb")
-            image_bytes = institution.logo.read()
-            self._letterhead_logo = ImageReader(BytesIO(image_bytes))
-        except Exception:
-            logger.warning(
-                "No se pudo cargar el logo institucional para el documento "
-                "señalado. institution_id=%s",
-                institution.id,
-                exc_info=True,
-            )
-        finally:
-            institution.logo.close()
-
-    def _decorate_page(self, canvas: Any, doc: Any) -> None:
-        width, height = A4
-        bar_height = 1.0 * cm
-
-        canvas.saveState()
-
-        canvas.setFillColor(colors.HexColor("#123F9E"))
-        canvas.rect(0, height - bar_height, width, bar_height, fill=1, stroke=0)
-
-        canvas.setFillColor(colors.HexColor("#F5B400"))
-        canvas.rect(0, height - bar_height - 0.06 * cm, width, 0.06 * cm, fill=1, stroke=0)
-
-        canvas.setFillColor(colors.HexColor("#0F172A"))
-        canvas.rect(0, 0, width, 0.45 * cm, fill=1, stroke=0)
-
-        text_x = 1.7 * cm
-        logo = getattr(self, "_letterhead_logo", None)
-
-        if logo is not None:
-            logo_size = bar_height - 0.2 * cm
-            canvas.drawImage(
-                logo,
-                1.4 * cm,
-                height - bar_height + 0.1 * cm,
-                width=logo_size,
-                height=logo_size,
-                preserveAspectRatio=True,
-                mask="auto",
-            )
-            text_x = 1.4 * cm + logo_size + 0.3 * cm
-
-        institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
-
-        canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", 7)
-        canvas.drawString(
-            text_x,
-            height - 0.65 * cm,
-            f"{institution_name} - INFORME DE ORIGINALIDAD",
-        )
-
-        canvas.setFont("Helvetica", 6.5)
-        canvas.drawRightString(
-            width - 1.7 * cm,
-            0.17 * cm,
-            f"Pagina {doc.page}",
-        )
-
-        canvas.restoreState()

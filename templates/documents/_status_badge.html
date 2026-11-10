@@ -14,19 +14,25 @@ muestra sin un documento real.
 {% if st == "COMPLETED" %}
     {% if risk == "HIGH" %}
         <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700"
-              title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_probability_percent }}%.{% endif %} Revisión requerida.">
+              title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Revisión requerida.">
             <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
             Riesgo alto
         </span>
     {% elif risk == "MEDIUM" %}
         <span class="inline-flex items-center gap-1 rounded-full border border-[#f5b400]/40 px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff8e6;"
-              title="Análisis terminado con riesgo moderado.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_probability_percent }}%.{% endif %} Conviene revisar.">
+              title="Análisis terminado con riesgo moderado.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Conviene revisar.">
             <span class="h-1.5 w-1.5 rounded-full bg-[#f5b400]"></span>
             Riesgo medio
         </span>
+    {% elif document.report.overall_assessment.ai_review %}
+        <span class="inline-flex items-center gap-1 rounded-full border border-[#f5b400]/40 px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff8e6;"
+              title="Similitud baja, pero la IA estimada es {{ document.report.ai_estimated_percent|floatformat:1 }}%: posible IA, revisar con criterio docente. No bloquea el certificado.">
+            <span class="h-1.5 w-1.5 rounded-full bg-[#f5b400]"></span>
+            Revisar IA
+        </span>
     {% elif risk == "LOW" or document.report %}
         <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
-              title="Análisis terminado sin observaciones relevantes.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_probability_percent }}%.{% endif %}">
+              title="Análisis terminado sin observaciones relevantes.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %}">
             <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
             Riesgo bajo
         </span>

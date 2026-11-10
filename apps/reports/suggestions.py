@@ -69,7 +69,7 @@ def build_improvement_suggestions(report: "AnalysisReport") -> list[dict]:
             }
         )
 
-    if report.ai_level == "alto":
+    if report.ai_assessment == 2:
         suggestions.append(
             {
                 "title": "Varía la extensión de tus oraciones",
@@ -101,7 +101,7 @@ def build_improvement_suggestions(report: "AnalysisReport") -> list[dict]:
             }
         )
 
-    if report.similarity_level == "bajo" and report.ai_level == "bajo":
+    if report.similarity_level == "bajo" and report.ai_assessment == 0:
         suggestions.append(
             {
                 "title": "Buen trabajo de redacción original",

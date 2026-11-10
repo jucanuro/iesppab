@@ -273,8 +273,13 @@
 
             <article class="rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_-14px_rgba(18,63,158,0.15)] transition hover:shadow-[0_14px_34px_-14px_rgba(18,63,158,0.22)]">
                 <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Riesgo</p>
+                {% with oa=report.overall_assessment %}
                 <p class="mt-3 text-[24px] font-bold leading-none text-slate-800">{{ report.get_risk_level_display }}</p>
-                <p class="mt-2 text-[12px] text-slate-500">Nivel de revisión</p>
+                <p class="mt-2 text-[12px] text-slate-500">Nivel de revisión (similitud)</p>
+                <p class="mt-3 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold {% if oa.key == 'high' %}bg-red-100 text-red-800{% elif oa.key == 'medium' %}bg-amber-100 text-amber-900{% else %}bg-emerald-100 text-emerald-800{% endif %}">Valoración global: {{ oa.label }}</p>
+                <p class="mt-1 text-[11px] leading-snug text-slate-600">Similitud: {{ oa.similarity_label }} · IA: {{ oa.ai_label }}</p>
+                <p class="mt-1 text-[10.5px] leading-snug text-slate-500">La IA es indicativa y no bloquea el certificado.</p>
+                {% endwith %}
             </article>
         </section>
 

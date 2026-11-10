@@ -1,0 +1,6 @@
+{# Botón/enlace. Parámetros: variant (primary|secondary|danger|ghost), label, href (opcional), type, size (sm|lg), icon (svg path d), extra #}
+{% if href %}<a href="{{ href }}"{% else %}<button type="{{ type|default:'button' }}"{% endif %}
+   class="btn btn-{{ variant|default:'primary' }}{% if size %} btn-{{ size }}{% endif %} {{ extra }}">
+    {% if icon %}<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="{{ icon }}" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif %}
+    {{ label }}
+{% if href %}</a>{% else %}</button>{% endif %}

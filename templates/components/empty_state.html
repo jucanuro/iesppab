@@ -1,0 +1,8 @@
+{# Estado vacío. Parámetros: title, text, icon (svg inner) #}
+<div class="mx-auto max-w-sm px-4 py-12 text-center">
+    <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-50 to-brand-100 text-brand-700 shadow-soft">
+        <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ icon|safe|default:'<path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M9 14h6"/>' }}</svg>
+    </div>
+    <h3 class="mt-4 text-[15px] font-bold text-slate-800">{{ title }}</h3>
+    <p class="mt-1.5 text-[13px] leading-5 text-slate-500">{{ text }}</p>
+</div>

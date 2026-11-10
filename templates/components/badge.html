@@ -1,0 +1,5 @@
+{# Badge con punto. Parámetros: tone (success|warning|danger|info|neutral), label, pulse (bool), title #}
+<span class="badge badge-{{ tone|default:'neutral' }}"{% if title %} title="{{ title }}"{% endif %}>
+    <span class="badge-dot {% if tone == 'success' %}bg-emerald-500{% elif tone == 'warning' %}bg-gold-500{% elif tone == 'danger' %}bg-red-500{% elif tone == 'info' %}bg-brand-500{% else %}bg-slate-400{% endif %}{% if pulse %} animate-pulse{% endif %}"></span>
+    {{ label }}
+</span>

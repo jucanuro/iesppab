@@ -1,0 +1,15 @@
+{# Medidor circular SVG animado. Parámetros: value (0-100, número), display (texto), label, tone (brand|success|warning|danger), size (px, def. 132) #}
+{% with v=value|stringformat:".2f" %}
+<div data-gauge class="relative inline-flex items-center justify-center" style="--v:{{ v }};width:{{ size|default:132 }}px;height:{{ size|default:132 }}px"
+     role="img" aria-label="{{ label }}: {{ display }}">
+    <svg viewBox="0 0 120 120" class="h-full w-full -rotate-90" aria-hidden="true">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#e8eefc" stroke-width="10"/>
+        <circle class="gauge-arc" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" pathLength="100"
+                stroke="{% if tone == 'danger' %}#dc2626{% elif tone == 'warning' %}#f5b400{% elif tone == 'success' %}#10b981{% else %}#236bfd{% endif %}"/>
+    </svg>
+    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span class="text-[26px] font-extrabold leading-none tracking-tight text-slate-900">{{ display }}</span>
+        <span class="mt-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-500">{{ label }}</span>
+    </div>
+</div>
+{% endwith %}

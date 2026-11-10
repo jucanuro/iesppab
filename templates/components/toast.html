@@ -1,0 +1,29 @@
+{# Contenedor de toasts (Alpine). Uso en JS: window.toast("Mensaje", "success|error|warning|info"). Parámetro opcional: messages (Django). #}
+<div x-data="toaster()" x-init="init()" @toast.window="push($event.detail.message, $event.detail.type)"
+     class="pointer-events-none fixed inset-x-0 top-[76px] z-[60] flex flex-col items-end gap-2 px-4 sm:right-4 sm:left-auto sm:w-[380px]" aria-live="polite">
+    <template x-for="t in items" :key="t.id">
+        <div role="alert" class="anim-toast pointer-events-auto flex w-full items-start gap-3 rounded-xl border bg-white px-4 py-3 text-[13px] font-medium shadow-lift"
+             :class="{'border-emerald-200 text-emerald-900': t.type==='success','border-red-200 text-red-900': t.type==='error','border-gold-500/50 text-gold-700': t.type==='warning','border-brand-500/30 text-brand-800': t.type==='info'}">
+            <span class="mt-1 h-2 w-2 shrink-0 rounded-full"
+                  :class="{'bg-emerald-500': t.type==='success','bg-red-500': t.type==='error','bg-gold-500': t.type==='warning','bg-brand-500': t.type==='info'}"></span>
+            <span class="min-w-0 flex-1 break-words leading-5" x-text="t.message"></span>
+            <button type="button" class="-mr-1 rounded p-0.5 opacity-60 transition hover:opacity-100" aria-label="Cerrar aviso" @click="close(t.id)">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+    </template>
+</div>
+<script>
+    function toaster() {
+        return {
+            items: [], n: 0,
+            init() { window.toast = (message, type) => window.dispatchEvent(new CustomEvent("toast", { detail: { message, type } })); },
+            push(message, type) {
+                const id = ++this.n; type = type || "info";
+                this.items.push({ id, message, type });
+                setTimeout(() => this.close(id), type === "error" ? 9000 : 6000);
+            },
+            close(id) { this.items = this.items.filter(i => i.id !== id); }
+        };
+    }
+</script>

@@ -1,0 +1,6 @@
+{# Avatar de iniciales. Parámetros: name, size (clase tamaño, p. ej. "h-9 w-9 text-[12px]"), tone (brand|gold|emerald|slate) #}
+{% with parts=name.split %}
+<span class="inline-flex shrink-0 select-none items-center justify-center rounded-full font-bold uppercase {{ size|default:'h-9 w-9 text-[12px]' }}
+    {% if tone == 'gold' %}bg-gold-100 text-gold-700{% elif tone == 'emerald' %}bg-emerald-100 text-emerald-800{% elif tone == 'slate' %}bg-slate-200 text-slate-700{% else %}bg-brand-100 text-brand-700{% endif %}"
+      aria-hidden="true">{{ parts.0|slice:":1" }}{% if parts|length > 1 %}{{ parts|last|slice:":1" }}{% endif %}</span>
+{% endwith %}

@@ -1,0 +1,6 @@
+{# Menú de acciones (⋯). Abrir con este include, poner .menu-item dentro y cerrar con action_menu_end.html. Parámetro: label (aria) #}
+<div class="relative" x-data="{ open: false }" @keydown.escape.window="open = false" @click.outside="open = false">
+    <button type="button" class="icon-btn" aria-haspopup="menu" :aria-expanded="open" aria-label="{{ label|default:'Más acciones' }}" @click="open = !open">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+    </button>
+    <div x-show="open" x-cloak x-transition.origin.top.right.duration.150ms role="menu" class="menu-panel">

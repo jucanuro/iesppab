@@ -1,0 +1,54 @@
+{% comment %}Menú ⋯ de acciones de una fila de la bandeja. Espera `document`.{% endcomment %}
+{% include "components/action_menu_start.html" with label="Más acciones de "|add:document.title %}
+    {% if document.status == "UPLOADED" %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="El reporte estará disponible tras analizar el documento">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5s7.4 2.3 9.5 6.5c-2.1 4.2-5.4 6.5-9.5 6.5S4.6 16.2 2.5 12Z"/><path d="M4 4l16 16"/></svg>
+            Ver reporte
+        </span>
+    {% else %}
+        <a href="{% url 'reports:detail' document.id %}" role="menuitem" class="menu-item">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5s7.4 2.3 9.5 6.5c-2.1 4.2-5.4 6.5-9.5 6.5S4.6 16.2 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+            Ver reporte
+        </a>
+    {% endif %}
+
+    {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true">
+            <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Analizando originalidad…
+        </span>
+    {% else %}
+        <form method="post" action="{% url 'analysis:analyze' document.id %}" data-submit-spinner>
+            {% csrf_token %}
+            <button type="submit" role="menuitem" class="menu-item" data-loading-label="Enviando…">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    {% if document.status == "COMPLETED" or document.status == "FAILED" %}<path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/>{% else %}<path d="M14 3v4a1 1 0 0 0 1 1h4M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4"/><circle cx="14" cy="17.5" r="2.5"/><path d="m18.5 19.5 2.5 2.5"/>{% endif %}
+                </svg>
+                {% if document.status == "COMPLETED" or document.status == "FAILED" %}Reanalizar originalidad{% else %}Analizar originalidad{% endif %}
+            </button>
+        </form>
+    {% endif %}
+
+    <div class="my-1 border-t border-slate-100"></div>
+
+    {% if document.report.certificate.is_active %}
+        <a href="{% url 'certificates:download' document.report.certificate.id %}" role="menuitem" class="menu-item">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+            Descargar certificado
+        </a>
+    {% elif document.status == "COMPLETED" and document.report and document.report.risk_level != "HIGH" and document.report.risk_level != "CRITICAL" %}
+        <form method="post" action="{% url 'certificates:generate' document.id %}" data-submit-spinner>
+            {% csrf_token %}
+            <button type="submit" role="menuitem" class="menu-item" data-loading-label="Generando…">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                Generar certificado
+            </button>
+        </form>
+    {% else %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true"
+              title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' or document.status == 'COMPLETED' and document.report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un documento con riesgo alto o crítico. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+            Certificado no disponible
+        </span>
+    {% endif %}
+{% include "components/action_menu_end.html" %}

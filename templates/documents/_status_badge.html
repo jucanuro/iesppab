@@ -13,58 +13,44 @@ muestra sin un documento real.
 {% firstof risk_level document.report.risk_level as risk %}
 {% if st == "COMPLETED" %}
     {% if risk == "HIGH" %}
-        <span class="inline-flex items-center gap-1 rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700"
+        <span class="badge badge-danger"
               title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Revisión requerida.">
-            <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-            Riesgo alto
+            <span class="badge-dot bg-red-500"></span>Riesgo alto
         </span>
     {% elif risk == "MEDIUM" %}
-        <span class="inline-flex items-center gap-1 rounded-full border border-[#f5b400]/40 px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff8e6;"
+        <span class="badge badge-warning"
               title="Análisis terminado con riesgo moderado.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Conviene revisar.">
-            <span class="h-1.5 w-1.5 rounded-full bg-[#f5b400]"></span>
-            Riesgo medio
+            <span class="badge-dot bg-gold-500"></span>Riesgo medio
         </span>
     {% elif document.report.overall_assessment.ai_review %}
-        <span class="inline-flex items-center gap-1 rounded-full border border-[#f5b400]/40 px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff8e6;"
+        <span class="badge badge-warning"
               title="Similitud baja, pero la IA estimada es {{ document.report.ai_estimated_percent|floatformat:1 }}%: posible IA, revisar con criterio docente. No bloquea el certificado.">
-            <span class="h-1.5 w-1.5 rounded-full bg-[#f5b400]"></span>
-            Revisar IA
+            <span class="badge-dot bg-gold-500"></span>Revisar IA
         </span>
     {% elif risk == "LOW" or document.report %}
-        <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
+        <span class="badge badge-success"
               title="Análisis terminado sin observaciones relevantes.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %}">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            Riesgo bajo
+            <span class="badge-dot bg-emerald-500"></span>Riesgo bajo
         </span>
     {% else %}
-        <span class="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-700"
-              title="Análisis terminado.">
-            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            Analizado
+        <span class="badge badge-success" title="Análisis terminado.">
+            <span class="badge-dot bg-emerald-500"></span>Analizado
         </span>
     {% endif %}
 {% elif st == "FAILED" %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-red-300 px-2 py-1 text-[11px] font-bold text-red-700"
-          title="El análisis tuvo un error. Pulsa «Reanalizar» para intentarlo de nuevo.">
-        <span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>
-        Falló
+    <span class="badge badge-danger" title="El análisis tuvo un error. Pulsa «Reanalizar» para intentarlo de nuevo.">
+        <span class="badge-dot bg-red-500"></span>Falló
     </span>
 {% elif st == "PROCESSING" %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-[#236bfd]/30 px-2 py-1 text-[11px] font-bold text-[#123f9e]" style="background-color:#eef3ff;"
-          title="Se está extrayendo el texto y comparando fuentes. La página del reporte se actualiza sola.">
-        <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-[#236bfd]"></span>
-        Analizando…
+    <span class="badge badge-info" title="Se está extrayendo el texto y comparando fuentes. La página del reporte se actualiza sola.">
+        <span class="badge-dot animate-pulse bg-brand-500"></span>Analizando…
     </span>
 {% elif st == "QUEUED" %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-600"
-          title="El análisis está encolado y empezará en breve.">
-        <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
-        En cola
+    <span class="badge badge-neutral" title="El análisis está encolado y empezará en breve.">
+        <span class="badge-dot bg-slate-400"></span>En cola
     </span>
 {% else %}
-    <span class="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-transparent px-2 py-1 text-[11px] font-semibold text-slate-500"
-          title="El documento se subió pero aún no se ha analizado. Pulsa «Analizar originalidad».">
-        <span class="h-1.5 w-1.5 rounded-full bg-slate-300"></span>
-        Sin analizar
+    <span class="badge badge-neutral bg-transparent font-medium text-slate-500" title="El documento se subió pero aún no se ha analizado. Pulsa «Analizar originalidad».">
+        <span class="badge-dot bg-slate-300"></span>Sin analizar
     </span>
 {% endif %}

@@ -2,372 +2,155 @@
 
 {% block title %}Documentos | IESPP Alfonso Barrantes Lingán{% endblock %}
 
+{% block extra_head %}
+<style>
+    #dropZone[data-state="drag"] { border-color: #236bfd; background: #eef3ff; }
+    #dropZone[data-state="ready"] { border-color: #6ee7b7; background: #ecfdf5; }
+    #dropZone[data-state="ready"] #dropIcon { background: #d1fae5; color: #047857; }
+    #nuevo-documento > summary::-webkit-details-marker { display: none; }
+    #nuevo-documento[open] .chev { transform: rotate(180deg); }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<section class="min-h-screen bg-white text-slate-800">
+{% include "components/page_header.html" with eyebrow="Plataforma de originalidad" title="Bandeja de documentos" subtitle="Revisa tus documentos académicos, envía nuevos trabajos y analiza originalidad e IA." %}
 
-    <main class="px-4 py-5 sm:px-6">
+<!-- KPIs -->
+<section class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Resumen">
+    {% include "components/kpi.html" with label="Total de documentos" value=documents_total tone="brand" icon='<path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/>' %}
+    {% include "components/kpi.html" with label="Formatos aceptados" value="PDF / DOCX" hint="Hasta 25 MB por archivo" tone="gold" icon='<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16M8 13h4"/>' %}
+    {% include "components/kpi.html" with label="Privacidad" value="Almacenamiento privado" tone="emerald" icon='<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/>' %}
+</section>
 
-        <!-- CABECERA -->
-        <section class="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-            <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h2 class="text-[20px] font-semibold text-[#123f9e]">
-                            Bandeja de documentos
-                        </h2>
+<!-- SUBIR DOCUMENTO (panel colapsable) -->
+<details id="nuevo-documento" class="card mb-6 overflow-hidden"{% if not has_any_documents %} open{% endif %}>
+    <summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-5 py-4 transition hover:bg-brand-50/50 sm:px-6">
+        <span class="flex items-center gap-3">
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-brand-500 text-white shadow-glow">
+                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+            </span>
+            <span>
+                <span class="block text-[16px] font-bold text-brand-900">Subir documento</span>
+                <span class="block text-[12.5px] text-slate-500">Envía un nuevo trabajo para análisis de originalidad, similitud e IA.</span>
+            </span>
+        </span>
+        <span class="flex items-center gap-2 text-[12px] font-semibold text-brand-700">
+            <span class="badge badge-neutral">25 MB</span><span class="badge badge-info">PDF/DOCX</span><span class="badge badge-success">Privado</span>
+            <svg class="chev h-5 w-5 text-slate-400 transition" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+    </summary>
 
-                        <p class="mt-1 text-[12.5px] leading-5 text-slate-600">
-                            Revisa tus documentos académicos, envía nuevos trabajos y analiza originalidad e IA.
-                        </p>
-                    </div>
+    <form method="post" enctype="multipart/form-data" id="documentUploadForm" class="border-t border-slate-100 px-5 py-5 sm:px-6">
+        {% csrf_token %}
 
+        <div class="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div class="min-w-0 sm:col-span-2">
+                    <label for="title" class="field-label">Título</label>
+                    <input id="title" name="title" type="text" required placeholder="Ej. Proyecto" class="field h-10 text-[13px]">
                 </div>
-            </div>
 
-            <!-- Resumen -->
-            <div class="grid grid-cols-1 gap-3 px-5 py-4 sm:grid-cols-3">
-                <article class="relative overflow-hidden rounded-xl border border-slate-200 bg-white py-3.5 pl-5 pr-4 shadow-[0_8px_22px_-14px_rgba(18,63,158,0.45)] transition hover:shadow-[0_12px_28px_-12px_rgba(18,63,158,0.4)]">
-                    <span class="absolute inset-y-0 left-0 w-1 bg-[#236bfd]"></span>
-                    <div class="flex items-center gap-3">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#eef3ff] text-[#123f9e]">
-                            <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-                                <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                            </svg>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-[#123f9e]">
-                                Total de documentos
-                            </p>
-                            <p class="mt-0.5 text-[20px] font-black leading-none text-[#123f9e]">
-                                {{ recent_documents|length }}
-                            </p>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="relative overflow-hidden rounded-xl border border-slate-200 bg-white py-3.5 pl-5 pr-4 shadow-[0_8px_22px_-14px_rgba(18,63,158,0.45)] transition hover:shadow-[0_12px_28px_-12px_rgba(18,63,158,0.4)]">
-                    <span class="absolute inset-y-0 left-0 w-1 bg-[#f5b400]"></span>
-                    <div class="flex items-center gap-3">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#8a6100]" style="background-color:#fff8e6;">
-                            <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.7"/>
-                                <path d="M4 9.5H20" stroke="currentColor" stroke-width="1.7"/>
-                                <path d="M8 13H12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                            </svg>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-[#8a6100]">
-                                Formatos aceptados
-                            </p>
-                            <p class="mt-0.5 text-[13px] font-black leading-tight text-[#8a6100]">
-                                PDF / DOCX · 25 MB
-                            </p>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="relative overflow-hidden rounded-xl border border-slate-200 bg-white py-3.5 pl-5 pr-4 shadow-[0_8px_22px_-14px_rgba(18,63,158,0.45)] transition hover:shadow-[0_12px_28px_-12px_rgba(18,63,158,0.4)]">
-                    <span class="absolute inset-y-0 left-0 w-1 bg-emerald-500"></span>
-                    <div class="flex items-center gap-3">
-                        <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-                            <svg class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.7"/>
-                                <path d="M8 11V7.5C8 5.29086 9.79086 3.5 12 3.5C14.2091 3.5 16 5.29086 16 7.5V11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-                            </svg>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-600">
-                                Privacidad
-                            </p>
-                            <p class="mt-0.5 text-[13px] font-black leading-tight text-emerald-700">
-                                Almacenamiento privado
-                            </p>
-                        </div>
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <!-- SUBIR DOCUMENTO -->
-        <section id="nuevo-documento"
-                 class="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-
-            <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-
-                    <div>
-                        <h3 class="text-[18px] font-semibold text-[#123f9e]">
-                            Subir documento
-                        </h3>
-
-                        <p class="mt-1 text-[12.5px] leading-5 text-slate-500">
-                            Envía un nuevo trabajo para análisis de originalidad, similitud e IA.
-                        </p>
-                    </div>
-
-                    <div class="grid grid-cols-3 gap-1.5 sm:min-w-[300px]">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-center">
-                            <p class="text-[9px] font-bold uppercase tracking-widest text-slate-500">
-                                Límite
-                            </p>
-                            <p class="text-[11px] font-black text-slate-700">
-                                25 MB
-                            </p>
-                        </div>
-
-                        <div class="rounded-lg border border-[#236bfd]/25 px-2.5 py-1.5 text-center" style="background-color:#eef3ff;">
-                            <p class="text-[9px] font-bold uppercase tracking-widest text-[#123f9e]">
-                                Formato
-                            </p>
-                            <p class="text-[11px] font-black text-[#123f9e]">
-                                PDF/DOCX
-                            </p>
-                        </div>
-
-                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-center">
-                            <p class="text-[9px] font-bold uppercase tracking-widest text-emerald-600">
-                                Estado
-                            </p>
-                            <p class="text-[11px] font-black text-emerald-700">
-                                Privado
-                            </p>
-                        </div>
-                    </div>
+                <div class="min-w-0">
+                    <label for="kind" class="field-label">Tipo</label>
+                    <select id="kind" name="kind" required class="field h-10 text-[13px]">
+                        <option value="">Seleccionar</option>
+                        {% for value, label in document_kinds %}
+                            <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
-            </div>
 
-            <form method="post"
-                  enctype="multipart/form-data"
-                  id="documentUploadForm"
-                  class="px-5 py-5 sm:px-6">
-                {% csrf_token %}
-
-                <div class="grid gap-x-4 gap-y-5 xl:items-end
-                    {% if not request.user.is_student_role %}
-                        xl:grid-cols-[1.15fr_0.70fr_1.05fr_0.95fr_0.95fr_0.55fr_1.35fr_140px]
-                    {% else %}
-                        xl:grid-cols-[1.25fr_0.75fr_0.95fr_1fr_0.55fr_1.45fr_140px]
-                    {% endif %}">
-
-                    <!-- Título -->
+                {% if not request.user.is_student_role %}
                     <div class="min-w-0">
-                        <label for="title" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Título
-                        </label>
-
-                        <input id="title"
-                               name="title"
-                               type="text"
-                               required
-                               placeholder="Ej. Proyecto"
-                               class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                    </div>
-
-                    <!-- Tipo -->
-                    <div class="min-w-0">
-                        <label for="kind" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Tipo
-                        </label>
-
-                        <select id="kind"
-                                name="kind"
-                                required
-                                class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                            <option value="">
-                                Seleccionar
-                            </option>
-
-                            {% for value, label in document_kinds %}
-                                <option value="{{ value }}">
-                                    {{ label }}
-                                </option>
-                            {% endfor %}
+                        <label for="owner_id" class="field-label">Alumno</label>
+                        <select id="owner_id" name="owner_id" required class="field h-10 text-[13px]">
+                            <option value="">Seleccionar alumno</option>
+                            <optgroup label="Mi cuenta">
+                                {% for student in students %}{% if student.id == request.user.id %}
+                                    <option value="{{ student.id }}" class="font-bold">Yo mismo · {{ student.get_full_name|default:student.username }}</option>
+                                {% endif %}{% endfor %}
+                            </optgroup>
+                            <optgroup label="Alumnos">
+                                {% for student in students %}{% if student.id != request.user.id %}
+                                    <option value="{{ student.id }}">{{ student.get_full_name|default:student.username }} - {{ student.email }}</option>
+                                {% endif %}{% endfor %}
+                            </optgroup>
                         </select>
                     </div>
+                {% endif %}
 
-                    <!-- Alumno propietario -->
-                    {% if not request.user.is_student_role %}
-                        <div class="min-w-0">
-                            <label for="owner_id" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                                Alumno
-                            </label>
-
-                            <select id="owner_id"
-                                    name="owner_id"
-                                    required
-                                    class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                                <option value="">
-                                    Seleccionar alumno
-                                </option>
-
-                                <optgroup label="Mi cuenta">
-                                    {% for student in students %}
-                                        {% if student.id == request.user.id %}
-                                            <option value="{{ student.id }}" class="font-bold">
-                                                Yo mismo · {{ student.get_full_name|default:student.username }}
-                                            </option>
-                                        {% endif %}
-                                    {% endfor %}
-                                </optgroup>
-
-                                <optgroup label="Alumnos">
-                                    {% for student in students %}
-                                        {% if student.id != request.user.id %}
-                                            <option value="{{ student.id }}">
-                                                {{ student.get_full_name|default:student.username }} - {{ student.email }}
-                                            </option>
-                                        {% endif %}
-                                    {% endfor %}
-                                </optgroup>
-                            </select>
-                        </div>
-                    {% endif %}
-
-                    <!-- Asesor -->
-                    <div class="min-w-0">
-                        <label for="advisor_id" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Asesor
-                        </label>
-
-                        <select id="advisor_id"
-                                name="advisor_id"
-                                class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                            <option value="">
-                                Sin asesor asignado
-                            </option>
-
-                            {% for advisor in advisors %}
-                                <option value="{{ advisor.id }}">
-                                    {{ advisor.get_full_name|default:advisor.username }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                    <!-- Curso -->
-                    <div class="min-w-0">
-                        <label for="course_name" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Curso
-                        </label>
-
-                        <input id="course_name"
-                               name="course_name"
-                               type="text"
-                               placeholder="Ej. Investigación"
-                               class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                    </div>
-
-                    <!-- Periodo -->
-                    <div class="min-w-0">
-                        <label for="academic_period" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Periodo
-                        </label>
-
-                        <input id="academic_period"
-                               name="academic_period"
-                               type="text"
-                               placeholder="2026-I"
-                               class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-semibold text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                    </div>
-
-                    <!-- Archivo -->
-                    <div class="min-w-0">
-                        <label for="document_file" class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                            Archivo
-                        </label>
-
-                        <label for="document_file"
-                               id="dropZone"
-                               class="group flex h-10 cursor-pointer items-center justify-between gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 transition hover:border-[#236bfd] hover:bg-[#eef3ff]">
-
-                            <div class="flex min-w-0 items-center gap-2">
-                                <div id="dropIcon"
-                                     class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] text-[#123f9e] transition group-hover:scale-105">
-                                    <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                        <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                                        <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                                    </svg>
-                                </div>
-
-                                <div class="min-w-0">
-                                    <p id="dropTitle" class="truncate text-[11px] font-bold text-slate-700">
-                                        Seleccionar archivo
-                                    </p>
-
-                                    <p id="fileName" class="truncate text-[10px] font-semibold text-slate-500">
-                                        PDF/DOCX · 25 MB
-                                    </p>
-                                </div>
-                            </div>
-
-                            <span class="hidden rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-[9px] font-bold uppercase tracking-widest text-slate-500 sm:inline-flex">
-                                Buscar
-                            </span>
-
-                            <input id="document_file"
-                                   name="document_file"
-                                   type="file"
-                                   accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                   required
-                                   class="sr-only">
-                        </label>
-                    </div>
-
-                    <!-- Botón subir -->
-                    <div>
-                        <label class="mb-1.5 hidden text-[10px] font-bold text-transparent xl:block">
-                            Acción
-                        </label>
-
-                        <button type="submit"
-                                id="submitButton"
-                                class="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-[#123f9e] to-[#236bfd] px-3 text-[12px] font-bold text-white shadow-sm transition hover:from-[#0f3486] hover:to-[#1c5be0] active:scale-[0.99]">
-                            <span id="submitText" class="flex items-center justify-center gap-1.5">
-                                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M12 16V4M12 4L7 9M12 4L17 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M5 16V18C5 19.1046 5.89543 20 7 20H17C18.1046 20 19 19.1046 19 18V16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                                </svg>
-                                Registrar
-                            </span>
-                        </button>
-                    </div>
+                <div class="min-w-0">
+                    <label for="advisor_id" class="field-label">Asesor</label>
+                    <select id="advisor_id" name="advisor_id" class="field h-10 text-[13px]">
+                        <option value="">Sin asesor asignado</option>
+                        {% for advisor in advisors %}
+                            <option value="{{ advisor.id }}">{{ advisor.get_full_name|default:advisor.username }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
-                <div class="mt-4 grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(260px,360px)]">
-                    <div id="uploadAlert"
-                         class="hidden rounded-lg border px-3 py-2 text-[12px] font-semibold leading-4"></div>
-
-                    <div class="rounded-lg border border-[#f5b400]/40 px-3 py-2" style="background-color:#fff8e6;">
-                        <p class="truncate text-[12px] font-semibold text-[#8a6100]">
-                            El documento será almacenado de forma privada para análisis académico.
-                        </p>
-                    </div>
+                <div class="min-w-0">
+                    <label for="course_name" class="field-label">Curso</label>
+                    <input id="course_name" name="course_name" type="text" placeholder="Ej. Investigación" class="field h-10 text-[13px]">
                 </div>
-            </form>
-        </section>
 
-        <!-- BANDEJA DOCUMENTAL -->
-        <section class="mb-5 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
+                <div class="min-w-0">
+                    <label for="academic_period" class="field-label">Periodo</label>
+                    <input id="academic_period" name="academic_period" type="text" placeholder="2026-I" class="field h-10 text-[13px]">
+                </div>
+            </div>
 
-            <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-4 py-3">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">
-                        Trabajos académicos registrados
-                    </h3>
+            <div class="flex min-w-0 flex-col">
+                <span class="field-label">Archivo</span>
+                <label for="document_file" id="dropZone" data-state="idle"
+                       class="group flex min-h-[170px] flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl2 border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50">
+                    <span id="dropIcon" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 transition group-hover:scale-105">
+                        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+                    </span>
+                    <span id="dropTitle" class="max-w-full truncate text-[14px] font-semibold text-slate-800">Seleccionar archivo</span>
+                    <span class="text-[12px] text-slate-500">o arrástralo y suéltalo aquí</span>
+                    <span id="fileName" class="max-w-full truncate text-[11.5px] font-semibold text-slate-500">PDF/DOCX · 25 MB</span>
+                    <input id="document_file" name="document_file" type="file"
+                           accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                           required class="sr-only">
+                </label>
+            </div>
+        </div>
 
-                    {% if has_any_documents %}
-                        <details class="group w-full text-[12px] sm:w-auto">
-                            <summary class="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-600 transition hover:border-[#236bfd]/40 hover:text-[#123f9e] sm:w-auto [&::-webkit-details-marker]:hidden">
+        <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div id="uploadAlert" role="status" aria-live="polite" class="hidden rounded-xl border px-3.5 py-2.5 text-[12.5px] font-semibold leading-4 sm:flex-1"></div>
+            <p class="flex items-center gap-2 text-[12px] font-medium text-gold-700 sm:ml-auto">
+                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>
+                El documento será almacenado de forma privada para análisis académico.
+            </p>
+            <button type="submit" id="submitButton" class="btn btn-primary sm:min-w-[150px]">
+                <span id="submitText" class="flex items-center justify-center gap-2">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+                    Registrar
+                </span>
+            </button>
+        </div>
+        <div id="uploadProgress" class="mt-3 hidden h-1 overflow-hidden rounded-full bg-brand-100" aria-hidden="true">
+            <div class="h-full w-1/3 animate-pulse rounded-full bg-brand-500"></div>
+        </div>
+    </form>
+</details>
+
+<!-- BANDEJA DOCUMENTAL -->
+<section class="mb-6" aria-label="Trabajos académicos registrados">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-[15px] font-bold tracking-tight text-slate-800">Trabajos académicos registrados</h2>
+        {% if has_any_documents %}
+        <details class="group w-full text-[12px] sm:w-auto">
+                            <summary class="btn btn-secondary btn-sm w-full cursor-pointer list-none sm:w-auto [&::-webkit-details-marker]:hidden">
                                 <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                                 ¿Qué significan los estados?
                             </summary>
 
-                            <div class="mt-3 space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-600">
+                            <div class="mt-3 space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12.5px] text-slate-600">
                                 <div class="flex items-start gap-2.5">
                                     <span class="shrink-0">{% include "documents/_status_badge.html" with status="UPLOADED" only %}</span>
                                     <p>Subido, pendiente de análisis. Pulsa «Analizar originalidad» en la fila.</p>
@@ -404,414 +187,130 @@
                                 </p>
                             </div>
                         </details>
-                    {% endif %}
-                </div>
+        {% endif %}
+    </div>
 
-                {% if has_any_documents %}
-                    <form method="get"
-                          class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[12px]">
-                        <input type="search"
-                               name="q"
-                               value="{{ active_filters.q }}"
-                               placeholder="Buscar por título o alumno"
-                               class="h-9 min-w-[180px] flex-1 rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-
-                        <select name="estado"
-                                onchange="this.form.submit()"
-                                class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                            <option value="">Todos los estados</option>
-                            {% for value, label in status_choices %}
-                                <option value="{{ value }}" {% if active_filters.estado == value %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-
-                        <select name="tipo"
-                                onchange="this.form.submit()"
-                                class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                            <option value="">Todos los tipos</option>
-                            {% for value, label in kind_choices %}
-                                <option value="{{ value }}" {% if active_filters.tipo == value %}selected{% endif %}>{{ label }}</option>
-                            {% endfor %}
-                        </select>
-
-                        <label class="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
-                            Por página
-                            <select name="por_pagina"
-                                    onchange="this.form.submit()"
-                                    class="h-9 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none transition focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                                {% for choice in page_size_choices %}
-                                    <option value="{{ choice }}" {% if page_size == choice %}selected{% endif %}>{{ choice }}</option>
-                                {% endfor %}
-                            </select>
-                        </label>
-
-                        <button type="submit"
-                                class="inline-flex h-9 items-center justify-center rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-3 text-[12px] font-bold text-[#123f9e] transition hover:bg-[#e3ecff]">
-                            Filtrar
-                        </button>
-
-                        {% if has_active_filters %}
-                            <a href="{% url 'documents:upload' %}"
-                               class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 text-[12px] font-bold text-slate-600 transition hover:bg-slate-50">
-                                Limpiar
-                            </a>
-                        {% endif %}
-
-                        <span class="ml-auto text-[11px] font-semibold text-slate-500">
-                            {{ documents_total }} resultado{{ documents_total|pluralize }}
-                        </span>
-                    </form>
-                {% endif %}
+    {% if has_any_documents %}
+        <form method="get" class="card mb-4 flex flex-wrap items-center gap-2 p-3 text-[12px]">
+            <div class="relative min-w-[200px] flex-1">
+                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                <label for="filtro-q" class="sr-only">Buscar por título o alumno</label>
+                <input id="filtro-q" type="search" name="q" value="{{ active_filters.q }}" placeholder="Buscar por título o alumno" class="field h-9 pl-9 text-[12.5px]">
             </div>
 
-            <!-- Tabla desktop -->
-            <div class="hidden lg:block">
-                <table class="w-full table-fixed border-collapse">
-                    <thead>
-                        <tr class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff]">
-                            <th class="w-[30%] px-4 py-2 text-left text-[11px] font-semibold text-slate-500">
-                                Trabajo
-                            </th>
-
-                            <th class="w-[22%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
-                                Alumno
-                            </th>
-
-                            <th class="w-[12%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
-                                Tipo
-                            </th>
-
-                            <th class="w-[12%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
-                                Estado
-                            </th>
-
-                            <th class="w-[10%] px-3 py-2 text-left text-[11px] font-semibold text-slate-500">
-                                Fecha
-                            </th>
-
-                            <th class="w-[14%] px-4 py-2 text-right text-[11px] font-semibold text-slate-500">
-                                Acciones
-                            </th>
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                        {% for document in recent_documents %}
-                            <tr class="border-b border-slate-100 text-[12px] transition hover:bg-[#f4f8ff]">
-                                <td class="px-4 py-2.5">
-                                    <div class="flex min-w-0 items-center gap-2.5">
-                                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] text-[#123f9e]">
-                                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                            </svg>
-                                        </div>
-
-                                        <div class="min-w-0">
-                                            <p class="truncate font-semibold text-[#123f9e]">
-                                                {{ document.title }}
-                                            </p>
-
-                                            <p class="mt-0.5 truncate text-[11px] text-slate-500">
-                                                {{ document.original_filename }}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </td>
-
-                                <td class="px-3 py-2.5">
-                                    <p class="truncate font-semibold text-slate-700">
-                                        {{ document.owner.get_full_name|default:document.owner.username }}
-                                    </p>
-
-                                    <p class="mt-0.5 truncate text-[11px] text-slate-500">
-                                        {{ document.owner.email }}
-                                    </p>
-                                </td>
-
-                                <td class="px-3 py-2.5">
-                                    <span class="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">
-                                        <span class="truncate">
-                                            {{ document.get_kind_display }}
-                                        </span>
-                                    </span>
-                                </td>
-
-                                <td class="px-3 py-2.5">
-                                    {% include "documents/_status_badge.html" %}
-                                </td>
-
-                                <td class="px-3 py-2.5">
-                                    <p class="truncate font-semibold text-slate-700">
-                                        {{ document.created_at|date:"d/m/Y" }}
-                                    </p>
-
-                                    <p class="mt-0.5 truncate text-[11px] text-slate-500">
-                                        {{ document.created_at|date:"H:i" }}
-                                    </p>
-                                </td>
-
-                                <td class="px-4 py-2.5">
-                                    <div class="flex justify-end gap-1.5">
-                                        {% if document.status == "UPLOADED" %}
-                                            <span aria-label="El reporte aún no está disponible"
-                                                  title="El reporte estará disponible tras analizar el documento"
-                                                  class="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-300">
-                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                    <path d="M4 4L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                                </svg>
-                                            </span>
-                                        {% else %}
-                                            <a href="{% url 'reports:detail' document.id %}"
-                                               title="Ver reporte"
-                                               aria-label="Ver reporte"
-                                               class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
-                                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                                    <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="2"/>
-                                                </svg>
-                                            </a>
-                                        {% endif %}
-
-                                        {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
-                                            <span title="Analizando originalidad…"
-                                                  aria-label="Analizando originalidad"
-                                                  class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400">
-                                                <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                    <path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                                                </svg>
-                                            </span>
-                                        {% else %}
-                                            <form method="post"
-                                                  action="{% url 'analysis:analyze' document.id %}"
-                                                  class="inline-flex"
-                                                  data-submit-spinner>
-                                                {% csrf_token %}
-                                                {% if document.status == "COMPLETED" or document.status == "FAILED" %}
-                                                    <button type="submit"
-                                                            title="Reanalizar originalidad"
-                                                            aria-label="Reanalizar originalidad"
-                                                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
-                                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                            <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                                                            <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                                                        </svg>
-                                                    </button>
-                                                {% else %}
-                                                    <button type="submit"
-                                                            title="Analizar originalidad"
-                                                            aria-label="Analizar originalidad"
-                                                            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 transition hover:border-[#236bfd]/50 hover:bg-[#eef3ff] hover:text-[#123f9e]">
-                                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                            <path d="M14 3v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                                            <path d="M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                                            <path d="M16.5 17.5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" stroke="currentColor" stroke-width="1.8"/>
-                                                            <path d="M18.5 19.5 21 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                                        </svg>
-                                                    </button>
-                                                {% endif %}
-                                            </form>
-                                        {% endif %}
-
-                                        {% include "certificates/_action_button.html" %}
-                                    </div>
-                                </td>
-                            </tr>
-                        {% empty %}
-                            <tr>
-                                <td colspan="6" class="px-4 py-12 text-center">
-                                    <div class="mx-auto max-w-sm">
-                                        <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#eef3ff] to-[#dce8ff] text-[#123f9e] shadow-[0_10px_24px_-12px_rgba(18,63,158,0.35)]">
-                                            <svg class="h-8 w-8" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                                                <path d="M9 13.5H13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                                                <circle cx="16.5" cy="16" r="4.25" fill="white" stroke="currentColor" stroke-width="1.4"/>
-                                                <path d="M16.5 14.3V16L17.7 16.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-                                            </svg>
-                                        </div>
-
-                                        {% if has_active_filters %}
-                                            <h4 class="mt-4 text-[15px] font-bold text-slate-800">
-                                                Sin resultados
-                                            </h4>
-
-                                            <p class="mt-1.5 text-xs leading-5 text-slate-500">
-                                                Ningún documento coincide con el filtro.
-                                                <a href="{% url 'documents:upload' %}" class="font-semibold text-[#236bfd] hover:underline">Limpiar filtros</a>.
-                                            </p>
-                                        {% else %}
-                                            <h4 class="mt-4 text-[15px] font-bold text-slate-800">
-                                                Aún no hay documentos enviados
-                                            </h4>
-
-                                            <p class="mt-1.5 text-xs leading-5 text-slate-500">
-                                                Usa el formulario de arriba para registrar el primer trabajo académico.
-                                            </p>
-                                        {% endif %}
-                                    </div>
-                                </td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-
-            <!-- Mobile -->
-            <div class="space-y-2 p-3 lg:hidden">
-                {% for document in recent_documents %}
-                    <article class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                        <div class="flex items-start gap-2.5">
-                            <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] text-[#123f9e]">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                    <path d="M14 3V8H19" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                                    <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                </svg>
-                            </div>
-
-                            <div class="min-w-0 flex-1">
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-[#123f9e]">
-                                            {{ document.title }}
-                                        </p>
-
-                                        <p class="mt-0.5 truncate text-[11px] text-slate-500">
-                                            {{ document.owner.get_full_name|default:document.owner.username }}
-                                        </p>
-                                    </div>
-
-                                    <span class="shrink-0">
-                                        {% include "documents/_status_badge.html" %}
-                                    </span>
-                                </div>
-
-                                <div class="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-                                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                                        <p class="font-bold uppercase tracking-widest text-slate-500">
-                                            Tipo
-                                        </p>
-                                        <p class="mt-0.5 truncate font-semibold text-slate-700">
-                                            {{ document.get_kind_display }}
-                                        </p>
-                                    </div>
-
-                                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
-                                        <p class="font-bold uppercase tracking-widest text-slate-500">
-                                            Fecha
-                                        </p>
-                                        <p class="mt-0.5 truncate font-semibold text-slate-700">
-                                            {{ document.created_at|date:"d/m/Y H:i" }}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="mt-2 flex gap-1.5">
-                                    {% if document.status == "UPLOADED" %}
-                                        <span class="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400"
-                                              title="El reporte estará disponible tras analizar el documento">
-                                            Ver
-                                        </span>
-                                    {% else %}
-                                        <a href="{% url 'reports:detail' document.id %}"
-                                           class="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
-                                            Ver
-                                        </a>
-                                    {% endif %}
-
-                                    {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
-                                        <span class="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] font-bold text-slate-400">
-                                            <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                                <path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-                                            </svg>
-                                            Procesando…
-                                        </span>
-                                    {% else %}
-                                        <form method="post"
-                                              action="{% url 'analysis:analyze' document.id %}"
-                                              class="inline-flex"
-                                              data-submit-spinner>
-                                            {% csrf_token %}
-                                            <button type="submit"
-                                                    data-loading-label="Enviando…"
-                                                    class="inline-flex items-center justify-center gap-1 rounded-lg border border-[#236bfd]/25 bg-[#eef3ff] px-2 py-2 text-[11px] font-bold text-[#123f9e]">
-                                                {% if document.status == "COMPLETED" or document.status == "FAILED" %}Reanalizar{% else %}Analizar{% endif %}
-                                            </button>
-                                        </form>
-                                    {% endif %}
-
-                                    {% include "certificates/_action_button.html" %}
-                                </div>
-                            </div>
-                        </div>
-                    </article>
-                {% empty %}
-                    <div class="rounded-xl border border-slate-200 bg-white p-6 text-center shadow-[0_8px_22px_-14px_rgba(18,63,158,0.35)]">
-                        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#eef3ff] to-[#dce8ff] text-[#123f9e]">
-                            <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                                <path d="M14 3V8H19" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                                <path d="M9 13.5H13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-                                <circle cx="16.5" cy="16" r="4.25" fill="white" stroke="currentColor" stroke-width="1.4"/>
-                                <path d="M16.5 14.3V16L17.7 16.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-                            </svg>
-                        </div>
-
-                        {% if has_active_filters %}
-                            <p class="mt-3 text-sm font-bold text-slate-800">
-                                Sin resultados
-                            </p>
-                            <p class="mt-1 text-xs text-slate-500">
-                                Ningún documento coincide con el filtro.
-                                <a href="{% url 'documents:upload' %}" class="font-semibold text-[#236bfd] hover:underline">Limpiar</a>.
-                            </p>
-                        {% else %}
-                            <p class="mt-3 text-sm font-bold text-slate-800">
-                                Aún no hay documentos enviados.
-                            </p>
-                            <p class="mt-1 text-xs text-slate-500">
-                                Registra el primer trabajo académico.
-                            </p>
-                        {% endif %}
-                    </div>
+            <label class="sr-only" for="filtro-estado">Estado</label>
+            <select id="filtro-estado" name="estado" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                <option value="">Todos los estados</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if active_filters.estado == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
-            </div>
+            </select>
 
-            {% if page_obj.paginator.num_pages > 1 %}
-                <div class="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-[12px]">
-                    {% if page_obj.has_previous %}
-                        <a href="?page={{ page_obj.previous_page_number }}{{ filter_querystring }}"
-                           class="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
-                            ← Anterior
-                        </a>
-                    {% else %}
-                        <span class="inline-flex h-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 font-bold text-slate-300">
-                            ← Anterior
-                        </span>
-                    {% endif %}
+            <label class="sr-only" for="filtro-tipo">Tipo</label>
+            <select id="filtro-tipo" name="tipo" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                <option value="">Todos los tipos</option>
+                {% for value, label in kind_choices %}
+                    <option value="{{ value }}" {% if active_filters.tipo == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
 
-                    <span class="font-semibold text-slate-500">
-                        Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
-                    </span>
+            <label class="flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-500">
+                Por página
+                <select name="por_pagina" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                    {% for choice in page_size_choices %}
+                        <option value="{{ choice }}" {% if page_size == choice %}selected{% endif %}>{{ choice }}</option>
+                    {% endfor %}
+                </select>
+            </label>
 
-                    {% if page_obj.has_next %}
-                        <a href="?page={{ page_obj.next_page_number }}{{ filter_querystring }}"
-                           class="inline-flex h-8 items-center justify-center rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
-                            Siguiente →
-                        </a>
-                    {% else %}
-                        <span class="inline-flex h-8 cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-3 font-bold text-slate-300">
-                            Siguiente →
-                        </span>
-                    {% endif %}
-                </div>
+            <button type="submit" class="btn btn-secondary btn-sm h-9">Filtrar</button>
+            {% if has_active_filters %}
+                <a href="{% url 'documents:upload' %}" class="btn btn-ghost btn-sm h-9">Limpiar</a>
             {% endif %}
-        </section>
 
-    </main>
+            <span class="ml-auto text-[12px] font-semibold text-slate-500">{{ documents_total }} resultado{{ documents_total|pluralize }}</span>
+        </form>
+    {% endif %}
+
+    <!-- Cabecera de columnas (escritorio) -->
+    <div class="hidden gap-4 px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_112px]">
+        <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
+    </div>
+
+    <ul class="space-y-2.5">
+        {% for document in recent_documents %}
+            <li class="row-card grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_112px] lg:items-center lg:gap-4">
+                <div class="flex min-w-0 items-center gap-3">
+                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="truncate text-[13.5px] font-semibold text-brand-700">{{ document.title }}</p>
+                        <p class="mt-0.5 truncate text-[11.5px] text-slate-500">{{ document.original_filename }}</p>
+                    </div>
+                </div>
+
+                <div class="order-last col-span-2 flex items-center justify-between gap-2 lg:order-none lg:col-span-1 lg:contents">
+                    <div class="flex min-w-0 items-center gap-2.5 lg:order-none">
+                        {% include "components/avatar.html" with name=document.owner.get_full_name|default:document.owner.username %}
+                        <div class="min-w-0">
+                            <p class="truncate text-[12.5px] font-semibold text-slate-700">{{ document.owner.get_full_name|default:document.owner.username }}</p>
+                            <p class="truncate text-[11.5px] text-slate-500">{{ document.owner.email }}</p>
+                        </div>
+                    </div>
+                    <span class="hidden lg:inline-flex"><span class="badge badge-neutral max-w-full"><span class="truncate">{{ document.get_kind_display }}</span></span></span>
+                    <div class="flex flex-col items-end gap-1 lg:items-start">
+                        {% include "documents/_status_badge.html" %}
+                        <span class="text-[11px] text-slate-500 lg:hidden">{{ document.get_kind_display }} · {{ document.created_at|date:"d/m/Y H:i" }}</span>
+                    </div>
+                    <div class="hidden lg:block">
+                        <p class="text-[12.5px] font-semibold text-slate-700">{{ document.created_at|date:"d/m/Y" }}</p>
+                        <p class="text-[11.5px] text-slate-500">{{ document.created_at|date:"H:i" }}</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-1.5 lg:order-none">
+                    {% if document.status == "UPLOADED" %}
+                        <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" title="El reporte estará disponible tras analizar el documento" aria-disabled="true">Ver</span>
+                    {% else %}
+                        <a href="{% url 'reports:detail' document.id %}" class="btn btn-secondary btn-sm" aria-label="Ver reporte de {{ document.title }}">Ver</a>
+                    {% endif %}
+                    {% include "documents/_row_menu.html" %}
+                </div>
+
+                {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
+                    <div class="col-span-2 lg:col-span-6" role="progressbar" aria-label="Análisis en curso" aria-busy="true">
+                        <div class="h-1 overflow-hidden rounded-full bg-brand-100"><div class="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-brand-500 to-brand-400"></div></div>
+                    </div>
+                {% endif %}
+            </li>
+        {% empty %}
+            <li class="card">
+                {% if has_active_filters %}
+                    {% include "components/empty_state.html" with title="Sin resultados" text="Ningún documento coincide con el filtro. Prueba a limpiar los filtros." %}
+                    <p class="-mt-8 pb-8 text-center text-[13px]"><a href="{% url 'documents:upload' %}" class="font-semibold text-brand-500 hover:underline">Limpiar filtros</a></p>
+                {% else %}
+                    {% include "components/empty_state.html" with title="Aún no hay documentos enviados" text="Usa el formulario de arriba para registrar el primer trabajo académico." %}
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+        <nav aria-label="Paginación" class="mt-4 flex items-center justify-between gap-3 text-[12.5px]">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}{{ filter_querystring }}" class="btn btn-secondary btn-sm">← Anterior</a>
+            {% else %}
+                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40">← Anterior</span>
+            {% endif %}
+            <span class="font-semibold text-slate-500">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{{ filter_querystring }}" class="btn btn-secondary btn-sm">Siguiente →</a>
+            {% else %}
+                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40">Siguiente →</span>
+            {% endif %}
+        </nav>
+    {% endif %}
 </section>
 
 {% endblock %}
@@ -823,170 +322,77 @@
         const fileName = document.getElementById("fileName");
         const dropZone = document.getElementById("dropZone");
         const dropTitle = document.getElementById("dropTitle");
-        const dropIcon = document.getElementById("dropIcon");
         const uploadAlert = document.getElementById("uploadAlert");
         const form = document.getElementById("documentUploadForm");
         const submitButton = document.getElementById("submitButton");
         const submitText = document.getElementById("submitText");
-
+        const progress = document.getElementById("uploadProgress");
+        const panel = document.getElementById("nuevo-documento");
         const MAX_FILE_SIZE = 25 * 1024 * 1024;
+        const ALERT_CLASSES = {
+            error: ["border-red-200", "bg-red-50", "text-red-700"],
+            success: ["border-emerald-200", "bg-emerald-50", "text-emerald-700"],
+            info: ["border-brand-200", "bg-brand-50", "text-brand-700"]
+        };
+
+        // Abrir el panel al llegar con #nuevo-documento.
+        if (panel && location.hash === "#nuevo-documento") panel.open = true;
 
         function showAlert(type, message) {
             if (!uploadAlert) return;
-
-            uploadAlert.classList.remove(
-                "hidden",
-                "border-red-200",
-                "bg-red-50",
-                "text-red-700",
-                "border-emerald-200",
-                "bg-emerald-50",
-                "text-emerald-700",
-                "border-cyan-200",
-                "bg-cyan-50",
-                "text-cyan-700"
-            );
-
-            if (type === "error") {
-                uploadAlert.classList.add("border-red-200", "bg-red-50", "text-red-700");
-            } else if (type === "success") {
-                uploadAlert.classList.add("border-emerald-200", "bg-emerald-50", "text-emerald-700");
-            } else {
-                uploadAlert.classList.add("border-cyan-200", "bg-cyan-50", "text-cyan-700");
-            }
-
+            Object.values(ALERT_CLASSES).forEach(function (c) { uploadAlert.classList.remove.apply(uploadAlert.classList, c); });
+            uploadAlert.classList.remove("hidden");
+            uploadAlert.classList.add.apply(uploadAlert.classList, ALERT_CLASSES[type] || ALERT_CLASSES.info);
             uploadAlert.textContent = message;
         }
-
         function hideAlert() {
             if (!uploadAlert) return;
             uploadAlert.classList.add("hidden");
             uploadAlert.textContent = "";
         }
-
         function resetDropZone() {
-            if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
-
-            dropZone.classList.remove(
-                "border-[#236bfd]",
-                "bg-[#eef3ff]",
-                "border-emerald-300",
-                "bg-emerald-50"
-            );
-
-            dropZone.classList.add("border-slate-300", "bg-white");
-
-            dropIcon.classList.remove(
-                "border-emerald-200",
-                "bg-emerald-50",
-                "text-emerald-600"
-            );
-
-            dropIcon.classList.add(
-                "border-[#236bfd]/25",
-                "bg-[#eef3ff]",
-                "text-[#123f9e]"
-            );
-
+            if (!dropZone) return;
+            dropZone.dataset.state = "idle";
             dropTitle.textContent = "Seleccionar archivo";
             fileName.textContent = "PDF/DOCX · 25 MB";
         }
-
-        function setDraggingState() {
-            if (!dropZone) return;
-
-            dropZone.classList.remove("border-slate-300", "bg-white");
-            dropZone.classList.add("border-[#236bfd]", "bg-[#eef3ff]");
-        }
-
         function formatSize(bytes) {
             if (bytes < 1024) return bytes + " B";
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
             return (bytes / (1024 * 1024)).toFixed(1) + " MB";
         }
-
         function fileKindLabel(file) {
             var name = file.name.toLowerCase();
             if (name.endsWith(".pdf")) return "PDF";
             if (name.endsWith(".docx")) return "DOCX";
             return "Documento";
         }
-
         function setFileSelectedState(file) {
-            if (!dropZone || !dropIcon || !dropTitle || !fileName) return;
-
-            dropZone.classList.remove(
-                "border-[#236bfd]",
-                "bg-[#eef3ff]",
-                "border-slate-300",
-                "bg-white"
-            );
-
-            dropZone.classList.add("border-emerald-300", "bg-emerald-50");
-
-            dropIcon.classList.remove(
-                "border-[#236bfd]/25",
-                "bg-[#eef3ff]",
-                "text-[#123f9e]"
-            );
-
-            dropIcon.classList.add(
-                "border-emerald-200",
-                "bg-emerald-50",
-                "text-emerald-600"
-            );
-
+            dropZone.dataset.state = "ready";
             dropTitle.textContent = file.name;
-            fileName.textContent =
-                fileKindLabel(file) + " · " + formatSize(file.size);
+            fileName.textContent = fileKindLabel(file) + " · " + formatSize(file.size);
         }
-
         function isAllowedFile(file) {
-            const allowedExtensions = [".pdf", ".docx"];
-            const allowedTypes = [
-                "application/pdf",
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            ];
-
-            const fileNameLower = file.name.toLowerCase();
-
-            const hasValidExtension = allowedExtensions.some(function (extension) {
-                return fileNameLower.endsWith(extension);
-            });
-
-            const hasValidType = allowedTypes.includes(file.type);
-
-            return hasValidExtension || hasValidType;
+            const name = file.name.toLowerCase();
+            const okExt = [".pdf", ".docx"].some(function (e) { return name.endsWith(e); });
+            const okType = ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(file.type);
+            return okExt || okType;
         }
-
         function validateAndPreviewFile(file) {
             hideAlert();
-
-            if (!file) {
-                resetDropZone();
-                return false;
-            }
-
+            if (!file) { resetDropZone(); return false; }
             if (!isAllowedFile(file)) {
-                if (fileInput) {
-                    fileInput.value = "";
-                }
-
+                if (fileInput) fileInput.value = "";
                 resetDropZone();
                 showAlert("error", "Formato no permitido. Solo se aceptan archivos PDF o DOCX.");
                 return false;
             }
-
             if (file.size > MAX_FILE_SIZE) {
-                if (fileInput) {
-                    fileInput.value = "";
-                }
-
+                if (fileInput) fileInput.value = "";
                 resetDropZone();
                 showAlert("error", "El archivo supera los 25 MB permitidos. Selecciona un archivo más ligero.");
                 return false;
             }
-
             setFileSelectedState(file);
             showAlert("success", "Archivo seleccionado correctamente. Ya puedes enviarlo.");
             return true;
@@ -994,55 +400,31 @@
 
         if (fileInput) {
             fileInput.addEventListener("change", function () {
-                if (fileInput.files && fileInput.files.length > 0) {
-                    validateAndPreviewFile(fileInput.files[0]);
-                } else {
-                    resetDropZone();
-                }
+                if (fileInput.files && fileInput.files.length > 0) validateAndPreviewFile(fileInput.files[0]);
+                else resetDropZone();
             });
         }
 
         if (dropZone) {
-            ["dragenter", "dragover"].forEach(function (eventName) {
-                dropZone.addEventListener(eventName, function (event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setDraggingState();
+            ["dragenter", "dragover"].forEach(function (n) {
+                dropZone.addEventListener(n, function (e) { e.preventDefault(); e.stopPropagation(); dropZone.dataset.state = "drag"; });
+            });
+            ["dragleave", "dragend"].forEach(function (n) {
+                dropZone.addEventListener(n, function (e) {
+                    e.preventDefault(); e.stopPropagation();
+                    if (fileInput && fileInput.files && fileInput.files.length > 0) setFileSelectedState(fileInput.files[0]);
+                    else resetDropZone();
                 });
             });
-
-            ["dragleave", "dragend"].forEach(function (eventName) {
-                dropZone.addEventListener(eventName, function (event) {
-                    event.preventDefault();
-                    event.stopPropagation();
-
-                    if (fileInput && fileInput.files && fileInput.files.length > 0) {
-                        setFileSelectedState(fileInput.files[0]);
-                    } else {
-                        resetDropZone();
-                    }
-                });
-            });
-
-            dropZone.addEventListener("drop", function (event) {
-                event.preventDefault();
-                event.stopPropagation();
-
-                if (!event.dataTransfer || !event.dataTransfer.files || event.dataTransfer.files.length === 0) {
-                    resetDropZone();
-                    return;
-                }
-
-                const droppedFile = event.dataTransfer.files[0];
-
-                if (!validateAndPreviewFile(droppedFile)) {
-                    return;
-                }
-
+            dropZone.addEventListener("drop", function (e) {
+                e.preventDefault(); e.stopPropagation();
+                if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) { resetDropZone(); return; }
+                const dropped = e.dataTransfer.files[0];
+                if (!validateAndPreviewFile(dropped)) return;
                 if (fileInput) {
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(droppedFile);
-                    fileInput.files = dataTransfer.files;
+                    const dt = new DataTransfer();
+                    dt.items.add(dropped);
+                    fileInput.files = dt.files;
                 }
             });
         }
@@ -1050,31 +432,21 @@
         if (form) {
             form.addEventListener("submit", function (event) {
                 hideAlert();
-
                 if (fileInput && (!fileInput.files || fileInput.files.length === 0)) {
                     event.preventDefault();
                     showAlert("error", "Selecciona un archivo PDF o DOCX antes de enviar.");
                     return;
                 }
-
-                if (fileInput && fileInput.files.length > 0) {
-                    const fileIsValid = validateAndPreviewFile(fileInput.files[0]);
-
-                    if (!fileIsValid) {
-                        event.preventDefault();
-                        return;
-                    }
+                if (fileInput && fileInput.files.length > 0 && !validateAndPreviewFile(fileInput.files[0])) {
+                    event.preventDefault();
+                    return;
                 }
-
                 if (submitButton && submitText) {
                     submitButton.disabled = true;
-                    submitButton.classList.add("cursor-not-allowed", "opacity-80");
-
-                    submitText.innerHTML = `
-                        <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
-                        Registrando...
-                    `;
+                    submitButton.classList.add("opacity-80");
+                    submitText.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span> Registrando...';
                 }
+                if (progress) progress.classList.remove("hidden");
             });
         }
     });

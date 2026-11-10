@@ -89,3 +89,4 @@ eval_ia/
 
 # Dataset del clasificador de IA (local, no versionar)
 dataset/
+dataset_v2/

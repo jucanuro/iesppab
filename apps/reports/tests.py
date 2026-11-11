@@ -2135,7 +2135,9 @@ class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
         self.assertIn(estimate.version_label, html)
         self.assertIn("motor-historico-1", html)
         self.assertIn(" ".join(estimate.note.split()), html)
-        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), html)
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y"), html
+        )  # la página muestra la hora de America/Lima, no UTC
 
     def test_bandas_en_los_bordes_usan_40_y_70(self) -> None:
         casos = {

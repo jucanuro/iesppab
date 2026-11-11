@@ -177,6 +177,49 @@ class CertificateRiskGateTests(TestCase):
         self.assertContains(verify, estimate.version_label)
         self.assertContains(verify, AI_RESPONSIBLE_USE_NOTE)
 
+    def test_ai_band_thresholds_match_in_pdf_and_verification(self) -> None:
+        """Bandas <40 / 40–69 / ≥70 con los mismos textos en PDF y verificación;
+        la IA, incluso en la banda alta, nunca bloquea la emisión."""
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        cases = [
+            (Decimal("39.90"), "Sin indicios concluyentes"),
+            (Decimal("40.00"), "Indicios: revisar con criterio docente"),
+            (Decimal("69.90"), "Indicios: revisar con criterio docente"),
+            (Decimal("70.00"), "Posible IA: revisar"),
+        ]
+        for percent, band_label in cases:
+            with self.subTest(percent=percent):
+                Certificate.objects.filter(report=self.report).delete()
+                self.report.ai_probability_percent = percent
+                self.report.risk_level = ReportRiskLevel.LOW
+                self.report.save(update_fields=["ai_probability_percent", "risk_level"])
+
+                certificate = self.service.execute(document_id=self.document.id)
+
+                with certificate.pdf_file.open("rb") as handle:
+                    reader = PdfReader(BytesIO(handle.read()))
+                pdf_text = " ".join(
+                    " ".join(page.extract_text().split()) for page in reader.pages
+                )
+                self.assertIn(f"{floatformat(percent, 1)}%", pdf_text)
+                self.assertIn(band_label.upper(), pdf_text)
+                self.assertIn("INDICATIVO", pdf_text)
+                self.assertIn(
+                    " ".join(AI_RESPONSIBLE_USE_NOTE.split()), pdf_text
+                )
+
+                verify = self.client.get(
+                    reverse("certificates:verify", args=[certificate.verification_hash])
+                )
+                self.assertEqual(verify.status_code, 200)
+                self.assertContains(verify, f"{floatformat(percent, 1)}%")
+                self.assertContains(verify, band_label)
+                self.assertContains(verify, AI_RESPONSIBLE_USE_NOTE)
+                self.assertTrue(certificate.is_active)
+
 
 class CertificateVerifyViewTests(TestCase):
     """Verificación pública por QR (REQ-CER-01, REQ-CER-02)."""

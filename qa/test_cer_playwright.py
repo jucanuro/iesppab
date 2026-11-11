@@ -196,7 +196,11 @@ class CerPlaywrightTests(LiveServerTestCase):
 
         self.assertIn(estimate.version_label, verify)
         self.assertIn(estimate.version_label, detail)
-        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), detail)
+        from django.utils import timezone
+
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y"), detail
+        )  # hora de America/Lima, como la página
         self.assertIn("CER-QA-0001", verify)
 
     def test_invalid_hash_says_not_valid_without_500(self) -> None:

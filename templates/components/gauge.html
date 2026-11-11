@@ -2,14 +2,23 @@
 {% with v=value|stringformat:".2f" %}
 <div data-gauge class="relative inline-flex items-center justify-center" style="--v:{{ v }};width:{{ size|default:132 }}px;height:{{ size|default:132 }}px"
      role="img" aria-label="{{ label }}: {{ display }}">
+    {% with t=tone|default:"brand" %}
     <svg viewBox="0 0 120 120" class="h-full w-full -rotate-90" aria-hidden="true">
-        <circle cx="60" cy="60" r="52" fill="none" stroke="#e8eefc" stroke-width="10"/>
-        <circle class="gauge-arc" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" pathLength="100"
-                stroke="{% if tone == 'danger' %}#dc2626{% elif tone == 'warning' %}#f5b400{% elif tone == 'success' %}#10b981{% else %}#236bfd{% endif %}"/>
+        <defs>
+            <linearGradient id="gg-{{ t }}" x1="0" y1="0" x2="1" y2="1">
+                {% if t == 'danger' %}<stop offset="0" stop-color="#dc2626"/><stop offset="1" stop-color="#fb7185"/>
+                {% elif t == 'warning' %}<stop offset="0" stop-color="#f59e0b"/><stop offset="1" stop-color="#fde047"/>
+                {% elif t == 'success' %}<stop offset="0" stop-color="#059669"/><stop offset="1" stop-color="#22d3ee"/>
+                {% else %}<stop offset="0" stop-color="#236bfd"/><stop offset="1" stop-color="#22d3ee"/>{% endif %}
+            </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e9f8" stroke-width="10"/>
+        <circle class="gauge-arc gauge-glow-{{ t }}" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" pathLength="100" stroke="url(#gg-{{ t }})"/>
     </svg>
+    {% endwith %}
     <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span class="text-[26px] font-extrabold leading-none tracking-tight text-slate-900">{{ display }}</span>
-        <span class="mt-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-500">{{ label }}</span>
+        <span class="num text-[26px] font-extrabold leading-none tracking-tight text-slate-900">{{ display }}</span>
+        <span class="mt-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-600">{{ label }}</span>
     </div>
 </div>
 {% endwith %}

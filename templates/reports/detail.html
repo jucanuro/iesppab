@@ -174,7 +174,7 @@
                 {% else %}
                     {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|stringformat:".0f"|add:"%" label="Similitud" tone="success" %}
                 {% endif %}
-                <p class="mt-3 text-[26px] font-bold leading-none text-slate-900">{{ report.similarity_percent }}%</p>
+                <p class="mt-3 num text-[26px] font-bold leading-none text-slate-900">{{ report.similarity_percent }}%</p>
                 <span class="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11.5px] font-semibold" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">{{ report.similarity_band.label }}</span>
                 <p class="mt-2 flex flex-wrap justify-center gap-x-2 gap-y-1 text-[10px] text-slate-600">{% include "reports/_similarity_legend.html" %}</p>
             </article>
@@ -188,7 +188,7 @@
                     {% else %}
                         {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|stringformat:".0f"|add:"%" label="IA estimada" tone="success" %}
                     {% endif %}
-                    <p class="mt-3 text-[26px] font-bold leading-none text-slate-900">{{ ai_estimate.percent|floatformat:1 }}%</p>
+                    <p class="mt-3 num text-[26px] font-bold leading-none text-slate-900">{{ ai_estimate.percent|floatformat:1 }}%</p>
                     <span class="mt-2 inline-flex rounded-full border px-2.5 py-1 text-[11.5px] font-semibold" style="background-color:{{ ai_estimate.band.bg }};border-color:{{ ai_estimate.band.border }};color:{{ ai_estimate.band.fg }};">{{ ai_estimate.band.label }}</span>
                     <p class="mt-2 text-[10.5px] text-slate-500">{{ ai_estimate.generated_at|date:"d/m/Y H:i" }} · {{ ai_estimate.version_label }}</p>
                     <p class="mt-1 text-[10.5px] leading-snug text-slate-500">{{ ai_estimate.note }}</p>

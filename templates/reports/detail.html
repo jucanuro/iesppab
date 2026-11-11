@@ -152,9 +152,9 @@
 
         <!-- VALORACIÓN GLOBAL + MEDIDORES -->
         {% with oa=report.overall_assessment %}
-        <section class="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]" aria-label="Resultados principales">
+        <section class="grid gap-4 lg:grid-cols-12" aria-label="Resultados principales">
 
-            <article class="card relative overflow-hidden p-6
+            <article class="card relative overflow-hidden p-6 lg:col-span-3
                 {% if oa.key == 'high' %}border-red-200 bg-gradient-to-br from-red-50 to-white{% elif oa.key == 'medium' %}border-gold-500/40 bg-gradient-to-br from-gold-50 to-white{% else %}border-emerald-200 bg-gradient-to-br from-emerald-50 to-white{% endif %}">
                 <p class="eyebrow {% if oa.key == 'high' %}!text-red-700{% elif oa.key == 'medium' %}!text-gold-700{% else %}!text-emerald-700{% endif %}">Valoración global</p>
                 <p class="mt-2 text-[44px] font-extrabold leading-none tracking-tight {% if oa.key == 'high' %}text-red-800{% elif oa.key == 'medium' %}text-gold-700{% else %}text-emerald-800{% endif %}">{{ oa.label }}</p>
@@ -166,7 +166,7 @@
                 </div>
             </article>
 
-            <article class="card flex flex-col items-center p-5 text-center" style="background-color:{{ report.similarity_band.bg }}10">
+            <article class="card flex flex-col items-center p-5 text-center lg:col-span-3" style="background-color:{{ report.similarity_band.bg }}10">
                 {% if report.similarity_assessment == 2 %}
                     {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|stringformat:".0f"|add:"%" label="Similitud" tone="danger" %}
                 {% elif report.similarity_assessment == 1 %}
@@ -179,7 +179,7 @@
                 <p class="mt-2 flex flex-wrap justify-center gap-x-2 gap-y-1 text-[10px] text-slate-600">{% include "reports/_similarity_legend.html" %}</p>
             </article>
 
-            <article class="card flex flex-col items-center p-5 text-center">
+            <article class="card flex flex-col items-center p-5 text-center lg:col-span-3">
                 {% if ai_estimate %}
                     {% if report.ai_assessment == 2 %}
                         {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|stringformat:".0f"|add:"%" label="IA estimada" tone="danger" %}
@@ -196,6 +196,21 @@
                     <p class="my-auto text-[13px] font-semibold text-slate-500">IA estimada no disponible para este reporte.</p>
                 {% endif %}
             </article>
+
+            <aside class="card flex flex-col gap-3 p-5 lg:col-span-3" aria-label="Resumen y acciones">
+                <p class="eyebrow">Resumen</p>
+                <dl class="space-y-2 text-[13px]">
+                    <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Similitud interna</dt><dd class="num font-bold text-slate-800">{{ report.internal_similarity_percent }}%</dd></div>
+                    <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Similitud web</dt><dd class="num font-bold text-slate-800">{{ report.web_similarity_percent }}%</dd></div>
+                    <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Fuentes</dt><dd class="num font-bold text-slate-800">{{ sources|length }}</dd></div>
+                    <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Motor</dt><dd class="truncate font-bold text-slate-800">{{ report.engine_version }}</dd></div>
+                </dl>
+                <div class="mt-auto space-y-2 border-t border-slate-100 pt-3">
+                    <a href="{% url 'reports:download_highlighted' document.id %}" class="btn btn-secondary btn-sm w-full justify-start">Informe de similitud (PDF)</a>
+                    <a href="{% url 'reports:download_ai_report' document.id %}" class="btn btn-secondary btn-sm w-full justify-start">Informe de IA (PDF)</a>
+                    {% if certificate %}<a href="{% url 'certificates:download' certificate.id %}" class="btn btn-secondary btn-sm w-full justify-start">Descargar certificado</a>{% endif %}
+                </div>
+            </aside>
         </section>
         {% endwith %}
 
@@ -251,7 +266,7 @@
             <!-- FUENTES -->
             <div id="panel-fuentes" role="tabpanel" aria-labelledby="tab-fuentes" x-show="tab === 'fuentes'" class="p-5 sm:p-6">
                 <h2 class="mb-3 text-[13px] font-bold uppercase tracking-[0.12em] text-slate-500">Fuentes detectadas</h2>
-                <div class="grid gap-3 lg:grid-cols-2">
+                <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                     {% for source in sources %}
                         <article class="rounded-xl border p-4 transition hover:shadow-soft
                             {% if report.similarity_level == 'alto' %}border-red-200 bg-red-50{% elif report.similarity_level == 'moderado' %}border-gold-500/40 bg-gold-50{% else %}border-emerald-200 bg-emerald-50{% endif %}">

@@ -168,7 +168,8 @@ class CerPlaywrightTests(LiveServerTestCase):
     def _text(self, page, path: str) -> str:
         response = page.goto(f"{self.live_server_url}{path}")
         self.assertLess(response.status, 400)
-        return " ".join(page.inner_text("body").split())
+        # text_content incluye las notas ocultas (popovers) del reporte.
+        return " ".join((page.text_content("body") or "").split())
 
     def test_verify_matches_report_detail(self) -> None:
         estimate = build_ai_estimate(self.report)

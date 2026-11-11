@@ -1,4 +1,4 @@
-{# Medidor circular SVG animado. Parámetros: value (0-100, número), display (texto), label, tone (brand|success|warning|danger), size (px, def. 132) #}
+{# Medidor circular SVG animado. Parámetros: numsize (def. 26px), value (0-100, número), display (texto), label, tone (brand|success|warning|danger), size (px, def. 132) #}
 {% with v=value|stringformat:".2f" %}
 <div data-gauge class="relative inline-flex items-center justify-center" style="--v:{{ v }};width:{{ size|default:132 }}px;height:{{ size|default:132 }}px"
      role="img" aria-label="{{ label }}: {{ display }}">
@@ -17,7 +17,7 @@
     </svg>
     {% endwith %}
     <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span class="num text-[26px] font-extrabold leading-none tracking-tight text-slate-900">{{ display }}</span>
+        <span class="num font-extrabold leading-none tracking-tight text-slate-900" style="font-size:{{ numsize|default:'26px' }}">{{ display }}</span>
         <span class="mt-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-slate-600">{{ label }}</span>
     </div>
 </div>

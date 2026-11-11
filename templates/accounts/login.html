@@ -1,202 +1,22 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar sesión | {{ institution_name|default:"IESPP" }}</title>
+{% extends "accounts/auth_base.html" %}
 
-    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
-    <link rel="apple-touch-icon" href="{% static 'img/logo-iesppabl.png' %}">
+{% block title %}Iniciar sesión | {{ institution_name|default:"IESPP" }}{% endblock %}
+{% block auth_title %}Iniciar sesión{% endblock %}
+{% block auth_subtitle %}Ingresa con tu cuenta institucional.{% endblock %}
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-                Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-
-        .bg-institutional {
-            background:
-                radial-gradient(1200px 600px at 50% -10%, rgba(35,107,253,0.10), transparent 60%),
-                linear-gradient(180deg, #f4f8ff 0%, #eef3fb 100%);
-        }
-
-        .accent-bar {
-            background: linear-gradient(90deg, #f5b400 0%, #236bfd 55%, #123f9e 100%);
-        }
-
-        a:focus-visible,
-        button:focus-visible,
-        [role="button"]:focus-visible {
-            outline: 2px solid #236bfd;
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-    </style>
-</head>
-
-<body class="min-h-screen bg-institutional text-slate-900">
-    <main class="flex min-h-screen flex-col items-center justify-center px-4 py-10">
-
-        <!-- Card -->
-        <section class="w-full max-w-[480px] overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_10px_40px_-12px_rgba(15,45,110,0.25)]">
-            <div class="accent-bar h-[4px] w-full"></div>
-
-            <div class="px-7 pb-8 pt-7">
-
-                <!-- Logo dentro de la tarjeta -->
-                <div class="mb-5 flex justify-center">
-                    <img src="{% static 'img/logo-iesppabl.png' %}"
-                         alt="Escudo {{ institution_name|default:'IESPP' }}"
-                         title="{{ institution_name|default:'IESPP' }}"
-                         class="h-52 w-auto select-none drop-shadow-sm">
-                </div>
-
-                <div class="text-center">
-                    <h1 class="text-[21px] font-bold tracking-tight text-slate-950">
-                        Iniciar sesión
-                    </h1>
-                    <p class="mt-1 text-[13px] text-slate-500">
-                        Ingresa con tu cuenta institucional.
-                    </p>
-                </div>
-
-                {% if messages %}
-                    <div class="mt-4 space-y-2">
-                        {% for message in messages %}
-                            <div class="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[13px] font-medium
-                                {% if message.tags == 'success' %}
-                                    border-emerald-200 bg-emerald-50 text-emerald-700
-                                {% elif message.tags == 'error' %}
-                                    border-red-200 bg-red-50 text-red-700
-                                {% else %}
-                                    border-sky-200 bg-sky-50 text-sky-700
-                                {% endif %}
-                            ">
-                                {{ message }}
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-
-                <form method="post" class="mt-6">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ next }}">
-
-                    <!-- Usuario / correo -->
-                    <div>
-                        <label for="username_or_email" class="mb-1.5 block text-[13px] font-bold text-slate-900">
-                            Usuario o correo electrónico
-                        </label>
-
-                        <div class="relative">
-                            <span class="pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-slate-400">
-                                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M12 12C14.2091 12 16 10.2091 16 8C16 5.79086 14.2091 4 12 4C9.79086 4 8 5.79086 8 8C8 10.2091 9.79086 12 12 12Z" stroke="currentColor" stroke-width="1.8"/>
-                                    <path d="M4 20C4 16.6863 7.58172 14 12 14C16.4183 14 20 16.6863 20 20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                </svg>
-                            </span>
-
-                            <input id="username_or_email"
-                                   name="username_or_email"
-                                   type="text"
-                                   autocomplete="username"
-                                   required
-                                   placeholder="usuario@iesppabl.edu.pe"
-                                   class="h-[44px] w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-[14px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-4 focus:ring-[#236bfd]/15">
-                        </div>
-                    </div>
-
-                    <!-- Password -->
-                    <div class="mt-4">
-                        <label for="password" class="mb-1.5 block text-[13px] font-bold text-slate-900">
-                            Contraseña
-                        </label>
-
-                        <div class="relative">
-                            <span class="pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-slate-400">
-                                <svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/>
-                                    <path d="M8 11V7.5C8 5.29086 9.79086 3.5 12 3.5C14.2091 3.5 16 5.29086 16 7.5V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                </svg>
-                            </span>
-
-                            <input id="password"
-                                   name="password"
-                                   type="password"
-                                   autocomplete="current-password"
-                                   required
-                                   placeholder="••••••••"
-                                   class="h-[44px] w-full rounded-lg border border-slate-300 bg-white pl-10 pr-11 text-[14px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#236bfd] focus:ring-4 focus:ring-[#236bfd]/15">
-
-                            <button type="button"
-                                    id="togglePassword"
-                                    class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 hover:text-slate-700"
-                                    aria-label="Mostrar contraseña">
-                                <svg id="eyeOpen" class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5C16.1 5.5 19.4 7.8 21.5 12C19.4 16.2 16.1 18.5 12 18.5C7.9 18.5 4.6 16.2 2.5 12Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M12 14.5C13.3807 14.5 14.5 13.3807 14.5 12C14.5 10.6193 13.3807 9.5 12 9.5C10.6193 9.5 9.5 10.6193 9.5 12C9.5 13.3807 10.6193 14.5 12 14.5Z" stroke="currentColor" stroke-width="1.8"/>
-                                </svg>
-
-                                <svg id="eyeClosed" class="hidden h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M3 3L21 21" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                    <path d="M10.58 10.58C10.21 10.95 10 11.46 10 12C10 13.1 10.9 14 12 14C12.54 14 13.05 13.79 13.42 13.42" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                    <path d="M9.88 5.09C10.57 4.9 11.28 4.8 12 4.8C16.7 4.8 20.2 7.73 22 12C21.18 13.95 19.95 15.55 18.39 16.69" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M6.23 6.23C4.72 7.34 3.52 8.95 2.5 12C4.3 16.27 7.8 19.2 12 19.2C13.61 19.2 15.13 18.77 16.48 17.99" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Botón -->
-                    <button type="submit"
-                            class="mt-6 flex h-[46px] w-full items-center justify-center rounded-lg bg-gradient-to-r from-[#123f9e] to-[#236bfd] px-4 text-[14px] font-bold text-white shadow-sm transition hover:from-[#0f3486] hover:to-[#1c5be0] active:scale-[0.99]">
-                        Iniciar sesión
-                    </button>
-
-                    <!-- Links -->
-                    <div class="mt-5 flex items-center justify-between text-[12.5px]">
-                        <a href="{% url 'accounts:password_reset' %}" class="font-medium text-[#236bfd] transition hover:underline">
-                            ¿Olvidaste tu contraseña?
-                        </a>
-                        <a href="{% url 'core:help' %}" class="font-medium text-[#236bfd] transition hover:underline">
-                            Ayuda
-                        </a>
-                    </div>
-
-                    <div class="mt-5 text-center text-[12.5px]">
-                        <span class="text-slate-500">¿No tienes cuenta?</span>
-                        <a href="{% url 'accounts:register' %}" class="font-medium text-[#236bfd] transition hover:underline">
-                            Regístrate
-                        </a>
-                    </div>
-                </form>
-            </div>
-        </section>
-
-        <p class="mt-6 text-center text-[11px] text-slate-400">
-            © {% now "Y" %} {{ institution_name|default:"IESPP" }}. Todos los derechos reservados.
-        </p>
-    </main>
-
-    <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            const togglePassword = document.getElementById("togglePassword");
-            const passwordInput = document.getElementById("password");
-            const eyeOpen = document.getElementById("eyeOpen");
-            const eyeClosed = document.getElementById("eyeClosed");
-
-            if (togglePassword && passwordInput) {
-                togglePassword.addEventListener("click", function () {
-                    const isPassword = passwordInput.type === "password";
-                    passwordInput.type = isPassword ? "text" : "password";
-
-                    eyeOpen.classList.toggle("hidden", isPassword);
-                    eyeClosed.classList.toggle("hidden", !isPassword);
-                });
-            }
-        });
-    </script>
-</body>
-</html>
+{% block auth_body %}
+<form method="post" class="mt-6 space-y-4">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ next }}">
+    {% include "accounts/_field.html" with id="username_or_email" name="username_or_email" label="Usuario o correo electrónico" type="text" autocomplete="username" placeholder="usuario o correo institucional" icon="user" %}
+    {% include "accounts/_field.html" with id="password" name="password" label="Contraseña" type="password" autocomplete="current-password" placeholder="••••••••" icon="lock" password=True %}
+    <div class="-mt-1 text-right text-[13px]">
+        <a href="{% url 'accounts:password_reset' %}" class="font-medium text-[#123f9e] hover:underline">¿Olvidaste tu contraseña?</a>
+    </div>
+    {% include "accounts/_submit.html" with label="Iniciar sesión" %}
+    <p class="pt-1 text-center text-[13px] text-slate-600">
+        ¿No tienes cuenta?
+        <a href="{% url 'accounts:register' %}" class="font-semibold text-[#123f9e] hover:underline">Regístrate</a>
+    </p>
+</form>
+{% endblock %}

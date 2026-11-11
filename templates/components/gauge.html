@@ -1,0 +1,24 @@
+{# Medidor circular SVG animado. Parámetros: numsize (def. 19px), value (0-100, número), display (texto), label, tone (brand|success|warning|danger), size (px, def. 132) #}
+{% with v=value|stringformat:".2f" %}
+<div data-gauge class="relative inline-flex items-center justify-center" style="--v:{{ v }};width:{{ size|default:132 }}px;height:{{ size|default:132 }}px"
+     role="img" aria-label="{{ label }}: {{ display }}">
+    {% with t=tone|default:"brand" %}
+    <svg viewBox="0 0 120 120" class="h-full w-full -rotate-90" aria-hidden="true">
+        <defs>
+            <linearGradient id="gg-{{ t }}" x1="0" y1="0" x2="1" y2="1">
+                {% if t == 'danger' %}<stop offset="0" stop-color="#dc2626"/><stop offset="1" stop-color="#fb7185"/>
+                {% elif t == 'warning' %}<stop offset="0" stop-color="#f59e0b"/><stop offset="1" stop-color="#fde047"/>
+                {% elif t == 'success' %}<stop offset="0" stop-color="#059669"/><stop offset="1" stop-color="#22d3ee"/>
+                {% else %}<stop offset="0" stop-color="#236bfd"/><stop offset="1" stop-color="#22d3ee"/>{% endif %}
+            </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#e2e9f8" stroke-width="10"/>
+        <circle class="gauge-arc gauge-glow-{{ t }}" cx="60" cy="60" r="52" fill="none" stroke-width="10" stroke-linecap="round" pathLength="100" stroke="url(#gg-{{ t }})"/>
+    </svg>
+    {% endwith %}
+    <div class="absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span class="num font-semibold leading-none text-slate-900" style="font-size:{{ numsize|default:'19px' }};font-variant-numeric:tabular-nums">{{ display }}</span>
+        <span class="mt-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-500">{{ label }}</span>
+    </div>
+</div>
+{% endwith %}

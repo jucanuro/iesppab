@@ -1,125 +1,102 @@
 {% load static %}
 
 <!DOCTYPE html>
-<html lang="es" class="h-full bg-white">
+<html lang="es" class="h-full scroll-smooth bg-mesh">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#123f9e">
     <title>{% block title %}IESPP Alfonso Barrantes Lingán{% endblock %}</title>
 
-    <link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
-    <link rel="apple-touch-icon" href="{% static 'img/logo-iesppabl.png' %}">
-
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <style>
-        body {
-            font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI",
-                Roboto, "Helvetica Neue", Arial, sans-serif;
-        }
-
-        /* Foco de teclado visible en todo elemento interactivo. El reset de
-           Tailwind (CDN) atenúa el outline nativo; esto lo restablece de forma
-           consistente sin afectar al foco por ratón (:focus-visible). */
-        a:focus-visible,
-        button:focus-visible,
-        summary:focus-visible,
-        [tabindex]:focus-visible,
-        [role="button"]:focus-visible {
-            outline: 2px solid #236bfd;
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-    </style>
+    {% include "components/_head.html" %}
 
     {% block extra_head %}{% endblock %}
 </head>
 
-<body class="min-h-full bg-white text-slate-800 antialiased">
+<body class="min-h-full font-sans text-slate-800 antialiased">
+    <a href="#contenido" class="sr-only z-[70] rounded-lg bg-white px-3 py-2 text-sm font-semibold text-brand-700 focus:not-sr-only focus:fixed focus:left-3 focus:top-3">Saltar al contenido</a>
 
-    <div class="min-h-screen bg-white">
+    {% include "components/toast.html" %}
 
-        <!-- TOP BAR INSTITUCIONAL -->
-        <header class="border-b border-slate-200 bg-white">
-            <div class="mx-auto flex min-h-[72px] max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
+    <div class="pointer-events-none fixed inset-0 bg-grid" aria-hidden="true"></div>
+    <div class="relative flex min-h-screen flex-col">
 
-                <!-- Marca -->
+        <!-- BARRA SUPERIOR -->
+        <header class="glow-line sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-xl supports-[backdrop-filter]:bg-white/70">
+            <div class="mx-auto flex h-[68px] max-w-[1800px] items-center gap-3 px-4 sm:gap-6 lg:px-8 2xl:px-12">
+
                 <a href="{% if request.user.is_authenticated %}{% url 'documents:upload' %}{% else %}{% url 'accounts:login' %}{% endif %}"
-                   class="flex items-center gap-3">
+                   class="flex shrink-0 items-center gap-3">
                     <img src="{% static 'img/logo-iesppabl.png' %}"
                          alt="Escudo IESPP Alfonso Barrantes Lingán"
                          class="h-10 w-auto select-none">
-
-                    <div class="hidden sm:block">
-                        <p class="text-[15px] font-bold leading-none tracking-tight text-[#123f9e]">
-                            IESPP Alfonso Barrantes Lingán
-                        </p>
-                        <p class="mt-1 text-[11px] font-semibold leading-none text-slate-500">
-                            Plataforma de Originalidad Académica
-                        </p>
+                    <div class="hidden lg:block">
+                        <p class="text-[14.5px] font-bold leading-none tracking-tight text-brand-700">IESPP Alfonso Barrantes Lingán</p>
+                        <p class="mt-1 text-[11px] font-medium leading-none text-slate-500">Plataforma de Originalidad Académica</p>
                     </div>
                 </a>
 
-                <!-- Navegación -->
                 {% if request.user.is_authenticated %}
-                    <nav class="flex flex-wrap items-center gap-1">
+                    <nav aria-label="Principal" class="-mb-px flex h-full min-w-0 flex-1 items-stretch gap-4 overflow-x-auto sm:gap-6">
                         <a href="{% url 'documents:upload' %}"
-                           class="rounded-lg px-3 py-2 text-[13px] font-semibold transition
-                           {% if request.resolver_match.app_name == 'documents' %}
-                                bg-[#eef3ff] text-[#123f9e]
-                           {% else %}
-                                text-slate-600 hover:bg-slate-50 hover:text-[#123f9e]
-                           {% endif %}">
+                           {% if request.resolver_match.app_name == 'documents' %}aria-current="page"{% endif %}
+                           class="tab-link flex items-center {% if request.resolver_match.app_name == 'documents' %}is-active{% endif %}">
                             Documentos
                         </a>
 
                         {% if request.user.is_teacher_role or request.user.is_director_role or request.user.is_admin_role or request.user.is_superuser %}
                             <a href="{% url 'accounts:pending-students' %}"
-                               class="rounded-lg px-3 py-2 text-[13px] font-semibold transition
-                               {% if request.resolver_match.url_name == 'pending-students' %}
-                                    bg-[#eef3ff] text-[#123f9e]
-                               {% else %}
-                                    text-slate-600 hover:bg-slate-50 hover:text-[#123f9e]
-                               {% endif %}">
+                               {% if request.resolver_match.url_name == 'pending-students' %}aria-current="page"{% endif %}
+                               class="tab-link flex items-center whitespace-nowrap {% if request.resolver_match.url_name == 'pending-students' %}is-active{% endif %}">
                                 Alumnos pendientes
                             </a>
                         {% endif %}
 
                         {% if request.user.is_admin_role or request.user.is_superuser %}
-                            <a href="/admin/"
-                               class="rounded-lg px-3 py-2 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-[#123f9e]">
-                                Administración
-                            </a>
+                            <a href="/admin/" class="tab-link flex items-center">Administración</a>
                         {% endif %}
                     </nav>
-                {% endif %}
 
-                <!-- Usuario -->
-                {% if request.user.is_authenticated %}
-                    <div class="flex items-center gap-3">
-                        <div class="hidden text-right sm:block">
-                            <p class="text-[12.5px] font-bold leading-tight text-slate-800">
-                                {{ request.user.get_full_name|default:request.user.username }}
-                            </p>
-                            <p class="text-[11px] font-semibold leading-tight text-[#236bfd]">
-                                {{ request.user.get_role_display }}
-                            </p>
+                    <!-- Menú de usuario -->
+                    <div class="relative ml-auto" x-data="{ open: false }" @keydown.escape.window="open = false" @click.outside="open = false">
+                        <button type="button" @click="open = !open" aria-haspopup="menu" :aria-expanded="open"
+                                class="flex items-center gap-2.5 rounded-full border border-transparent py-1 pl-1 pr-2 transition hover:border-slate-200 hover:bg-white sm:pr-3">
+                            {% include "components/avatar.html" with name=request.user.get_full_name|default:request.user.username %}
+                            <span class="hidden text-left sm:block">
+                                <span class="block text-[12.5px] font-bold leading-tight text-slate-800">{{ request.user.get_full_name|default:request.user.username }}</span>
+                                <span class="block text-[11px] font-semibold leading-tight text-brand-500">{{ request.user.get_role_display }}</span>
+                            </span>
+                            <svg class="h-4 w-4 text-slate-400 transition" :class="open && 'rotate-180'" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+
+                        <div x-show="open" x-cloak x-transition.origin.top.right.duration.150ms role="menu" class="menu-panel w-64">
+                            <div class="border-b border-slate-100 px-4 py-3 sm:hidden">
+                                <p class="text-[13px] font-bold text-slate-800">{{ request.user.get_full_name|default:request.user.username }}</p>
+                                <p class="text-[11.5px] font-semibold text-brand-500">{{ request.user.get_role_display }}</p>
+                            </div>
+                            <a href="{% url 'core:help' %}" role="menuitem" class="menu-item">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17v.1"/></svg>
+                                Centro de Ayuda
+                            </a>
+                            <a href="{% url 'core:privacy' %}" role="menuitem" class="menu-item">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8 7 10 4-2 7-5.5 7-10V6l-7-3Z"/></svg>
+                                Política de privacidad
+                            </a>
+                            <form method="post" action="{% url 'accounts:logout' %}" class="border-t border-slate-100">
+                                {% csrf_token %}
+                                <button type="submit" role="menuitem" class="menu-item text-red-600 hover:bg-red-50 hover:text-red-700">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3M16 17l5-5-5-5M21 12H9"/></svg>
+                                    Cerrar sesión
+                                </button>
+                            </form>
                         </div>
-
-                        <form method="post" action="{% url 'accounts:logout' %}">
-                            {% csrf_token %}
-                            <button type="submit"
-                                    class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 px-3 text-[12px] font-bold text-slate-600 transition hover:border-red-300 hover:bg-red-50 hover:text-red-600">
-                                Cerrar sesión
-                            </button>
-                        </form>
                     </div>
                 {% endif %}
             </div>
         </header>
 
         <!-- CONTENEDOR PRINCIPAL -->
-        <main class="min-h-[calc(100vh-145px)] bg-white px-4 py-3 sm:px-6">
+        <main id="contenido" class="mx-auto w-full max-w-[1800px] flex-1 px-4 py-6 lg:px-8 lg:py-8 2xl:px-12">
 
             <!-- Breadcrumb -->
 
@@ -130,7 +107,7 @@
                         <div role="alert"
                              data-message
                              {% if message.tags == 'success' %}data-auto-dismiss="6000"{% endif %}
-                             class="flex items-start justify-between gap-3 rounded-md border px-4 py-3 text-[13px] font-semibold shadow-sm
+                             class="flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-[13px] font-medium shadow-soft
                             {% if message.tags == 'success' %}
                                 border-emerald-200 bg-emerald-50 text-emerald-700
                             {% elif message.tags == 'error' %}
@@ -183,28 +160,22 @@
             {% endif %}
 
             <!-- Contenido de cada página -->
-            <div class="w-full">
+            <div class="w-full anim-fade-up">
                 {% block content %}{% endblock %}
             </div>
         </main>
 
-        <!-- FOOTER -->
-        <footer class="px-4 pb-5 pt-8 sm:px-6">
-            <div class="rounded-md bg-slate-50 px-4 py-4 text-center text-[10px] text-slate-500">
-                <p>
-                    Derechos de autor © {% now "Y" %} IESPP “Alfonso Barrantes Lingán”.
-                    Todos los derechos reservados.
+        <!-- PIE DE PÁGINA -->
+        <footer class="mt-auto border-t border-slate-200/70 bg-white/60">
+            <div class="mx-auto flex max-w-[1800px] flex-col items-center justify-between gap-3 px-4 py-5 text-[12px] text-slate-500 sm:flex-row lg:px-8 2xl:px-12">
+                <p class="flex items-center gap-2 text-center sm:text-left">
+                    <img src="{% static 'img/logo-iesppabl.png' %}" alt="" class="h-5 w-auto opacity-70" aria-hidden="true">
+                    © {% now "Y" %} IESPP “Alfonso Barrantes Lingán”. Todos los derechos reservados.
                 </p>
-
-                <p class="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
-                    <a href="{% url 'core:privacy' %}" class="text-[#2f6690] hover:underline">
-                        Política de privacidad
-                    </a>
-                    <span class="text-slate-300">·</span>
-                    <a href="{% url 'core:help' %}" class="text-[#2f6690] hover:underline">
-                        Centro de Ayuda
-                    </a>
-                </p>
+                <nav aria-label="Enlaces del pie" class="flex items-center gap-4 font-medium">
+                    <a href="{% url 'core:privacy' %}" class="transition hover:text-brand-700">Política de privacidad</a>
+                    <a href="{% url 'core:help' %}" class="transition hover:text-brand-700">Centro de Ayuda</a>
+                </nav>
             </div>
         </footer>
     </div>

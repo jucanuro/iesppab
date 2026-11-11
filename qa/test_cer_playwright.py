@@ -168,7 +168,8 @@ class CerPlaywrightTests(LiveServerTestCase):
     def _text(self, page, path: str) -> str:
         response = page.goto(f"{self.live_server_url}{path}")
         self.assertLess(response.status, 400)
-        return " ".join(page.inner_text("body").split())
+        # text_content incluye las notas ocultas (popovers) del reporte.
+        return " ".join((page.text_content("body") or "").split())
 
     def test_verify_matches_report_detail(self) -> None:
         estimate = build_ai_estimate(self.report)
@@ -196,7 +197,11 @@ class CerPlaywrightTests(LiveServerTestCase):
 
         self.assertIn(estimate.version_label, verify)
         self.assertIn(estimate.version_label, detail)
-        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), detail)
+        from django.utils import timezone
+
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y"), detail
+        )  # hora de America/Lima, como la página
         self.assertIn("CER-QA-0001", verify)
 
     def test_invalid_hash_says_not_valid_without_500(self) -> None:

@@ -404,6 +404,21 @@ class AiReportPdfTests(ReportsTestCaseMixin, TestCase):
         self.assertEqual(response["Content-Type"], "application/pdf")
         self.assertIn("INFORME DE IA ESTIMADA", self._text(response.getvalue()))
 
+    def test_detail_renders_workdesk_tabs_and_modals(self) -> None:
+        self.client.force_login(self.student)
+
+        response = self.client.get(
+            reverse("reports:detail", kwargs={"pk": self.document.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        for tab in ("resumen", "fuentes", "ia", "texto"):
+            self.assertContains(response, f'id="tab-{tab}"')
+            self.assertContains(response, f'id="panel-{tab}"')
+        self.assertContains(response, "¿Cómo se calcula?")
+        self.assertContains(response, "Detalle de fuente")
+        self.assertNotContains(response, "reportFold")
+
     def test_detail_has_ai_report_button(self) -> None:
         self.client.force_login(self.student)
 
@@ -2135,7 +2150,9 @@ class AiEstimateDetailTests(ReportsTestCaseMixin, TestCase):
         self.assertIn(estimate.version_label, html)
         self.assertIn("motor-historico-1", html)
         self.assertIn(" ".join(estimate.note.split()), html)
-        self.assertIn(estimate.generated_at.strftime("%d/%m/%Y"), html)
+        self.assertIn(
+            timezone.localtime(estimate.generated_at).strftime("%d/%m/%Y"), html
+        )  # la página muestra la hora de America/Lima, no UTC
 
     def test_bandas_en_los_bordes_usan_40_y_70(self) -> None:
         casos = {

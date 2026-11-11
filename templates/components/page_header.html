@@ -1,0 +1,6 @@
+{# Cabecera de página. Parámetros: eyebrow, title, subtitle #}
+<header class="mb-6">
+    {% if eyebrow %}<p class="eyebrow">{{ eyebrow }}</p>{% endif %}
+    <h1 class="h-title mt-1">{{ title }}</h1>
+    {% if subtitle %}<p class="mt-1.5 max-w-3xl text-[14px] leading-6 text-slate-600">{{ subtitle }}</p>{% endif %}
+</header>

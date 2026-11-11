@@ -2,356 +2,464 @@
 
 {% block title %}Reporte | {{ document.title }}{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* Mesa de trabajo: en ≥1024 px la página no hace scroll; el riel queda fijo y el panel derecho scrollea por dentro. */
+    .desk-pane { scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
+    .desk-pane::-webkit-scrollbar, .desk-rail::-webkit-scrollbar { width: 8px; height: 8px; }
+    .desk-pane::-webkit-scrollbar-thumb, .desk-rail::-webkit-scrollbar-thumb { background: #b8cdfa; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+    .desk-pane::-webkit-scrollbar-thumb:hover { background: #236bfd; background-clip: content-box; }
+    .desk-rail { scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
+    #markViewport { max-height: 70vh; }
+    .mark-focus { box-shadow: 0 0 0 3px rgba(35,107,253,.65), 0 0 18px rgba(34,211,238,.55); transition: box-shadow .2s ease; }
+    .src-item[aria-current="true"] { background: #eef3ff; border-color: #236bfd; box-shadow: inset 3px 0 0 #236bfd; }
+    @media (min-width: 1024px) {
+        body > div > footer { display: none; }
+        .desk-wrap { display: flex; flex-direction: column; height: calc(100vh - 68px - 4rem); height: calc(100dvh - 68px - 4rem); min-height: 32rem; }
+        .desk { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: .75rem; }
+        .desk-rail { min-height: 0; overflow-y: auto; }
+        .desk-main { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+        .desk-pane { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+        .desk-pane.is-flex { display: flex; flex-direction: column; overflow: hidden; }
+        #markViewport { flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto; }
+        .src-list, .src-detail { min-height: 0; overflow-y: auto; }
+    }
+    @media (max-width: 1023.98px) {
+        #markViewport { overflow-y: auto; }
+    }
+    .note-btn { display: inline-flex; align-items: center; gap: .3rem; border-radius: .75rem; border: 1px solid rgba(148,163,184,.4); background: rgba(255,255,255,.8); padding: .25rem .55rem; font-size: 11px; font-weight: 600; color: #334155; box-shadow: 0 1px 2px rgba(15,45,110,.06); transition: border-color .15s, color .15s; }
+    .note-btn:hover, .note-btn[aria-expanded="true"] { border-color: #236bfd; color: #123f9e; }
+    .note-card { border-radius: .75rem; border: 1px solid rgba(255,255,255,.8); background: rgba(255,255,255,.92); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 10px 30px -10px rgba(15,45,110,.35), 0 0 0 1px rgba(15,23,42,.06); }
+    .mini-card { --mc:#236bfd; --mcs:rgba(35,107,253,.12); position: relative; display: flex; align-items: center; gap: .65rem; overflow: hidden; border-radius: .75rem; border: 1px solid rgba(148,163,184,.3); border-top: 3px solid var(--mc); background: linear-gradient(180deg, var(--mcs), rgba(255,255,255,.85) 70%); padding: .65rem .75rem; box-shadow: 0 1px 2px rgba(15,45,110,.06); transition: transform .18s ease, box-shadow .18s ease; }
+    .mini-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -12px rgba(15,45,110,.35); }
+    .mini-card dt { font-size: 10.5px; font-weight: 600; line-height: 1.2; color: #475569; }
+    .mini-card .mc-val { margin-top: .2rem; font-size: 17px; font-weight: 700; line-height: 1.15; color: #1e293b; }
+    .mc-ico { display: inline-flex; height: 2rem; width: 2rem; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 9999px; background: var(--mcs); color: var(--mc); }
+    .mc-blue { --mc:#236bfd; --mcs:rgba(35,107,253,.12); } .mc-cyan { --mc:#0891b2; --mcs:rgba(8,145,178,.13); } .mc-violet { --mc:#7c3aed; --mcs:rgba(124,58,237,.12); } .mc-amber { --mc:#d97706; --mcs:rgba(245,158,11,.15); } .mc-slate { --mc:#64748b; --mcs:rgba(100,116,139,.13); }
+    /* Popover: flecha hacia el botón; en <768 px es una hoja modal centrada. */
+    .note-card { max-height: calc(100vh - 16px); }
+    .pop-scroll { scrollbar-width: thin; }
+    .pop-arrow { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,.97); transform: rotate(45deg); border: 1px solid rgba(15,23,42,.08); }
+    .pop-arrow[data-side="left"] { left: -6px; border-right: 0; border-top: 0; }
+    .pop-arrow[data-side="bottom"] { top: -6px; border-right: 0; border-bottom: 0; }
+    .pop-arrow[data-side="top"] { bottom: -6px; border-left: 0; border-top: 0; }
+    .pop-arrow[data-side="none"] { display: none; }
+    @media (prefers-reduced-motion: reduce) {
+        .mini-card { transition: none; } .mini-card:hover { transform: none; }
+        .mark-focus { transition: none; }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 
-<section class="space-y-5">
+<div class="{% if report %}desk-wrap{% endif %} space-y-3 lg:space-y-0"
+     x-data="reportDesk('{{ sources.0.id|default:'' }}')"
+     @keydown.escape.window="closeModals(); closePop(true)"
+     @resize.window="pop && placePop()">
 
-    <!-- CABECERA DEL REPORTE -->
-    <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-
-        <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-            <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-
-                <div class="min-w-0">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center gap-2 rounded-full border border-[#236bfd]/25 bg-[#eef3ff] px-3 py-1">
-                            <span class="h-2 w-2 rounded-full bg-[#236bfd]"></span>
-                            <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#123f9e]">
-                                Reporte de originalidad
-                            </span>
-                        </span>
-
-                        <span class="text-[12px] font-semibold text-slate-500">
-                            Documento académico procesado
-                        </span>
-                    </div>
-
-                    <h2 class="mt-3 truncate text-[22px] font-semibold text-[#123f9e]">
-                        {{ document.title }}
-                    </h2>
-
-                    <p class="mt-1 text-[13px] text-slate-500">
+    <!-- FRANJA SUPERIOR (~72 px): volver · título · chips · acciones -->
+    <header class="glass mb-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 xl:flex-nowrap lg:min-h-[72px]" aria-label="Cabecera del reporte">
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+            <a href="{% url 'documents:upload' %}" class="icon-btn shrink-0" aria-label="Volver a los documentos" title="Volver">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+            <div class="min-w-0">
+                <p class="eyebrow leading-none">Reporte de originalidad</p>
+                <h1 class="mt-1 truncate text-[16px] font-bold leading-tight tracking-tight text-brand-900" title="{{ document.title }}">{{ document.title }}</h1>
+                <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                    <span class="inline-flex items-center gap-1.5">
+                        {% include "components/avatar.html" with name=document.owner.get_full_name|default:document.owner.username size="h-5 w-5 text-[11px]" %}
                         {{ document.owner.get_full_name|default:document.owner.username }}
-                        · {{ document.get_kind_display }}
-                        · {{ document.created_at|date:"d/m/Y H:i" }}
-                    </p>
-                </div>
-
-                <div class="flex flex-wrap gap-2">
-                    <a href="{% url 'documents:upload' %}"
-                       class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-[12px] font-bold text-slate-600 shadow-sm transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
-                        Volver
-                    </a>
-
-                    {% if analysis_in_progress %}
-                        <span class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-400">
-                            <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"></span>
-                            Analizando…
-                        </span>
-                    {% elif report or analysis_job.status == "FAILED" %}
-                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex gap-2" data-submit-spinner>
-                            {% csrf_token %}
-                            {% include "reports/_exclusion_options.html" %}
-                            <button type="submit"
-                                    title="Reanalizar originalidad"
-                                    data-loading-label="Enviando…"
-                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    <path d="M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                                Reanalizar
-                            </button>
-                        </form>
-                    {% else %}
-                        <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex gap-2" data-submit-spinner>
-                            {% csrf_token %}
-                            {% include "reports/_exclusion_options.html" %}
-                            <button type="submit"
-                                    title="Analizar originalidad"
-                                    data-loading-label="Enviando…"
-                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M14 3v4a1 1 0 0 0 1 1h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                    <path d="M16.5 17.5a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z" stroke="currentColor" stroke-width="1.8"/>
-                                    <path d="M18.5 19.5 21 22" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                </svg>
-                                Analizar originalidad
-                            </button>
-                        </form>
-                    {% endif %}
-
-                    {% if report %}
-                        <a href="{% url 'reports:download_highlighted' document.id %}"
-                           title="Descargar el informe de similitud en PDF"
-                           class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
-
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 3V15M12 15L7 10M12 15L17 10"
-                                      stroke="currentColor"
-                                      stroke-width="2.3"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"/>
-                                <path d="M5 19H19"
-                                      stroke="currentColor"
-                                      stroke-width="2.3"
-                                      stroke-linecap="round"/>
-                            </svg>
-
-                            Informe de similitud
-                        </a>
-
-                        <a href="{% url 'reports:download_ai_report' document.id %}"
-                           title="Descargar el informe de IA estimada en PDF"
-                           class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#236bfd]/30 bg-[#eef3ff] px-4 text-[12px] font-bold text-[#123f9e] shadow-sm transition hover:bg-[#e3ecff]">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <path d="M12 3V15M12 15L7 10M12 15L17 10"
-                                      stroke="currentColor"
-                                      stroke-width="2.3"
-                                      stroke-linecap="round"
-                                      stroke-linejoin="round"/>
-                                <path d="M5 19H19"
-                                      stroke="currentColor"
-                                      stroke-width="2.3"
-                                      stroke-linecap="round"/>
-                            </svg>
-
-                            Informe de IA
-                        </a>
-                    {% endif %}
-
-                    {% if certificate %}
-                        <a href="{% url 'certificates:download' certificate.id %}"
-                           id="certDownloadLink"
-                           title="Descargar certificado"
-                           class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-[12px] font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100">
-                            {% include "certificates/_seal_download_icon.html" %}
-                            Descargar certificado
-                        </a>
-                    {% elif report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
-                        <form method="post"
-                              action="{% url 'certificates:generate' document.id %}"
-                              class="inline-flex"
-                              data-submit-spinner>
-                            {% csrf_token %}
-
-                            <button type="submit"
-                                    title="Generar certificado"
-                                    data-loading-label="Generando…"
-                                    class="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-[12px] font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100">
-                                {% include "certificates/_seal_icon.html" %}
-                                Generar certificado
-                            </button>
-                        </form>
-                    {% else %}
-                        <span class="inline-flex h-9 cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 text-[12px] font-bold text-slate-400"
-                              title="{% if report.risk_level == 'HIGH' or report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un reporte con riesgo alto o crítico. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
-                            {% include "certificates/_seal_icon.html" %}
-                            Certificado no disponible
-                        </span>
-                    {% endif %}
-                </div>
+                    </span>
+                    <span class="badge badge-neutral">{{ document.get_kind_display }}</span>
+                    <span class="badge badge-neutral">{{ document.created_at|date:"d/m/Y H:i" }}</span>
+                </p>
             </div>
         </div>
 
-        <div class="bg-white px-5 py-3">
-            <p class="text-[12px] leading-5 text-slate-600">
-                Este reporte muestra los resultados técnicos del análisis de similitud, posibles patrones IA y fuentes detectadas.
-            </p>
+        <div class="scroll-pane-x flex max-w-full shrink-0 flex-nowrap items-center gap-2 overflow-x-auto py-1" role="toolbar" aria-label="Acciones del reporte">
+            {% if analysis_in_progress %}
+                <span class="btn btn-secondary btn-sm shrink-0 cursor-not-allowed opacity-70">
+                    <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"></span>
+                    Analizando…
+                </span>
+            {% elif report or analysis_job.status == "FAILED" %}
+                <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex shrink-0 flex-nowrap items-center gap-2" data-submit-spinner>
+                    {% csrf_token %}
+                    {% include "reports/_exclusion_options.html" %}
+                    <button type="submit" title="Reanalizar originalidad" data-loading-label="Enviando…" class="btn btn-sm btn-tint btn-blue shrink-0">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/></svg>
+                        Reanalizar
+                    </button>
+                </form>
+            {% else %}
+                <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex shrink-0 flex-nowrap items-center gap-2" data-submit-spinner>
+                    {% csrf_token %}
+                    {% include "reports/_exclusion_options.html" %}
+                    <button type="submit" title="Analizar originalidad" data-loading-label="Enviando…" class="btn btn-primary btn-sm shrink-0">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4"/><circle cx="14" cy="17.5" r="2.5"/><path d="m18.5 19.5 2.5 2.5"/></svg>
+                        Analizar originalidad
+                    </button>
+                </form>
+            {% endif %}
+
+            {% if report %}
+                <a href="{% url 'reports:download_highlighted' document.id %}" title="Descargar el informe de similitud en PDF" class="btn btn-sm btn-tint btn-cyan shrink-0">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>
+                    Informe de similitud
+                </a>
+                <a href="{% url 'reports:download_ai_report' document.id %}" title="Descargar el informe de IA estimada en PDF" class="btn btn-sm btn-tint btn-violet shrink-0">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+                    Informe de IA
+                </a>
+            {% endif %}
+
+            {% if certificate %}
+                <a href="{% url 'certificates:download' certificate.id %}" id="certDownloadLink" title="Descargar certificado"
+                   class="btn btn-sm shrink-0 btn-emerald">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                    Descargar certificado
+                </a>
+            {% elif report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
+                <form method="post" action="{% url 'certificates:generate' document.id %}" class="inline-flex shrink-0" data-submit-spinner>
+                    {% csrf_token %}
+                    <button type="submit" title="Generar certificado" data-loading-label="Generando…"
+                            class="btn btn-sm shrink-0 btn-emerald">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                        Generar certificado
+                    </button>
+                </form>
+            {% else %}
+                <span class="btn btn-secondary btn-sm shrink-0 cursor-not-allowed text-slate-400 opacity-70"
+                      title="{% if report.risk_level == 'HIGH' or report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un reporte con riesgo alto o crítico. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                    Certificado no disponible
+                </span>
+            {% endif %}
         </div>
-    </section>
+    </header>
 
     {% if not report %}
 
         {% if analysis_in_progress %}
-
             <!-- ANALIZANDO -->
-            <section class="rounded-xl border border-[#236bfd]/25 bg-[#eef3ff] p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
+            <section class="card border-brand-500/25 bg-brand-50 p-6" role="status" aria-live="polite">
                 <div class="flex items-center gap-3">
-                    <span class="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#236bfd]/30 border-t-[#236bfd]"></span>
-
-                    <h3 class="text-[16px] font-bold text-[#123f9e]">
-                        Analizando documento...
-                    </h3>
+                    <span class="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-brand-500/30 border-t-brand-500"></span>
+                    <h2 class="text-[16px] font-bold text-brand-700">Analizando documento...</h2>
                 </div>
-
-                <p class="mt-2 text-[13px] text-[#123f9e]/80">
-                    {% if analysis_job.current_step %}
-                        {{ analysis_job.current_step }}.
-                    {% endif %}
+                <div class="mt-4 h-2 overflow-hidden rounded-full bg-white/80" role="progressbar" aria-label="Progreso del análisis" aria-busy="true">
+                    <div class="h-full w-2/5 animate-pulse rounded-full bg-gradient-to-r from-brand-500 to-brand-400"></div>
+                </div>
+                <p class="mt-3 text-[12px] text-brand-700/80">
+                    {% if analysis_job.current_step %}{{ analysis_job.current_step }}.{% endif %}
                     Esta página se actualizará sola en cuanto el reporte esté listo.
                 </p>
+                <div class="mt-5 grid gap-3 sm:grid-cols-3" aria-hidden="true">
+                    <span class="skeleton h-24"></span><span class="skeleton h-24"></span><span class="skeleton h-24"></span>
+                </div>
             </section>
 
         {% elif analysis_job.status == "FAILED" %}
-
             <!-- ANÁLISIS FALLIDO -->
-            <section class="rounded-xl border border-red-200 bg-red-50 p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
-                <h3 class="text-[16px] font-bold text-red-700">
-                    El análisis de este documento falló.
-                </h3>
-
-                <p class="mt-2 text-[13px] text-red-600">
-                    Usa el botón «Reanalizar» de la cabecera para intentarlo de nuevo.
-                </p>
+            <section class="card border-red-200 bg-red-50 p-6" role="alert">
+                <h2 class="text-[16px] font-bold text-red-700">El análisis de este documento falló.</h2>
+                <p class="mt-2 text-[12px] text-red-700/90">Usa el botón «Reanalizar» de la cabecera para intentarlo de nuevo.</p>
             </section>
 
         {% else %}
-
             <!-- SIN REPORTE -->
-            <section class="rounded-xl border border-[#f5b400]/40 bg-[#fff8e6] p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
-                <h3 class="text-[16px] font-bold text-[#8a6100]">
-                    Este documento aún no tiene reporte.
-                </h3>
-
-                <p class="mt-2 text-[13px] text-[#8a6100]">
-                    Usa el botón «Analizar originalidad» de la cabecera para generarlo.
-                </p>
+            <section class="card border-gold-500/40 bg-gold-50 p-6">
+                <h2 class="text-[16px] font-bold text-gold-700">Este documento aún no tiene reporte.</h2>
+                <p class="mt-2 text-[12px] text-gold-700">Usa el botón «Analizar originalidad» de la cabecera para generarlo.</p>
             </section>
-
         {% endif %}
 
     {% else %}
 
-        {% if resubmission_sources %}
-            <!-- AVISO DE REENVÍO -->
-            <section class="rounded-xl border border-red-200 bg-red-50 p-5 shadow-[0_10px_40px_-12px_rgba(18,63,158,0.12)]">
-                <h3 class="text-[16px] font-bold text-red-700">
-                    Posible reenvío del mismo trabajo
-                </h3>
+    {% with oa=report.overall_assessment %}
+    <div class="desk space-y-3 lg:space-y-0">
 
-                <ul class="mt-2 space-y-1 text-[13px] text-red-700">
-                    {% for source in resubmission_sources %}
-                        <li>
-                            «{{ source.display_title }}» de
-                            <span class="font-semibold">{{ source.resubmission.original_owner|default:"otro usuario" }}</span>{% if source.resubmission.original_created_at %},
-                            subido el {{ source.resubmission.original_created_at|slice:":10" }}{% endif %}
-                            ({% if source.resubmission.same_hash %}archivo idéntico{% else %}cubre el {{ source.resubmission.coverage_percent }}% del documento{% endif %}{% if source.is_excluded %}; fuente excluida{% endif %}).
-                        </li>
-                    {% endfor %}
-                </ul>
+        <!-- RIEL IZQUIERDO: solo valoración global + anillos (crece con el contenido; el riel hace scroll propio) -->
+        <aside class="desk-rail flex flex-wrap content-start gap-3 lg:flex-col lg:flex-nowrap lg:pr-1" aria-label="Resultados principales">
 
-                <p class="mt-2 text-[12px] text-red-600">
-                    La fuente no se excluye automáticamente: el docente decide si corresponde excluirla.
-                </p>
-            </section>
-        {% endif %}
-
-        <!-- MÉTRICAS -->
-        <section class="grid gap-4 md:grid-cols-4">
-
-            {% with band=report.similarity_band %}
-            <article class="rounded-xl border p-5 shadow-[0_10px_30px_-14px_rgba(18,63,158,0.15)] transition hover:shadow-[0_14px_34px_-14px_rgba(18,63,158,0.22)]" style="background-color:{{ band.bg }};border-color:{{ band.border }};color:{{ band.fg }};">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em]">Similitud</p>
-                <p class="mt-3 text-[34px] font-bold leading-none">{{ report.similarity_percent }}%</p>
-                <p class="mt-2 text-[12px]">{{ band.label }}</p>
-                {% if report.excluded_options_label %}<p class="mt-1 text-[11px] opacity-80">Excluidas: {{ report.excluded_options_label }}</p>{% endif %}
-                <p class="mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-600">
-                    {% include "reports/_similarity_legend.html" %}
-                </p>
+            <article class="glass min-w-[240px] flex-1 border-l-4 p-4 lg:flex-none lg:shrink-0
+                {% if oa.key == 'high' %}!border-l-red-500{% elif oa.key == 'medium' %}!border-l-amber-500{% else %}!border-l-emerald-500{% endif %}">
+                <div class="flex items-center gap-2">
+                    <span class="h-2.5 w-2.5 shrink-0 rounded-full {% if oa.key == 'high' %}bg-red-500{% elif oa.key == 'medium' %}bg-amber-500{% else %}bg-emerald-500{% endif %}" aria-hidden="true"></span>
+                    <p class="eyebrow !text-slate-600">Valoración global</p>
+                </div>
+                <p class="mt-2 text-[28px] font-extrabold leading-none tracking-tight text-slate-800">{{ oa.label }}</p>
+                <p class="mt-2 text-[11.5px] leading-5 text-slate-600">Similitud: <strong class="text-slate-800">{{ oa.similarity_label }}</strong> · IA: <strong class="text-slate-800">{{ oa.ai_label }}</strong></p>
+                <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold leading-none {% if oa.key == 'high' %}border-red-200 bg-red-50 text-red-700{% elif oa.key == 'medium' %}border-amber-200 bg-amber-50 text-amber-800{% else %}border-emerald-200 bg-emerald-50 text-emerald-700{% endif %}">
+                        <span class="h-1.5 w-1.5 rounded-full {% if oa.key == 'high' %}bg-red-500{% elif oa.key == 'medium' %}bg-amber-500{% else %}bg-emerald-500{% endif %}"></span>{{ oa.label }}
+                    </span>
+                    <span class="badge badge-info">Estado: {{ document.get_status_display }}</span>
+                    {% if report.excluded_options_label %}<span class="badge badge-neutral">Excluidas: {{ report.excluded_options_label }}</span>{% endif %}
+                </div>
             </article>
-            {% endwith %}
 
-            {% if ai_estimate %}
-            {% with band=ai_estimate.band %}
-            <article class="rounded-xl border p-5 shadow-[0_10px_30px_-14px_rgba(18,63,158,0.15)] transition hover:shadow-[0_14px_34px_-14px_rgba(18,63,158,0.22)]" style="background-color:{{ band.bg }};border-color:{{ band.border }};color:{{ band.fg }};">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em]">IA estimada</p>
-                <p class="mt-3 text-[34px] font-bold leading-none">{{ ai_estimate.percent|floatformat:1 }}%</p>
-                <p class="mt-2 text-[12px]">{{ band.label }}</p>
-                <p class="mt-2 text-[10.5px]">{{ ai_estimate.generated_at|date:"d/m/Y H:i" }} · {{ ai_estimate.version_label }}</p>
-                <p class="mt-2 text-[10.5px] leading-snug text-slate-600">{{ ai_estimate.note }}</p>
+            <article class="glass min-w-[240px] flex-1 p-4 lg:flex-none lg:shrink-0">
+                <div class="grid grid-cols-2 gap-2 text-center">
+                    <div class="flex flex-col items-center">
+                        {% if report.similarity_assessment == 2 %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="danger" size=96 numsize="19px" %}
+                        {% elif report.similarity_assessment == 1 %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="warning" size=96 numsize="19px" %}
+                        {% else %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="success" size=96 numsize="19px" %}
+                        {% endif %}
+                        <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">{{ report.similarity_band.label }}</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        {% if ai_estimate %}
+                            {% if report.ai_assessment == 2 %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="danger" size=96 numsize="19px" %}
+                            {% elif report.ai_assessment == 1 %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="warning" size=96 numsize="19px" %}
+                            {% else %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="success" size=96 numsize="19px" %}
+                            {% endif %}
+                            <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ ai_estimate.band.bg }};border-color:{{ ai_estimate.band.border }};color:{{ ai_estimate.band.fg }};">{{ ai_estimate.band.label }}</span>
+                        {% else %}
+                            <p class="my-auto text-[11.5px] font-semibold text-slate-600">IA estimada no disponible para este reporte.</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <!-- Notas flotantes (popover): lo secundario vive aquí -->
+                <div class="mt-3 flex flex-wrap items-center justify-center gap-1.5 border-t border-slate-200/70 pt-3">
+                    <button type="button" class="note-btn" aria-haspopup="dialog" aria-controls="notePop" :aria-expanded="pop === 'meta'" @click="togglePop('meta', $event)"><span aria-hidden="true">ⓘ</span> Análisis</button>
+                    <button type="button" class="note-btn" aria-haspopup="dialog" aria-controls="notePop" :aria-expanded="pop === 'ia'" @click="togglePop('ia', $event)"><span aria-hidden="true">ⓘ</span> Uso de la IA</button>
+                    <button type="button" class="note-btn" aria-haspopup="dialog" aria-controls="notePop" :aria-expanded="pop === 'calc'" @click="togglePop('calc', $event)"><span aria-hidden="true">ⓘ</span> ¿Cómo se calcula?</button>
+                </div>
             </article>
-            {% endwith %}
+        </aside>
+
+        <!-- PANEL DERECHO: pestañas con scroll interno -->
+        <section class="desk-main glass !overflow-hidden" aria-label="Detalle del reporte">
+
+            {% if resubmission_sources %}
+                <!-- AVISO DE REENVÍO -->
+                <div class="shrink-0 border-b border-red-200 bg-red-50 px-4 py-2.5" role="alert">
+                    <h2 class="text-[12px] font-bold text-red-700">Posible reenvío del mismo trabajo</h2>
+                    <ul class="mt-1 max-h-20 space-y-0.5 overflow-y-auto text-[11px] text-red-700">
+                        {% for source in resubmission_sources %}
+                            <li>
+                                «{{ source.display_title }}» de
+                                <span class="font-semibold">{{ source.resubmission.original_owner|default:"otro usuario" }}</span>{% if source.resubmission.original_created_at %},
+                                subido el {{ source.resubmission.original_created_at|slice:":10" }}{% endif %}
+                                ({% if source.resubmission.same_hash %}archivo idéntico{% else %}cubre el {{ source.resubmission.coverage_percent }}% del documento{% endif %}{% if source.is_excluded %}; fuente excluida{% endif %}).
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    <p class="mt-1 text-[11px] text-red-600">La fuente no se excluye automáticamente: el docente decide si corresponde excluirla.</p>
+                </div>
             {% endif %}
 
-            <article class="rounded-xl border border-[#236bfd]/25 bg-[#eef3ff] p-5 shadow-[0_10px_30px_-14px_rgba(18,63,158,0.15)] transition hover:shadow-[0_14px_34px_-14px_rgba(18,63,158,0.22)]">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-[#123f9e]">Estado</p>
-                <p class="mt-3 text-[24px] font-bold leading-none text-[#123f9e]">{{ document.get_status_display }}</p>
-                <p class="mt-2 text-[12px] text-[#123f9e]/80">Documento procesado</p>
-            </article>
+            <div role="tablist" aria-label="Secciones del reporte" class="flex shrink-0 gap-5 overflow-x-auto border-b border-slate-200 bg-white/70 px-5">
+                <button type="button" role="tab" id="tab-resumen" class="tab-link" :aria-selected="tab === 'resumen'" aria-controls="panel-resumen" @click="setTab('resumen')">Resumen</button>
+                <button type="button" role="tab" id="tab-fuentes" class="tab-link" :aria-selected="tab === 'fuentes'" aria-controls="panel-fuentes" @click="setTab('fuentes')">Fuentes <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">{{ sources|length }}</span></button>
+                <button type="button" role="tab" id="tab-ia" class="tab-link" :aria-selected="tab === 'ia'" aria-controls="panel-ia" @click="setTab('ia')">IA</button>
+                <button type="button" role="tab" id="tab-texto" class="tab-link" :aria-selected="tab === 'texto'" aria-controls="panel-texto" @click="setTab('texto')">Texto</button>
+            </div>
 
-            <article class="rounded-xl border border-slate-200 bg-slate-50 p-5 shadow-[0_10px_30px_-14px_rgba(18,63,158,0.15)] transition hover:shadow-[0_14px_34px_-14px_rgba(18,63,158,0.22)]">
-                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Riesgo</p>
-                <p class="mt-3 text-[24px] font-bold leading-none text-slate-800">{{ report.get_risk_level_display }}</p>
-                <p class="mt-2 text-[12px] text-slate-500">Nivel de revisión</p>
-            </article>
-        </section>
+            <!-- RESUMEN -->
+            <div id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" x-show="tab === 'resumen'" class="desk-pane space-y-5 p-5">
+                <div>
+                    <h2 class="mb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Resumen del reporte</h2>
+                    <p class="mb-3 text-[11px] leading-5 text-slate-600">Resultados técnicos del análisis de similitud, posibles patrones IA y fuentes detectadas.</p>
+                    <dl class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
+                        <div class="mini-card mc-blue"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><div class="min-w-0"><dt>Similitud interna</dt><dd class="num mc-val">{{ report.internal_similarity_percent }}%</dd></div></div>
+                        <div class="mini-card mc-cyan"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><div class="min-w-0"><dt>Similitud web</dt><dd class="num mc-val">{{ report.web_similarity_percent }}%</dd></div></div>
+                        <div class="mini-card mc-violet"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span><div class="min-w-0"><dt>Fuentes</dt><dd class="num mc-val">{{ sources|length }}</dd></div></div>
+                        <div class="mini-card mc-amber"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg></span><div class="min-w-0">
+                            <dt>Excluidas</dt>
+                            <dd class="mc-val !text-[14px]">{{ report.excluded_options_label|default:"Ninguna" }}</dd>
+                            {% if excluded_sources %}<dd class="mt-1 text-[10.5px] font-normal leading-4 text-slate-600">{{ excluded_sources|length }} fuente{{ excluded_sources|length|pluralize }} · original {{ report.original_similarity_percent }}%</dd>{% endif %}
+                        </div></div>
+                        <div class="mini-card mc-slate col-span-2 sm:col-span-1"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg></span><div class="min-w-0"><dt>Motor</dt><dd class="mc-val !text-[13px] break-words" title="{{ report.engine_version }}">{{ report.engine_version }}</dd></div></div>
+                    </dl>
+                </div>
 
-        <!-- LAYOUT PRINCIPAL -->
-        <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
-
-            <!-- VISOR DEL DOCUMENTO -->
-            <article class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-
-                <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
-                        <div>
-                            <span class="inline-flex items-center gap-2 rounded-full border border-[#236bfd]/25 bg-[#eef3ff] px-3 py-1">
-                                <span class="h-2 w-2 rounded-full bg-[#236bfd]"></span>
-                                <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-[#123f9e]">
-                                    Visor interactivo
+                <div>
+                    <h2 class="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Sugerencias de mejora</h2>
+                    <div class="grid gap-2.5 md:grid-cols-2">
+                        {% for suggestion in improvement_suggestions %}
+                            <article class="flex items-start gap-3 rounded-xl border border-brand-500/15 bg-brand-50/60 p-3.5 transition hover:border-brand-500/40 hover:bg-brand-50">
+                                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-brand-700 shadow-sm">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        {% if suggestion.icon == "quote" %}<path d="M7 8a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3M17 8a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3"/>
+                                        {% elif suggestion.icon == "rewrite" %}<path d="m4 20 .6-3L15.5 6.1a1.2 1.2 0 0 1 1.8 0l.6.6a1.2 1.2 0 0 1 0 1.8L7 19.4 4 20Z"/>
+                                        {% elif suggestion.icon == "cite" %}<path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M8.5 13h7M8.5 16H13"/>
+                                        {% else %}<path d="m12 2 2.5 7h7l-6 4.5 2 7-5.5-4-5.5 4 2-7-6-4.5h7L12 2Z"/>{% endif %}
+                                    </svg>
                                 </span>
-                            </span>
+                                <div class="min-w-0">
+                                    <p class="text-[12px] font-bold text-brand-700">{{ suggestion.title }}</p>
+                                    <p class="mt-1 text-[12px] leading-5 text-slate-600">{{ suggestion.description }}</p>
+                                </div>
+                            </article>
+                        {% empty %}
+                            <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[13px] font-semibold text-slate-600 md:col-span-2">No hay sugerencias disponibles todavía.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
 
-                            <h3 class="mt-3 text-[18px] font-semibold text-slate-800">
-                                Texto del documento
-                            </h3>
+            <!-- FUENTES: lista a la izquierda, detalle de la seleccionada a la derecha -->
+            <div id="panel-fuentes" role="tabpanel" aria-labelledby="tab-fuentes" x-show="tab === 'fuentes'" class="desk-pane is-flex">
+                <div class="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+                    <div class="src-list border-slate-200 p-3 lg:border-r">
+                        <h2 class="mb-2 px-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Fuentes detectadas</h2>
+                        <div class="space-y-2">
+                            {% for source in sources %}
+                                <button type="button" class="src-item block w-full rounded-xl border border-slate-200 bg-white/80 p-3 text-left transition hover:border-brand-500/50 hover:shadow-soft"
+                                        :aria-current="sel === '{{ source.id }}'" @click="sel = '{{ source.id }}'">
+                                    <span class="flex items-start justify-between gap-2">
+                                        <span class="min-w-0">
+                                            <span class="block truncate text-[12px] font-bold text-slate-800" title="{{ source.display_title }}">{{ source.display_title }}</span>
+                                            <span class="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">{{ source.display_subtitle }}</span>
+                                        </span>
+                                        <span class="badge shrink-0 bg-white {% if report.similarity_level == 'alto' %}border-red-200 text-red-700{% elif report.similarity_level == 'moderado' %}border-amber-300 text-amber-800{% else %}border-emerald-200 text-emerald-700{% endif %}">{{ source.matched_percent|floatformat:1 }}%</span>
+                                    </span>
+                                    {% if source.is_possible_resubmission %}<span class="mt-1.5 inline-flex rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700">Posible reenvío</span>{% endif %}
+                                </button>
+                            {% empty %}
+                                <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500">No se detectaron fuentes internas relevantes.</p>
+                            {% endfor %}
                         </div>
 
-                        <div class="flex flex-wrap gap-2">
-                            <span class="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-[11px] font-bold text-red-700">
-                                Rojo: similitud
-                            </span>
+                        {% if can_manage_sources and sources and not report.allows_source_exclusion %}
+                            <p class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11.5px] text-slate-500">Vuelve a analizar el documento para poder excluir fuentes.</p>
+                        {% endif %}
 
-                            <span class="rounded-full border border-[#236bfd]/30 px-3 py-1 text-[11px] font-bold text-[#123f9e]" style="background-color:#eef3ff;">
-                                Azul: IA
-                            </span>
-
-                            {% if report.common_text_ranges %}
-                                <span class="rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-[11px] font-bold text-slate-600">
-                                    Gris: texto común, no cuenta en el %
-                                </span>
-                            {% endif %}
-                        </div>
+                        {% if excluded_sources %}
+                            <div class="mt-4 border-t border-slate-200 pt-3">
+                                <p class="px-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Fuentes excluidas: {{ excluded_sources|length }}</p>
+                                <div class="mt-2 space-y-2">
+                                    {% for source in excluded_sources %}
+                                        <article class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                            <div class="flex items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <p class="truncate text-[12px] font-bold text-slate-500 line-through" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
+                                                    <p class="mt-0.5 truncate text-[11px] font-semibold text-slate-400">{{ source.display_subtitle }}</p>
+                                                </div>
+                                                <span class="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500">{{ source.matched_percent|floatformat:1 }}%</span>
+                                            </div>
+                                            <p class="mt-1.5 text-[11px] leading-5 text-slate-600"><span class="font-semibold">Motivo:</span> {{ source.exclusion_reason }}</p>
+                                            <p class="mt-0.5 text-[11px] text-slate-400">{{ source.excluded_by.get_full_name|default:source.excluded_by.username|default:"—" }} · {{ source.excluded_at|date:"d/m/Y H:i" }}</p>
+                                            {% if source.is_possible_resubmission %}
+                                                <p class="mt-1.5 inline-flex items-center rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700">Posible reenvío del mismo trabajo</p>
+                                            {% endif %}
+                                            {% if can_manage_sources %}
+                                                <form method="post" action="{% url 'reports:restore_source' document.id source.id %}" class="mt-2" data-submit-spinner>
+                                                    {% csrf_token %}
+                                                    <button type="submit" data-loading-label="Recalculando…"
+                                                            class="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
+                                                        Restaurar
+                                                    </button>
+                                                </form>
+                                            {% endif %}
+                                        </article>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        {% endif %}
                     </div>
 
-                    <div id="markNav"
-                         class="mt-3 hidden flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[12px]">
-                        <span class="font-semibold text-slate-500">Coincidencias</span>
+                    <div class="src-detail p-4">
+                        {% for source in sources %}
+                            <article x-show="sel === '{{ source.id }}'" {% if not forloop.first %}x-cloak{% endif %} aria-label="Fuente seleccionada">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="eyebrow">Fuente seleccionada</p>
+                                        <h3 class="mt-1 break-words text-[15px] font-bold leading-snug {% if report.similarity_level == 'alto' %}text-red-800{% elif report.similarity_level == 'moderado' %}text-amber-700{% else %}text-emerald-800{% endif %}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</h3>
+                                        <p class="mt-1 text-[11px] font-semibold text-slate-600">{{ source.display_subtitle }}</p>
+                                    </div>
+                                    <span class="badge shrink-0 bg-white {% if report.similarity_level == 'alto' %}border-red-200 text-red-700{% elif report.similarity_level == 'moderado' %}border-amber-300 text-amber-800{% else %}border-emerald-200 text-emerald-700{% endif %}">{{ source.matched_percent|floatformat:1 }}%</span>
+                                </div>
+                                {% if source.snippet %}
+                                    <p class="mt-3 line-clamp-6 rounded-xl border border-slate-200 bg-white/80 p-3 text-[11.5px] leading-5 text-slate-700">{{ source.snippet }}</p>
+                                {% endif %}
+                                <div class="mt-3 flex flex-wrap items-center gap-2">
+                                    <button type="button" class="btn btn-secondary btn-sm" @click="openSource($event)" aria-haspopup="dialog">Ver detalle completo</button>
+                                </div>
+                                {% include "reports/_source_actions.html" %}
+                            </article>
+                        {% empty %}
+                            <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500">Selecciona una fuente para ver su detalle.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
 
-                        <select id="markFilter"
-                                class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-[12px] font-semibold text-slate-700 outline-none focus:border-[#236bfd] focus:ring-2 focus:ring-[#236bfd]/15">
-                            <option value="all">Todas</option>
-                            <option value="similarity">Solo similitud</option>
-                            <option value="ai">Solo IA</option>
-                        </select>
+            <!-- IA: segmentos con probabilidad; al pulsar uno salta a Texto y lo resalta -->
+            <div id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" x-show="tab === 'ia'" class="desk-pane p-5">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Posibles patrones IA</h2>
+                    <button type="button" class="text-[11px] font-bold text-brand-700 underline-offset-2 hover:underline" @click="openCalc($event)" aria-haspopup="dialog">¿Cómo se calcula?</button>
+                </div>
+                <div class="grid gap-3 xl:grid-cols-2">
+                    {% for finding in ai_findings %}
+                        <button type="button" data-excerpt="{{ finding.text_excerpt|truncatechars:80 }}" data-ai-index="{{ forloop.counter0 }}"
+                                class="rounded-xl border border-brand-500/25 bg-brand-50 p-4 text-left transition hover:border-brand-500/60 hover:shadow-soft"
+                                @click="goAi($el)" title="Ver este segmento en el texto">
+                            <span class="flex items-center justify-between gap-2">
+                                <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-700">Probabilidad</span>
+                                <span class="badge badge-info bg-white">{{ finding.confidence_percent }}%</span>
+                            </span>
+                            <span class="mt-2 line-clamp-5 block text-[11.5px] leading-5 text-brand-800">{{ finding.text_excerpt }}</span>
+                            <span class="mt-2 block text-[11px] font-bold text-brand-700">Ver en el texto →</span>
+                        </button>
+                    {% empty %}
+                        <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500 xl:col-span-2">No se detectaron patrones IA relevantes.</p>
+                    {% endfor %}
+                </div>
+            </div>
 
-                        <div class="inline-flex items-center gap-1">
-                            <button type="button" id="markPrev" aria-label="Coincidencia anterior"
-                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white disabled:hover:text-slate-600">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6L9 12L15 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
-
-                            <span id="markCounter" class="min-w-[64px] text-center font-bold text-slate-700">0 / 0</span>
-
-                            <button type="button" id="markNext" aria-label="Coincidencia siguiente"
-                                    class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white disabled:hover:text-slate-600">
-                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
-                        </div>
+            <!-- TEXTO (VISOR INTERACTIVO) -->
+            <div id="panel-texto" role="tabpanel" aria-labelledby="tab-texto" x-show="tab === 'texto'" class="desk-pane is-flex">
+                <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-2.5">
+                    <div>
+                        <p class="eyebrow">Visor interactivo</p>
+                        <h2 class="text-[14px] font-bold text-slate-800">Texto del documento</h2>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <span class="badge badge-danger">Rojo: similitud</span>
+                        <span class="badge badge-info">Azul: IA</span>
+                        {% if report.common_text_ranges %}<span class="badge badge-neutral">Gris: texto común, no cuenta en el %</span>{% endif %}
                     </div>
                 </div>
 
-                <div id="markViewport" class="max-h-[70vh] overflow-y-auto bg-white p-5">
-                    <div class="whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-5 text-[14px] leading-8 text-slate-700">
+                <div id="markNav" class="hidden shrink-0 flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-5 py-2 text-[11px]">
+                    <span class="font-semibold text-slate-500">Coincidencias</span>
+                    <label class="sr-only" for="markFilter">Filtrar coincidencias</label>
+                    <select id="markFilter" class="field h-8 w-auto rounded-lg px-2 text-[11px] font-semibold">
+                        <option value="all">Todas</option>
+                        <option value="similarity">Solo similitud</option>
+                        <option value="ai">Solo IA</option>
+                    </select>
+                    <div class="inline-flex items-center gap-1">
+                        <button type="button" id="markPrev" aria-label="Coincidencia anterior" class="btn btn-secondary btn-sm !w-8 !px-0">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M15 6 9 12l6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                        <span id="markCounter" class="min-w-[64px] text-center font-bold text-slate-700">0 / 0</span>
+                        <button type="button" id="markNext" aria-label="Coincidencia siguiente" class="btn btn-secondary btn-sm !w-8 !px-0">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="markViewport" class="desk-pane p-4 sm:p-5">
+                    <div class="mx-auto max-w-3xl whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-6 font-serif text-[15px] leading-8 text-slate-700 shadow-soft sm:p-8">
                         {% for segment in highlighted_segments %}
                             {% if segment.finding_type == "SIMILARITY" %}
                                 <span data-mark="similarity" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 ring-1" style="background-color:{{ report.similarity_band.bg }};color:{{ report.similarity_band.fg }};--tw-ring-color:{{ report.similarity_band.border }};"
                                           title="Similitud {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                             {% elif segment.finding_type == "AI_GENERATED" %}
-                                <span data-mark="ai" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 text-[#123f9e] ring-1 ring-[#236bfd]/30" style="background-color:#e3ecff;"
+                                <span data-mark="ai" class="js-mark scroll-mt-6 rounded-sm px-1 py-0.5 text-brand-700 ring-1 ring-brand-500/30" style="background-color:#e3ecff;"
                                       title="IA {{ segment.confidence_percent }}%">{{ segment.text }}</span>
                             {% elif segment.finding_type == "COMMON_TEXT" %}
                                 <span class="rounded-sm bg-slate-200 px-1 py-0.5 text-slate-600"
@@ -360,287 +468,286 @@
                                 {{ segment.text }}
                             {% endif %}
                         {% empty %}
-                            <p class="text-slate-500">
-                                No hay texto extraído para mostrar.
-                            </p>
+                            <p class="font-sans text-slate-500">No hay texto extraído para mostrar.</p>
                         {% endfor %}
                     </div>
                 </div>
-            </article>
+            </div>
 
-            <!-- PANEL DERECHO -->
-            <aside class="space-y-5">
-
-                <!-- RESUMEN -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-                    <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                        <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">
-                            Resumen del reporte
-                        </h3>
-                    </div>
-
-                    <div class="space-y-3 p-4">
-                        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span class="text-[12px] font-semibold text-slate-500">
-                                Similitud interna
-                            </span>
-                            <span class="text-[12px] font-bold text-red-700">
-                                {{ report.internal_similarity_percent }}%
-                            </span>
-                        </div>
-
-                        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span class="text-[12px] font-semibold text-slate-500">
-                                Similitud web
-                            </span>
-                            <span class="text-[12px] font-bold text-red-700">
-                                {{ report.web_similarity_percent }}%
-                            </span>
-                        </div>
-
-                        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span class="text-[12px] font-semibold text-slate-500">
-                                Excluidas
-                            </span>
-                            <span class="text-[12px] font-bold text-slate-700">
-                                {{ report.excluded_options_label|default:"Ninguna" }}
-                            </span>
-                        </div>
-
-                        {% if excluded_sources %}
-                            <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                <span class="text-[12px] font-semibold text-slate-500">
-                                    Similitud original
-                                </span>
-                                <span class="text-[12px] font-bold text-slate-700">
-                                    {{ report.original_similarity_percent }}% · {{ excluded_sources|length }} fuente{{ excluded_sources|length|pluralize }} excluida{{ excluded_sources|length|pluralize }}
-                                </span>
-                            </div>
-                        {% endif %}
-
-                        <div class="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            <span class="text-[12px] font-semibold text-slate-500">
-                                Motor
-                            </span>
-                            <span class="text-[12px] font-bold text-slate-700">
-                                {{ report.engine_version }}
-                            </span>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- SUGERENCIAS DE MEJORA -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-                    <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                        <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">
-                            Sugerencias de mejora
-                        </h3>
-                    </div>
-
-                    <div class="space-y-3 p-4">
-                        {% for suggestion in improvement_suggestions %}
-                            <article class="flex items-start gap-3 rounded-lg border border-[#236bfd]/20 bg-[#f4f8ff] p-3 transition hover:border-[#236bfd]/40 hover:bg-[#eef3ff]">
-                                <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#236bfd]/25 bg-white text-[#123f9e]">
-                                    {% if suggestion.icon == "quote" %}
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M7 8C5.34315 8 4 9.34315 4 11V13C4 14.6569 5.34315 16 7 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                            <path d="M17 8C15.3431 8 14 9.34315 14 11V13C14 14.6569 15.3431 16 17 16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                        </svg>
-                                    {% elif suggestion.icon == "rewrite" %}
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M4 20L4.6 17L15.5 6.1C16 5.6 16.8 5.6 17.3 6.1L17.9 6.7C18.4 7.2 18.4 8 17.9 8.5L7 19.4L4 20Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                        </svg>
-                                    {% elif suggestion.icon == "cite" %}
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M7 3H14L19 8V21H7C5.89543 21 5 20.1046 5 19V5C5 3.89543 5.89543 3 7 3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
-                                            <path d="M8.5 13H15.5M8.5 16H13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-                                        </svg>
-                                    {% else %}
-                                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                            <path d="M12 2L14.5 9H21.5L15.5 13.5L17.5 20.5L12 16.5L6.5 20.5L8.5 13.5L2.5 9H9.5L12 2Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                                        </svg>
-                                    {% endif %}
-                                </div>
-
-                                <div class="min-w-0">
-                                    <p class="text-[12.5px] font-bold text-[#123f9e]">
-                                        {{ suggestion.title }}
-                                    </p>
-                                    <p class="mt-1 text-[12px] leading-5 text-slate-600">
-                                        {{ suggestion.description }}
-                                    </p>
-                                </div>
-                            </article>
-                        {% empty %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-[13px] font-semibold text-slate-500">
-                                No hay sugerencias disponibles todavía.
-                            </p>
-                        {% endfor %}
-                    </div>
-                </section>
-
-                <!-- FUENTES -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-                    <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                        <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">
-                            Fuentes detectadas
-                        </h3>
-                    </div>
-
-                    <div class="max-h-[300px] space-y-3 overflow-y-auto p-4">
-                        {% for source in sources %}
-                            {% if report.similarity_level == "alto" %}
-                                <article class="rounded-lg border border-red-200 bg-red-50 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-red-800" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-red-600">{{ source.display_subtitle }}</p>
-                                        </div>
-                                        <span class="shrink-0 rounded-full bg-red-100 px-2 py-1 text-[11px] font-bold text-red-700">
-                                            {{ source.matched_percent|floatformat:1 }}%
-                                        </span>
-                                    </div>
-                                    {% if source.snippet %}
-                                        <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-red-800/80">{{ source.snippet }}</p>
-                                    {% endif %}
-                                    {% include "reports/_source_actions.html" %}
-                                </article>
-                            {% elif report.similarity_level == "moderado" %}
-                                <article class="rounded-lg border border-[#f5b400]/40 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]" style="background-color:#fff8e6;">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-[#8a6100]" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-[#8a6100]">{{ source.display_subtitle }}</p>
-                                        </div>
-                                        <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-bold text-[#8a6100]" style="background-color:#fff3cf;">
-                                            {{ source.matched_percent|floatformat:1 }}%
-                                        </span>
-                                    </div>
-                                    {% if source.snippet %}
-                                        <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-[#8a6100]/80">{{ source.snippet }}</p>
-                                    {% endif %}
-                                    {% include "reports/_source_actions.html" %}
-                                </article>
-                            {% else %}
-                                <article class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-[13px] font-bold text-emerald-800" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
-                                            <p class="mt-1 truncate text-[11px] font-semibold text-emerald-600">{{ source.display_subtitle }}</p>
-                                        </div>
-                                        <span class="shrink-0 rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-bold text-emerald-700">
-                                            {{ source.matched_percent|floatformat:1 }}%
-                                        </span>
-                                    </div>
-                                    {% if source.snippet %}
-                                        <p class="mt-2 line-clamp-3 text-[12px] leading-5 text-emerald-800/80">{{ source.snippet }}</p>
-                                    {% endif %}
-                                    {% include "reports/_source_actions.html" %}
-                                </article>
-                            {% endif %}
-                        {% empty %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-[13px] font-semibold text-slate-500">
-                                No se detectaron fuentes internas relevantes.
-                            </p>
-                        {% endfor %}
-
-                        {% if can_manage_sources and sources and not report.allows_source_exclusion %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-3 text-[12px] text-slate-500">
-                                Vuelve a analizar el documento para poder excluir fuentes.
-                            </p>
-                        {% endif %}
-                    </div>
-
-                    {% if excluded_sources %}
-                        <div class="border-t border-slate-200 p-4">
-                            <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-                                Fuentes excluidas: {{ excluded_sources|length }}
-                            </p>
-
-                            <div class="mt-3 space-y-3">
-                                {% for source in excluded_sources %}
-                                    <article class="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                        <div class="flex items-start justify-between gap-3">
-                                            <div class="min-w-0">
-                                                <p class="truncate text-[13px] font-bold text-slate-500 line-through" title="{{ source.display_title }}">{% if source.link_url %}<a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="hover:underline">{{ source.display_title }}</a>{% else %}{{ source.display_title }}{% endif %}</p>
-                                                <p class="mt-1 truncate text-[11px] font-semibold text-slate-400">{{ source.display_subtitle }}</p>
-                                            </div>
-                                            <span class="shrink-0 rounded-full bg-slate-200 px-2 py-1 text-[11px] font-bold text-slate-500">
-                                                {{ source.matched_percent|floatformat:1 }}%
-                                            </span>
-                                        </div>
-                                        <p class="mt-2 text-[12px] leading-5 text-slate-600">
-                                            <span class="font-semibold">Motivo:</span> {{ source.exclusion_reason }}
-                                        </p>
-                                        <p class="mt-1 text-[11px] text-slate-400">
-                                            {{ source.excluded_by.get_full_name|default:source.excluded_by.username|default:"—" }}
-                                            · {{ source.excluded_at|date:"d/m/Y H:i" }}
-                                        </p>
-                                        {% if source.is_possible_resubmission %}
-                                            <p class="mt-2 inline-flex items-center rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700">
-                                                Posible reenvío del mismo trabajo
-                                            </p>
-                                        {% endif %}
-                                        {% if can_manage_sources %}
-                                            <form method="post"
-                                                  action="{% url 'reports:restore_source' document.id source.id %}"
-                                                  class="mt-2"
-                                                  data-submit-spinner>
-                                                {% csrf_token %}
-                                                <button type="submit"
-                                                        data-loading-label="Recalculando…"
-                                                        class="inline-flex h-8 items-center rounded-lg border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition hover:border-[#236bfd]/40 hover:bg-[#f4f8ff] hover:text-[#123f9e]">
-                                                    Restaurar
-                                                </button>
-                                            </form>
-                                        {% endif %}
-                                    </article>
-                                {% endfor %}
-                            </div>
-                        </div>
-                    {% endif %}
-                </section>
-
-                <!-- IA -->
-                <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_40px_-12px_rgba(18,63,158,0.18)]">
-                    <div class="border-b border-slate-200 bg-gradient-to-b from-white to-[#f4f8ff] px-5 py-4">
-                        <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">
-                            Posibles patrones IA
-                        </h3>
-                    </div>
-
-                    <div class="max-h-[300px] space-y-3 overflow-y-auto p-4">
-                        {% for finding in ai_findings %}
-                            <article class="rounded-lg border border-[#236bfd]/25 p-3 transition hover:shadow-[0_6px_18px_-10px_rgba(18,63,158,0.25)]" style="background-color:#eef3ff;">
-                                <div class="flex items-center justify-between gap-2">
-                                    <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-[#123f9e]">
-                                        Confianza
-                                    </p>
-
-                                    <span class="rounded-full px-2 py-1 text-[11px] font-bold text-[#123f9e]" style="background-color:#e3ecff;">
-                                        {{ finding.confidence_percent }}%
-                                    </span>
-                                </div>
-
-                                <p class="mt-2 line-clamp-5 text-[12px] leading-5 text-[#123f9e]">
-                                    {{ finding.text_excerpt }}
-                                </p>
-                            </article>
-                        {% empty %}
-                            <p class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-[13px] font-semibold text-slate-500">
-                                No se detectaron patrones IA relevantes.
-                            </p>
-                        {% endfor %}
-                    </div>
-                </section>
+            <!-- Nota flotante discreta (cierre guardado en sessionStorage) -->
+            <aside x-show="hintOpen" x-cloak class="note-card m-3 flex w-[320px] max-w-[calc(100%-1.5rem)] items-start gap-2 self-end p-3 text-[12px] leading-5 text-slate-700 lg:absolute lg:bottom-4 lg:right-4 lg:z-20 lg:m-0" role="note">
+                <span aria-hidden="true" class="font-bold text-brand-700">ⓘ</span>
+                <p class="min-w-0 flex-1">IA estimada: indicativa, requiere revisión docente. No constituye prueba de uso de inteligencia artificial.</p>
+                <button type="button" class="-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900" @click="closeHint()" aria-label="Cerrar aviso">
+                    <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+                </button>
             </aside>
         </section>
+    </div>
+    {% endwith %}
+
+    <!-- NOTA FLOTANTE (popover): análisis · uso responsable de la IA · cálculo -->
+    <template x-teleport="body">
+    <div x-show="pop && popModal" x-cloak class="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-[2px]" @click="closePop(true)" aria-hidden="true"></div>
+    </template>
+    <template x-teleport="body">
+    <div id="notePop" x-ref="notePop" x-show="pop" x-cloak tabindex="-1" role="dialog" aria-label="Nota informativa"
+         class="note-card fixed z-[9999] text-[12px] leading-5 text-slate-700 outline-none" :style="popStyle" @click.outside="outsidePop($event)">
+        <span class="pop-arrow" :data-side="popModal ? 'none' : popSide" :style="popArrow"></span>
+        <div class="pop-scroll relative overflow-y-auto rounded-xl p-3.5" style="max-height:inherit">
+        <div class="relative mb-1.5 flex items-start justify-between gap-2">
+            <p class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-700"><span aria-hidden="true">ⓘ</span>
+                <span x-text="pop === 'meta' ? 'Análisis' : (pop === 'ia' ? 'Uso responsable de la IA' : '¿Cómo se calcula?')"></span></p>
+            <button type="button" class="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100" @click="closePop(true)" aria-label="Cerrar nota">
+                <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            </button>
+        </div>
+        <div x-show="pop === 'meta'">
+            {% if ai_estimate %}<p>Fecha: <strong>{{ ai_estimate.generated_at|date:"d/m/Y H:i" }}</strong></p>
+            <p>Motor de IA: <strong>{{ ai_estimate.version_label }}</strong></p>{% endif %}
+            <p>Motor de similitud: <strong>{{ report.engine_version }}</strong></p>
+            <p class="mt-1.5 text-slate-600">Nivel de revisión (similitud): {{ report.get_risk_level_display }}. La IA es indicativa y no bloquea el certificado.</p>
+        </div>
+        <div x-show="pop === 'ia'" x-cloak>
+            <p>{% firstof ai_estimate.note "IA estimada: valor probabilístico calculado por un modelo automático. No constituye prueba del uso de inteligencia artificial y requiere la revisión de un docente antes de cualquier decisión académica." %}</p>
+        </div>
+        <div x-show="pop === 'calc'" x-cloak>
+            <p><strong>Similitud:</strong> porcentaje de texto que coincide con otras fuentes (0 % sin coincidencias, hasta 75-100 % muy alta).</p>
+            <p class="mt-1"><strong>IA estimada:</strong> &lt; 40 % sin indicios, 40-69 % indicios, ≥ 70 % posible IA.</p>
+            <button type="button" class="mt-2 font-bold text-brand-700 underline-offset-2 hover:underline" @click="closePop(false); openCalc($event)">Ver tabla completa</button>
+        </div>
+        </div>
+    </div>
+    </template>
+
+    <!-- MODAL: ¿Cómo se calcula? -->
+    <div x-show="calcOpen" x-cloak x-transition.opacity.duration.150ms class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm sm:items-center"
+         role="dialog" aria-modal="true" aria-labelledby="calcTitle" @click.self="closeModals()" @keydown.tab="trap($event)">
+        <div x-ref="calcModal" tabindex="-1" class="glass w-full max-w-xl !bg-white p-5 outline-none sm:p-6">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="eyebrow">Interpretación</p>
+                    <h2 id="calcTitle" class="mt-0.5 text-[17px] font-bold text-brand-900">¿Cómo se calcula?</h2>
+                </div>
+                <button type="button" class="icon-btn shrink-0" @click="closeModals()" aria-label="Cerrar">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+
+            <h3 class="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Similitud (porcentaje de texto coincidente)</h3>
+            <ul class="mt-2 space-y-1.5 text-[12px]">
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#DBEAFE;border-color:#93C5FD;color:#1E3A8A;"><span class="font-bold">0 %</span><span>Sin coincidencias</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#D1FAE5;border-color:#6EE7B7;color:#064E3B;"><span class="font-bold">1-24 %</span><span>Similitud baja</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#FEF9C3;border-color:#FDE047;color:#713F12;"><span class="font-bold">25-49 %</span><span>Similitud media</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#FFEDD5;border-color:#FDBA74;color:#7C2D12;"><span class="font-bold">50-74 %</span><span>Similitud alta</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#FEE2E2;border-color:#FCA5A5;color:#7F1D1D;"><span class="font-bold">75-100 %</span><span>Similitud muy alta</span></li>
+            </ul>
+
+            <h3 class="mt-4 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">IA estimada</h3>
+            <ul class="mt-2 space-y-1.5 text-[12px]">
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#D1FAE5;border-color:#6EE7B7;color:#064E3B;"><span class="font-bold">&lt; 40 %</span><span>Sin indicios concluyentes</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#FEF9C3;border-color:#FDE047;color:#713F12;"><span class="font-bold">40-69 %</span><span>Indicios: revisar con criterio docente</span></li>
+                <li class="flex items-center justify-between gap-3 rounded-lg border px-3 py-1.5" style="background-color:#FEE2E2;border-color:#FCA5A5;color:#7F1D1D;"><span class="font-bold">≥ 70 %</span><span>Posible IA: revisar</span></li>
+            </ul>
+
+            <p class="mt-4 rounded-xl border border-gold-500/40 bg-gold-50 p-3 text-[11.5px] leading-5 text-gold-700">
+                <strong>Uso responsable.</strong>
+                {% firstof ai_estimate.note "IA estimada: valor probabilístico calculado por un modelo automático. No constituye prueba del uso de inteligencia artificial y requiere la revisión de un docente antes de cualquier decisión académica." %}
+            </p>
+            <div class="mt-4 flex justify-end">
+                <button type="button" class="btn btn-primary btn-sm" @click="closeModals()">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: Detalle de fuente -->
+    <div x-show="srcOpen" x-cloak x-transition.opacity.duration.150ms class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm sm:items-center"
+         role="dialog" aria-modal="true" aria-labelledby="srcTitle" @click.self="closeModals()" @keydown.tab="trap($event)">
+        <div x-ref="srcModal" tabindex="-1" class="glass w-full max-w-2xl !bg-white p-5 outline-none sm:p-6">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <p class="eyebrow">Fuente detectada</p>
+                    <h2 id="srcTitle" class="mt-0.5 text-[17px] font-bold text-brand-900">Detalle de fuente</h2>
+                </div>
+                <button type="button" class="icon-btn shrink-0" @click="closeModals()" aria-label="Cerrar">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+                </button>
+            </div>
+            {% for source in sources %}
+                <div x-show="sel === '{{ source.id }}'" x-cloak>
+                    <p class="mt-3 break-words text-[14px] font-bold text-slate-800">{{ source.display_title }}</p>
+                    <p class="mt-0.5 text-[11.5px] font-semibold text-slate-500">{{ source.display_subtitle }}</p>
+                    <dl class="mt-3 grid grid-cols-2 gap-2 text-[11.5px] sm:grid-cols-3">
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><dt class="text-slate-500">Coincidencia</dt><dd class="num font-bold text-slate-800">{{ source.matched_percent|floatformat:1 }}%</dd></div>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><dt class="text-slate-500">Tipo</dt><dd class="font-bold text-slate-800">{{ source.get_source_type_display }}</dd></div>
+                        {% if source.domain %}<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"><dt class="text-slate-500">Dominio</dt><dd class="truncate font-bold text-slate-800" title="{{ source.domain }}">{{ source.domain }}</dd></div>{% endif %}
+                    </dl>
+                    {% if source.link_url %}
+                        <p class="mt-3 text-[11.5px]"><a href="{{ source.link_url }}" target="_blank" rel="noopener noreferrer" class="break-all font-semibold text-brand-700 underline-offset-2 hover:underline">{{ source.link_url }}</a></p>
+                    {% endif %}
+                    {% if source.is_possible_resubmission %}
+                        <p class="mt-3 inline-flex items-center rounded-full border border-red-300 bg-white px-2 py-0.5 text-[11px] font-bold text-red-700">Posible reenvío del mismo trabajo</p>
+                    {% endif %}
+                    {% if source.snippet %}
+                        <h3 class="mt-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Fragmento coincidente</h3>
+                        <p class="mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-3 text-[11.5px] leading-5 text-slate-700">{{ source.snippet }}</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+            <div class="mt-4 flex justify-end">
+                <button type="button" class="btn btn-primary btn-sm" @click="closeModals()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     {% endif %}
-</section>
+</div>
 
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    // Mesa de trabajo del reporte: pestañas (con ancla #resumen/#fuentes/#ia/#texto), fuente
+    // seleccionada y modales con foco atrapado (Esc y clic fuera cierran; el foco vuelve al botón).
+    function reportDesk(firstSource) {
+        var TABS = ["resumen", "fuentes", "ia", "texto"];
+        var FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        return {
+            tab: "resumen",
+            sel: firstSource || null,
+            calcOpen: false,
+            srcOpen: false,
+            opener: null,
+            pop: null,
+            popStyle: "",
+            popArrow: "",
+            popSide: "right",
+            popModal: false,
+            popOpener: null,
+            hintOpen: true,
+            init() {
+                try { if (sessionStorage.getItem("reportHintClosed") === "1") this.hintOpen = false; } catch (e) {}
+                var h = (location.hash || "#resumen").slice(1);
+                if (TABS.indexOf(h) > -1) this.tab = h;
+            },
+            setTab(name) {
+                this.tab = name;
+                history.replaceState(null, "", "#" + name);
+            },
+            closeHint() {
+                this.hintOpen = false;
+                try { sessionStorage.setItem("reportHintClosed", "1"); } catch (e) {}
+            },
+            togglePop(name, ev) {
+                if (this.pop === name) { this.closePop(true); return; }
+                this.popOpener = ev.currentTarget;
+                this.pop = name;
+                this.popModal = document.documentElement.clientWidth < 768;
+                this.popStyle = "visibility:hidden;left:8px;top:8px;width:320px";
+                var self = this;
+                this.$nextTick(function () { self.placePop(); self.$refs.notePop.focus({ preventScroll: true }); });
+            },
+            // Coloca el popover junto al botón: derecha > arriba > abajo; siempre dentro del viewport.
+            // En <768 px se muestra como hoja modal centrada.
+            placePop() {
+                var p = this.$refs.notePop, b = this.popOpener;
+                if (!p || !b || !this.pop) return;
+                var vw = document.documentElement.clientWidth, vh = window.innerHeight, m = 12, gap = 10, arrow = 16;
+                this.popModal = vw < 768;
+                var w = vw < 640 ? vw - 2 * m : 320;
+                if (this.popModal) {
+                    var mh = vh - 2 * m;
+                    p.style.maxHeight = mh + "px";
+                    var hh = Math.min(p.offsetHeight, mh);
+                    this.popSide = "none"; this.popArrow = "";
+                    this.popStyle = "width:" + w + "px;left:" + Math.round((vw - w) / 2) + "px;top:" + Math.round(Math.max(m, (vh - hh) / 2)) + "px;max-height:" + mh + "px";
+                    return;
+                }
+                var r = b.getBoundingClientRect(), mh2 = vh - 2 * m;
+                p.style.maxHeight = mh2 + "px";
+                var h = Math.min(p.offsetHeight, mh2), left, top, side;
+                if (r.right + gap + w <= vw - m) {            // derecha del botón
+                    side = "left"; left = r.right + gap;
+                    top = r.top + r.height / 2 - h / 2;
+                } else if (r.top - gap - h >= m) {            // arriba
+                    side = "top"; top = r.top - gap - h;
+                    left = r.left + r.width / 2 - w / 2;
+                } else {                                      // abajo (recortado al viewport)
+                    side = "bottom"; top = r.bottom + gap;
+                    left = r.left + r.width / 2 - w / 2;
+                    mh2 = Math.max(120, vh - m - top);
+                }
+                left = Math.max(m, Math.min(left, vw - w - m));
+                top = Math.max(m, Math.min(top, vh - m - Math.min(h, mh2)));
+                var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                this.popSide = side;
+                this.popArrow = side === "left"
+                    ? "top:" + Math.max(arrow, Math.min(cy - top - 6, Math.min(h, mh2) - arrow - 6)) + "px"
+                    : "left:" + Math.max(arrow, Math.min(cx - left - 6, w - arrow - 6)) + "px";
+                this.popStyle = "width:" + w + "px;left:" + Math.round(left) + "px;top:" + Math.round(top) + "px;max-height:" + Math.round(mh2) + "px";
+            },
+            outsidePop(ev) {
+                if (this.popOpener && this.popOpener.contains(ev.target)) return;
+                this.closePop(false);
+            },
+            closePop(focus) {
+                if (!this.pop) return;
+                this.pop = null;
+                if (focus && this.popOpener && document.contains(this.popOpener)) this.popOpener.focus();
+            },
+            openCalc(ev) { this.openModal("calcOpen", "calcModal", ev); },
+            openSource(ev) { this.openModal("srcOpen", "srcModal", ev); },
+            openModal(flag, ref, ev) {
+                this.opener = (ev && ev.currentTarget) || document.activeElement;
+                this[flag] = true;
+                document.body.style.overflow = "hidden";
+                var self = this;
+                this.$nextTick(function () {
+                    var box = self.$refs[ref];
+                    var first = box && box.querySelector(FOCUSABLE);
+                    (first || box).focus();
+                });
+            },
+            closeModals() {
+                if (!this.calcOpen && !this.srcOpen) return;
+                this.calcOpen = false;
+                this.srcOpen = false;
+                document.body.style.overflow = "";
+                if (this.opener && document.contains(this.opener)) this.opener.focus();
+                this.opener = null;
+            },
+            // Mantiene el Tab dentro del modal abierto.
+            trap(ev) {
+                var box = ev.currentTarget.firstElementChild;
+                var items = Array.prototype.filter.call(box.querySelectorAll(FOCUSABLE), function (el) { return el.offsetParent !== null; });
+                if (!items.length) { ev.preventDefault(); box.focus(); return; }
+                var first = items[0], last = items[items.length - 1];
+                if (ev.shiftKey && (document.activeElement === first || document.activeElement === box)) { ev.preventDefault(); last.focus(); }
+                else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+            },
+            // IA → Texto: cambia de pestaña, localiza el segmento azul y lo resalta.
+            goAi(btn) {
+                this.setTab("texto");
+                var excerpt = (btn.getAttribute("data-excerpt") || "").replace(/\s+/g, " ").trim().replace(/…$/, "");
+                var idx = parseInt(btn.getAttribute("data-ai-index"), 10) || 0;
+                this.$nextTick(function () {
+                    var marks = Array.prototype.slice.call(document.querySelectorAll("#markViewport .js-mark[data-mark='ai']"));
+                    if (!marks.length) return;
+                    var probe = excerpt.slice(0, 40);
+                    var target = marks.filter(function (m) {
+                        var t = m.textContent.replace(/\s+/g, " ").trim();
+                        return probe && (t.indexOf(probe) > -1 || excerpt.indexOf(t.slice(0, 40)) > -1 && t.length > 10);
+                    })[0] || marks[Math.min(idx, marks.length - 1)];
+                    var calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                    target.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
+                    marks.forEach(function (m) { m.classList.remove("mark-focus"); });
+                    target.classList.add("mark-focus");
+                    setTimeout(function () { target.classList.remove("mark-focus"); }, 2600);
+                });
+            }
+        };
+    }
+</script>
 <script>
     // Tras generar el certificado la vista redirige aquí con
     // ?descargar_certificado=1: disparamos la descarga automáticamente y
@@ -713,6 +820,7 @@
 
         var marks = allMarks;
         var index = -1;
+        var calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
         function render() {
             counter.textContent =
@@ -722,16 +830,15 @@
         }
 
         function flash(el) {
-            el.style.transition = "box-shadow .15s ease";
-            el.style.boxShadow = "0 0 0 3px rgba(35,107,253,.55)";
-            setTimeout(function () { el.style.boxShadow = ""; }, 900);
+            el.classList.add("mark-focus");
+            setTimeout(function () { el.classList.remove("mark-focus"); }, 900);
         }
 
         function go(step) {
             if (marks.length === 0) return;
             index = (index + step + marks.length) % marks.length;
             var el = marks[index];
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "center" });
             flash(el);
             render();
         }

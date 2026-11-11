@@ -17,7 +17,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     Paragraph,
     SimpleDocTemplate,
@@ -51,6 +50,14 @@ from apps.reports.models import (
     ReportRiskLevel,
     ReportSource,
     SourceType,
+)
+from apps.reports.pdf_style import (  # noqa: F401 - se reexportan por compatibilidad
+    MIN_PDF_FONT_SIZE,
+    NumberedCanvas,
+    draw_page_chrome,
+    fallback_logo,
+    gauge_drawing,
+    level_color,
 )
 
 logger = logging.getLogger(__name__)
@@ -746,46 +753,6 @@ def build_highlighted_document_pdf(report: AnalysisReport) -> bytes:
 
 
 # Tamaño mínimo de letra de los informes PDF para que se lean impresos (RN-CER-07).
-MIN_PDF_FONT_SIZE = 8
-
-
-class NumberedCanvas(Canvas):
-    """
-    Canvas de dos pasadas: guarda cada página y, al cerrar el documento,
-    dibuja "Página X de N" cuando ya se conoce el total (REQ-CER-12).
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self._saved_page_states: list[dict] = []
-
-    def showPage(self) -> None:
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self) -> None:
-        total_pages = len(self._saved_page_states)
-
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self._draw_page_number(total_pages)
-            super().showPage()
-
-        super().save()
-
-    def _draw_page_number(self, total_pages: int) -> None:
-        width, _height = A4
-        self.saveState()
-        self.setFillColor(colors.white)
-        self.setFont("Helvetica", MIN_PDF_FONT_SIZE)
-        self.drawRightString(
-            width - 1.7 * cm,
-            0.2 * cm,
-            f"Página {self._pageNumber} de {total_pages}",
-        )
-        self.restoreState()
-
-
 class _BasePdfBuilder:
     """
     Base común de los informes PDF (similitud, IA): documento A4 con sus
@@ -844,11 +811,20 @@ class _BasePdfBuilder:
                 "hd_title",
                 parent=base["Title"],
                 fontName="Helvetica-Bold",
-                fontSize=15,
-                leading=19,
+                fontSize=19,
+                leading=23,
                 alignment=TA_LEFT,
-                textColor=colors.HexColor("#334155"),
+                textColor=colors.HexColor("#0B2A6B"),
                 spaceAfter=2,
+            ),
+            "metric_caption": ParagraphStyle(
+                "hd_metric_caption",
+                parent=base["Normal"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=11,
+                alignment=TA_CENTER,
+                textColor=colors.HexColor("#64748B"),
             ),
             "kicker": ParagraphStyle(
                 "hd_kicker",
@@ -856,7 +832,7 @@ class _BasePdfBuilder:
                 fontName="Helvetica-Bold",
                 fontSize=9,
                 leading=12,
-                textColor=colors.HexColor("#E2483D"),
+                textColor=colors.HexColor("#236BFD"),
             ),
             "metric_number": ParagraphStyle(
                 "hd_metric_number",
@@ -874,7 +850,7 @@ class _BasePdfBuilder:
                 fontSize=20,
                 leading=22,
                 alignment=TA_LEFT,
-                textColor=colors.HexColor("#E2483D"),
+                textColor=colors.HexColor("#236BFD"),
             ),
             "source_num": ParagraphStyle(
                 "hd_source_num",
@@ -998,6 +974,7 @@ class _BasePdfBuilder:
         self._letterhead_logo: ImageReader | None = None
 
         if not institution.logo:
+            self._letterhead_logo = fallback_logo()
             return
 
         try:
@@ -1005,6 +982,7 @@ class _BasePdfBuilder:
             image_bytes = institution.logo.read()
             self._letterhead_logo = ImageReader(BytesIO(image_bytes))
         except Exception:
+            self._letterhead_logo = fallback_logo()
             logger.warning(
                 "No se pudo cargar el logo institucional para el documento "
                 "señalado. institution_id=%s",
@@ -1015,47 +993,14 @@ class _BasePdfBuilder:
             institution.logo.close()
 
     def _decorate_page(self, canvas: Any, doc: Any) -> None:
-        width, height = A4
-        bar_height = 1.0 * cm
-
-        canvas.saveState()
-
-        canvas.setFillColor(colors.HexColor("#123F9E"))
-        canvas.rect(0, height - bar_height, width, bar_height, fill=1, stroke=0)
-
-        canvas.setFillColor(colors.HexColor("#F5B400"))
-        canvas.rect(0, height - bar_height - 0.06 * cm, width, 0.06 * cm, fill=1, stroke=0)
-
-        canvas.setFillColor(colors.HexColor("#0F172A"))
-        canvas.rect(0, 0, width, 0.55 * cm, fill=1, stroke=0)
-
-        text_x = 1.7 * cm
-        logo = getattr(self, "_letterhead_logo", None)
-
-        if logo is not None:
-            logo_size = bar_height - 0.2 * cm
-            canvas.drawImage(
-                logo,
-                1.4 * cm,
-                height - bar_height + 0.1 * cm,
-                width=logo_size,
-                height=logo_size,
-                preserveAspectRatio=True,
-                mask="auto",
-            )
-            text_x = 1.4 * cm + logo_size + 0.3 * cm
-
-        institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
-
-        canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", MIN_PDF_FONT_SIZE)
-        canvas.drawString(
-            text_x,
-            height - 0.65 * cm,
-            f"{institution_name} - {self.HEADER_LABEL}",
+        sha = self.document.sha256_hash or ""
+        draw_page_chrome(
+            canvas,
+            institution_name=getattr(self, "_letterhead_name", "INSTITUCIÓN"),
+            label=self.HEADER_LABEL,
+            logo=getattr(self, "_letterhead_logo", None),
+            footer_text=f"SHA-256 del documento: {sha}" if sha else "Plataforma de Originalidad Académica",
         )
-
-        canvas.restoreState()
 
 
 def build_ai_report_pdf(report: AnalysisReport) -> bytes:
@@ -1152,17 +1097,21 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
 
     def _build_estimate_block(self, estimate: Any, styles: dict[str, ParagraphStyle]) -> Table:
         band = estimate.band
+        gauge = gauge_drawing(
+            estimate.percent,
+            f"{floatformat(estimate.percent, 1)}%",
+            level_color(self.report.ai_assessment),
+        )
+        caption = Paragraph(
+            '<font size="8" color="#64748B"><b>IA ESTIMADA</b></font><br/>'
+            f'<font size="8" color="{band["fg"]}"><b>'
+            f'{band["label"].upper()} · INDICATIVO</b></font>',
+            styles["metric_caption"],
+        )
         block = Table(
             [
                 [
-                    Paragraph(
-                        f'<font size="20" color="{band["fg"]}"><b>'
-                        f"{floatformat(estimate.percent, 1)}%</b></font><br/>"
-                        f'<font size="8" color="#64748B">IA ESTIMADA</font><br/>'
-                        f'<font size="8" color="{band["fg"]}"><b>'
-                        f'{band["label"].upper()} · INDICATIVO</b></font>',
-                        styles["metric_number"],
-                    ),
+                    [gauge, Spacer(1, 0.15 * cm), caption],
                     Paragraph(
                         f"<b>IA estimada:</b> {floatformat(estimate.percent, 1)}%<br/>"
                         f"<b>Banda:</b> {band['label']}<br/>"
@@ -1178,12 +1127,14 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
         block.setStyle(
             TableStyle(
                 [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LINEBELOW", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
-                    ("LINEABOVE", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF3FF")),
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#BCD2FF")),
+                    ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 14),
                 ]
             )
         )
@@ -1224,7 +1175,7 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
                 [
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
-                    ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#0F172A")),
+                    ("LINEABOVE", (0, 0), (-1, 0), 1.0, colors.HexColor("#123F9E")),
                     ("TOPPADDING", (0, 0), (-1, -1), 4),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                     ("LEFTPADDING", (0, 0), (0, -1), 0),
@@ -1523,21 +1474,25 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
         def cell(
             value: Decimal,
             label: str,
-            accent: bool = False,
+            level: int,
             band: dict | None = None,
             note: str = "",
-        ) -> Paragraph:
-            number_style = styles["metric_number_accent" if accent else "metric_number"]
-            color = f' color="{band["fg"]}"' if band else ""
-            extra = (
-                f'<br/><font size="8"{color}><b>{note}</b></font>' if note else ""
-            )
-            return Paragraph(
-                f'<font size="20"{color}><b>{self._format_source_percent(value)}</b></font>'
-                f'<font size="9"{color}>%</font><br/>'
-                f'<font size="8" color="#64748B">{label}</font>{extra}',
-                number_style,
-            )
+        ) -> list[Any]:
+            color = band["fg"] if band else "#64748B"
+            caption = f'<font size="8" color="#64748B"><b>{label}</b></font>'
+            if note:
+                caption += f'<br/><font size="8" color="{color}"><b>{note}</b></font>'
+            return [
+                gauge_drawing(
+                    value,
+                    f"{self._format_source_percent(value)}%",
+                    level_color(level),
+                    size=2.5 * cm,
+                    font_size=13,
+                ),
+                Spacer(1, 0.12 * cm),
+                Paragraph(caption, styles["metric_caption"]),
+            ]
 
         metrics = Table(
             [
@@ -1545,17 +1500,19 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
                     cell(
                         self.report.similarity_percent,
                         "ÍNDICE DE SIMILITUD (TOTAL)",
-                        accent=True,
+                        self.report.similarity_assessment,
                         band=self.report.similarity_band,
                         note=self.report.similarity_band["label"].upper(),
                     ),
                     cell(
                         self.report.internal_similarity_percent,
                         "TRABAJOS / REPOSITORIOS (INTERNA)",
+                        0 if self.report.internal_similarity_percent < 25 else 1 if self.report.internal_similarity_percent < 50 else 2,
                     ),
                     cell(
                         self.report.web_similarity_percent,
                         "FUENTES DE INTERNET (WEB)",
+                        0 if self.report.web_similarity_percent < 25 else 1 if self.report.web_similarity_percent < 50 else 2,
                     ),
                 ]
             ],
@@ -1565,11 +1522,13 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
             TableStyle(
                 [
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LINEBELOW", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
-                    ("LINEABOVE", (0, 0), (-1, -1), 1.2, colors.HexColor("#0F172A")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#E2E8F0")),
+                    ("LINEAFTER", (0, 0), (-2, -1), 0.4, colors.HexColor("#E2E8F0")),
+                    ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
                 ]
             )
         )
@@ -1665,7 +1624,7 @@ class _HighlightedDocumentPdfBuilder(_BasePdfBuilder):
         row_styles: list[tuple] = [
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
-            ("LINEABOVE", (0, 0), (-1, 0), 0.8, colors.HexColor("#0F172A")),
+            ("LINEABOVE", (0, 0), (-1, 0), 1.0, colors.HexColor("#123F9E")),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("ALIGN", (2, 0), (2, -1), "RIGHT"),
             ("TOPPADDING", (0, 0), (-1, -1), 6),

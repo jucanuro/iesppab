@@ -1,0 +1,23 @@
+{# Menú de acciones (⋯) en portal: el panel se teletransporta al <body> con position:fixed, así ningún contenedor con overflow ni cabecera sticky lo recorta. Abrir con este include, poner .menu-item dentro y cerrar con action_menu_end.html. Parámetro: label (aria) #}
+<div class="relative" x-data="{
+        open: false, x: 0, y: 0, ready: false,
+        place() {
+            const r = $refs.btn.getBoundingClientRect(), p = $refs.panel, w = p.offsetWidth, h = p.offsetHeight, gap = 6, m = 8;
+            const below = window.innerHeight - r.bottom - m, above = r.top - m;
+            this.y = (below >= h || below >= above) ? Math.min(r.bottom + gap, window.innerHeight - h - m) : Math.max(r.top - h - gap, m);
+            this.x = Math.max(m, Math.min(r.right - w, window.innerWidth - w - m));
+            this.ready = true;
+        },
+        toggle() { if (this.open) { this.open = false; return; } this.ready = false; this.open = true; this.$nextTick(() => this.place()); }
+    }"
+    @keydown.escape.window="open = false"
+    @click.window="if (open && !$refs.btn.contains($event.target) && !$refs.panel.contains($event.target)) open = false"
+    @scroll.window.capture="open = false" @resize.window="open = false">
+    <button type="button" x-ref="btn" class="icon-btn" aria-haspopup="menu" :aria-expanded="open" aria-label="{{ label|default:'Más acciones' }}" @click="toggle()">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+    </button>
+    <template x-teleport="body">
+        <div x-ref="panel" x-show="open" x-cloak role="menu" class="menu-panel !fixed !right-auto !z-[80] !mt-0"
+             :style="`top:${y}px;left:${x}px;visibility:${ready ? 'visible' : 'hidden'}`"
+             x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+             x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">

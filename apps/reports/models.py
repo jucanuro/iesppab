@@ -314,6 +314,49 @@ class AnalysisReport(TimeStampedModel):
 
         return "alto"
 
+    @property
+    def ai_estimated_percent(self) -> Decimal:
+        """% de IA que ve el usuario: clasificador si existe; si no, heurística."""
+        classifier = self.ai_classifier
+        if classifier is not None:
+            return classifier["percent"]
+        return Decimal(str(self.ai_probability_percent))
+
+    @property
+    def ai_estimated_band(self) -> dict:
+        return ai_classifier_band(self.ai_estimated_percent)
+
+    @property
+    def similarity_assessment(self) -> int:
+        """0 bajo (<25), 1 medio (25-49), 2 alto (>=50)."""
+        value = Decimal(str(self.similarity_percent))
+        if value < 25:
+            return 0
+        return 1 if value < 50 else 2
+
+    @property
+    def ai_assessment(self) -> int:
+        """0 bajo (<40), 1 medio (40-69), 2 alto (>=70)."""
+        key = self.ai_estimated_band["key"]
+        return {"low": 0, "mild": 1, "high": 2}[key]
+
+    @property
+    def overall_assessment(self) -> dict:
+        """
+        Valoración global informativa = el peor entre similitud e IA.
+        No altera `risk_level` ni la emisión de certificados.
+        """
+        labels = ["Bajo", "Medio", "Alto"]
+        keys = ["low", "medium", "high"]
+        worst = max(self.similarity_assessment, self.ai_assessment)
+        return {
+            "key": keys[worst],
+            "label": labels[worst],
+            "similarity_label": labels[self.similarity_assessment],
+            "ai_label": self.ai_estimated_band["label"],
+            "ai_review": self.ai_assessment == 2 and self.similarity_assessment == 0,
+        }
+
 
 class SourceType(models.TextChoices):
     WEB = "WEB", _("Fuente web")

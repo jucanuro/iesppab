@@ -261,7 +261,7 @@ def _file_document(path: Path):
     return SimpleNamespace(id=path.name, mime_type=mime, original_file=File(None, name=str(path)))
 
 
-def format_probe(rows: list[dict]) -> dict:
+def format_probe(rows: list[dict], partitions=("train", "val", "test")) -> dict:
     """
     Clasificador de SOLO formato (longitudes, puntuación, dígitos...) sobre
     los segmentos base (sin ventanas solapadas ni test_chat), con validación
@@ -277,7 +277,7 @@ def format_probe(rows: list[dict]) -> dict:
 
     data = [
         r for r in rows
-        if not r["solape"] and r["particion"] in {"train", "val", "test"}
+        if not r["solape"] and r["particion"] in set(partitions)
     ]
     if len({r["etiqueta"] for r in data}) < 2:
         return {"auroc": 0.0, "auroc_por_rasgo": {}, "segmentos": len(data)}

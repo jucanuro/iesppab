@@ -33,7 +33,7 @@
         <div class="flex flex-col items-center rounded-xl border border-slate-100 p-3 text-center">
             <div class="relative h-[76px] w-[76px]" role="img" aria-label="Similitud: {{ report.similarity_percent }}%">
                 <svg viewBox="0 0 80 80" class="h-full w-full -rotate-90" aria-hidden="true"><circle cx="40" cy="40" r="34" fill="none" stroke="#e2e9f8" stroke-width="8"/><circle class="peek-ring" cx="40" cy="40" r="34" fill="none" stroke-width="8" stroke-linecap="round" pathLength="100" stroke="{{ report.similarity_band.fg }}" style="--v:{{ report.similarity_percent|stringformat:'.2f' }}"/></svg>
-                <span class="num absolute inset-0 flex items-center justify-center text-[16px] font-extrabold text-slate-900">{{ report.similarity_percent|stringformat:".0f" }}%</span>
+                <span class="num absolute inset-0 flex items-center justify-center text-[15px] font-semibold tabular-nums text-slate-900">{{ report.similarity_percent|stringformat:".0f" }}%</span>
             </div>
             <p class="mt-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-600">Similitud</p>
             <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10.5px] font-semibold leading-tight" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">{{ report.similarity_band.label }}</span>
@@ -41,7 +41,7 @@
         <div class="flex flex-col items-center rounded-xl border border-slate-100 p-3 text-center">
             <div class="relative h-[76px] w-[76px]" role="img" aria-label="IA estimada: {{ report.ai_estimated_percent|floatformat:1 }}%">
                 <svg viewBox="0 0 80 80" class="h-full w-full -rotate-90" aria-hidden="true"><circle cx="40" cy="40" r="34" fill="none" stroke="#e2e9f8" stroke-width="8"/><circle class="peek-ring" cx="40" cy="40" r="34" fill="none" stroke-width="8" stroke-linecap="round" pathLength="100" stroke="{{ report.ai_estimated_band.fg }}" style="--v:{{ report.ai_estimated_percent|stringformat:'.2f' }}"/></svg>
-                <span class="num absolute inset-0 flex items-center justify-center text-[16px] font-extrabold text-slate-900">{{ report.ai_estimated_percent|stringformat:".0f" }}%</span>
+                <span class="num absolute inset-0 flex items-center justify-center text-[15px] font-semibold tabular-nums text-slate-900">{{ report.ai_estimated_percent|stringformat:".0f" }}%</span>
             </div>
             <p class="mt-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-slate-600">IA estimada</p>
             <span class="mt-1 inline-flex rounded-full border px-2 py-0.5 text-[10.5px] font-semibold leading-tight" style="background-color:{{ report.ai_estimated_band.bg }};border-color:{{ report.ai_estimated_band.border }};color:{{ report.ai_estimated_band.fg }};">{{ report.ai_estimated_band.label }}</span>
@@ -61,19 +61,19 @@
     {% endif %}
     <div class="grid grid-cols-2 gap-2">
         {% if report and document.status == "COMPLETED" %}
-            <a href="{% url 'reports:download_highlighted' document.id %}" class="btn btn-secondary btn-sm">Informe de similitud</a>
-            <a href="{% url 'reports:download_ai_report' document.id %}" class="btn btn-secondary btn-sm">Informe de IA</a>
+            <a href="{% url 'reports:download_highlighted' document.id %}" class="btn btn-sm btn-tint btn-cyan">Informe de similitud</a>
+            <a href="{% url 'reports:download_ai_report' document.id %}" class="btn btn-sm btn-tint btn-violet">Informe de IA</a>
         {% else %}
             <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" aria-disabled="true" title="El informe estará disponible tras analizar el documento.">Informe de similitud</span>
             <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" aria-disabled="true" title="El informe estará disponible tras analizar el documento.">Informe de IA</span>
         {% endif %}
     </div>
     {% if report.certificate.is_active %}
-        <a href="{% url 'certificates:download' report.certificate.id %}" class="btn btn-secondary btn-sm">Descargar certificado</a>
+        <a href="{% url 'certificates:download' report.certificate.id %}" class="btn btn-sm btn-emerald">Descargar certificado</a>
     {% elif document.status == "COMPLETED" and report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
         <form method="post" action="{% url 'certificates:generate' document.id %}" data-submit-spinner>
             {% csrf_token %}
-            <button type="submit" class="btn btn-secondary btn-sm w-full" data-loading-label="Generando…">Generar certificado</button>
+            <button type="submit" class="btn btn-sm btn-emerald w-full" data-loading-label="Generando…">Generar certificado</button>
         </form>
     {% else %}
         <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" aria-disabled="true"

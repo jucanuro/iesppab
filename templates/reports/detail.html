@@ -30,7 +30,22 @@
     .note-btn { display: inline-flex; align-items: center; gap: .3rem; border-radius: .75rem; border: 1px solid rgba(148,163,184,.4); background: rgba(255,255,255,.8); padding: .25rem .55rem; font-size: 11px; font-weight: 600; color: #334155; box-shadow: 0 1px 2px rgba(15,45,110,.06); transition: border-color .15s, color .15s; }
     .note-btn:hover, .note-btn[aria-expanded="true"] { border-color: #236bfd; color: #123f9e; }
     .note-card { border-radius: .75rem; border: 1px solid rgba(255,255,255,.8); background: rgba(255,255,255,.92); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); box-shadow: 0 10px 30px -10px rgba(15,45,110,.35), 0 0 0 1px rgba(15,23,42,.06); }
+    .mini-card { --mc:#236bfd; --mcs:rgba(35,107,253,.12); position: relative; display: flex; align-items: center; gap: .65rem; overflow: hidden; border-radius: .75rem; border: 1px solid rgba(148,163,184,.3); border-top: 3px solid var(--mc); background: linear-gradient(180deg, var(--mcs), rgba(255,255,255,.85) 70%); padding: .65rem .75rem; box-shadow: 0 1px 2px rgba(15,45,110,.06); transition: transform .18s ease, box-shadow .18s ease; }
+    .mini-card:hover { transform: translateY(-2px); box-shadow: 0 10px 22px -12px rgba(15,45,110,.35); }
+    .mini-card dt { font-size: 10.5px; font-weight: 600; line-height: 1.2; color: #475569; }
+    .mini-card .mc-val { margin-top: .2rem; font-size: 17px; font-weight: 700; line-height: 1.15; color: #1e293b; }
+    .mc-ico { display: inline-flex; height: 2rem; width: 2rem; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 9999px; background: var(--mcs); color: var(--mc); }
+    .mc-blue { --mc:#236bfd; --mcs:rgba(35,107,253,.12); } .mc-cyan { --mc:#0891b2; --mcs:rgba(8,145,178,.13); } .mc-violet { --mc:#7c3aed; --mcs:rgba(124,58,237,.12); } .mc-amber { --mc:#d97706; --mcs:rgba(245,158,11,.15); } .mc-slate { --mc:#64748b; --mcs:rgba(100,116,139,.13); }
+    /* Popover: flecha hacia el botón; en <768 px es una hoja modal centrada. */
+    .note-card { max-height: calc(100vh - 16px); }
+    .pop-scroll { scrollbar-width: thin; }
+    .pop-arrow { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,.97); transform: rotate(45deg); border: 1px solid rgba(15,23,42,.08); }
+    .pop-arrow[data-side="left"] { left: -6px; border-right: 0; border-top: 0; }
+    .pop-arrow[data-side="bottom"] { top: -6px; border-right: 0; border-bottom: 0; }
+    .pop-arrow[data-side="top"] { bottom: -6px; border-left: 0; border-top: 0; }
+    .pop-arrow[data-side="none"] { display: none; }
     @media (prefers-reduced-motion: reduce) {
+        .mini-card { transition: none; } .mini-card:hover { transform: none; }
         .mark-focus { transition: none; }
     }
 </style>
@@ -73,7 +88,7 @@
                 <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex shrink-0 flex-nowrap items-center gap-2" data-submit-spinner>
                     {% csrf_token %}
                     {% include "reports/_exclusion_options.html" %}
-                    <button type="submit" title="Reanalizar originalidad" data-loading-label="Enviando…" class="btn btn-secondary btn-sm shrink-0">
+                    <button type="submit" title="Reanalizar originalidad" data-loading-label="Enviando…" class="btn btn-sm btn-tint btn-blue shrink-0">
                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/></svg>
                         Reanalizar
                     </button>
@@ -90,19 +105,19 @@
             {% endif %}
 
             {% if report %}
-                <a href="{% url 'reports:download_highlighted' document.id %}" title="Descargar el informe de similitud en PDF" class="btn btn-secondary btn-sm shrink-0">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
+                <a href="{% url 'reports:download_highlighted' document.id %}" title="Descargar el informe de similitud en PDF" class="btn btn-sm btn-tint btn-cyan shrink-0">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>
                     Informe de similitud
                 </a>
-                <a href="{% url 'reports:download_ai_report' document.id %}" title="Descargar el informe de IA estimada en PDF" class="btn btn-secondary btn-sm shrink-0">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
+                <a href="{% url 'reports:download_ai_report' document.id %}" title="Descargar el informe de IA estimada en PDF" class="btn btn-sm btn-tint btn-violet shrink-0">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
                     Informe de IA
                 </a>
             {% endif %}
 
             {% if certificate %}
                 <a href="{% url 'certificates:download' certificate.id %}" id="certDownloadLink" title="Descargar certificado"
-                   class="btn btn-sm shrink-0 border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
+                   class="btn btn-sm shrink-0 btn-emerald">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
                     Descargar certificado
                 </a>
@@ -110,7 +125,7 @@
                 <form method="post" action="{% url 'certificates:generate' document.id %}" class="inline-flex shrink-0" data-submit-spinner>
                     {% csrf_token %}
                     <button type="submit" title="Generar certificado" data-loading-label="Generando…"
-                            class="btn btn-sm shrink-0 border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
+                            class="btn btn-sm shrink-0 btn-emerald">
                         <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
                         Generar certificado
                     </button>
@@ -190,22 +205,22 @@
                 <div class="grid grid-cols-2 gap-2 text-center">
                     <div class="flex flex-col items-center">
                         {% if report.similarity_assessment == 2 %}
-                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="danger" size=96 numsize="21px" %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="danger" size=96 numsize="19px" %}
                         {% elif report.similarity_assessment == 1 %}
-                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="warning" size=96 numsize="21px" %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="warning" size=96 numsize="19px" %}
                         {% else %}
-                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="success" size=96 numsize="21px" %}
+                            {% include "components/gauge.html" with value=report.similarity_percent display=report.similarity_percent|floatformat:1|add:"%" label="Similitud" tone="success" size=96 numsize="19px" %}
                         {% endif %}
                         <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">{{ report.similarity_band.label }}</span>
                     </div>
                     <div class="flex flex-col items-center">
                         {% if ai_estimate %}
                             {% if report.ai_assessment == 2 %}
-                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="danger" size=96 numsize="21px" %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="danger" size=96 numsize="19px" %}
                             {% elif report.ai_assessment == 1 %}
-                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="warning" size=96 numsize="21px" %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="warning" size=96 numsize="19px" %}
                             {% else %}
-                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="success" size=96 numsize="21px" %}
+                                {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="success" size=96 numsize="19px" %}
                             {% endif %}
                             <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ ai_estimate.band.bg }};border-color:{{ ai_estimate.band.border }};color:{{ ai_estimate.band.fg }};">{{ ai_estimate.band.label }}</span>
                         {% else %}
@@ -256,15 +271,15 @@
                     <h2 class="mb-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600">Resumen del reporte</h2>
                     <p class="mb-3 text-[11px] leading-5 text-slate-600">Resultados técnicos del análisis de similitud, posibles patrones IA y fuentes detectadas.</p>
                     <dl class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-soft"><dt class="text-[11px] font-semibold text-slate-600">Similitud interna</dt><dd class="num mt-1 text-[20px] font-extrabold leading-none text-slate-800">{{ report.internal_similarity_percent }}%</dd></div>
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-soft"><dt class="text-[11px] font-semibold text-slate-600">Similitud web</dt><dd class="num mt-1 text-[20px] font-extrabold leading-none text-slate-800">{{ report.web_similarity_percent }}%</dd></div>
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-soft"><dt class="text-[11px] font-semibold text-slate-600">Fuentes</dt><dd class="num mt-1 text-[20px] font-extrabold leading-none text-slate-800">{{ sources|length }}</dd></div>
-                        <div class="rounded-xl border border-slate-200 bg-white/80 p-3 shadow-soft">
-                            <dt class="text-[11px] font-semibold text-slate-600">Excluidas</dt>
-                            <dd class="mt-1 text-[13px] font-extrabold leading-tight text-slate-800">{{ report.excluded_options_label|default:"Ninguna" }}</dd>
-                            {% if excluded_sources %}<dd class="mt-1 text-[11px] leading-4 text-slate-600">{{ excluded_sources|length }} fuente{{ excluded_sources|length|pluralize }} · original {{ report.original_similarity_percent }}%</dd>{% endif %}
-                        </div>
-                        <div class="col-span-2 rounded-xl border border-slate-200 bg-white/80 p-3 shadow-soft sm:col-span-1"><dt class="text-[11px] font-semibold text-slate-600">Motor</dt><dd class="mt-1 break-words text-[13px] font-extrabold leading-tight text-slate-800" title="{{ report.engine_version }}">{{ report.engine_version }}</dd></div>
+                        <div class="mini-card mc-blue"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></span><div class="min-w-0"><dt>Similitud interna</dt><dd class="num mc-val">{{ report.internal_similarity_percent }}%</dd></div></div>
+                        <div class="mini-card mc-cyan"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><div class="min-w-0"><dt>Similitud web</dt><dd class="num mc-val">{{ report.web_similarity_percent }}%</dd></div></div>
+                        <div class="mini-card mc-violet"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span><div class="min-w-0"><dt>Fuentes</dt><dd class="num mc-val">{{ sources|length }}</dd></div></div>
+                        <div class="mini-card mc-amber"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg></span><div class="min-w-0">
+                            <dt>Excluidas</dt>
+                            <dd class="mc-val !text-[14px]">{{ report.excluded_options_label|default:"Ninguna" }}</dd>
+                            {% if excluded_sources %}<dd class="mt-1 text-[10.5px] font-normal leading-4 text-slate-600">{{ excluded_sources|length }} fuente{{ excluded_sources|length|pluralize }} · original {{ report.original_similarity_percent }}%</dd>{% endif %}
+                        </div></div>
+                        <div class="mini-card mc-slate col-span-2 sm:col-span-1"><span class="mc-ico"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg></span><div class="min-w-0"><dt>Motor</dt><dd class="mc-val !text-[13px] break-words" title="{{ report.engine_version }}">{{ report.engine_version }}</dd></div></div>
                     </dl>
                 </div>
 
@@ -460,9 +475,9 @@
             </div>
 
             <!-- Nota flotante discreta (cierre guardado en sessionStorage) -->
-            <aside x-show="hintOpen" x-cloak class="note-card m-3 flex max-w-[300px] items-start gap-2 self-end p-2.5 text-[11px] leading-4 text-slate-700 lg:absolute lg:bottom-3 lg:right-4 lg:z-20 lg:m-0" role="note">
+            <aside x-show="hintOpen" x-cloak class="note-card m-3 flex w-[320px] max-w-[calc(100%-1.5rem)] items-start gap-2 self-end p-3 text-[12px] leading-5 text-slate-700 lg:absolute lg:bottom-4 lg:right-4 lg:z-20 lg:m-0" role="note">
                 <span aria-hidden="true" class="font-bold text-brand-700">ⓘ</span>
-                <p class="min-w-0 flex-1">IA estimada: indicativa, requiere revisión docente.</p>
+                <p class="min-w-0 flex-1">IA estimada: indicativa, requiere revisión docente. No constituye prueba de uso de inteligencia artificial.</p>
                 <button type="button" class="-mr-1 -mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900" @click="closeHint()" aria-label="Cerrar aviso">
                     <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
                 </button>
@@ -472,9 +487,15 @@
     {% endwith %}
 
     <!-- NOTA FLOTANTE (popover): análisis · uso responsable de la IA · cálculo -->
+    <template x-teleport="body">
+    <div x-show="pop && popModal" x-cloak class="fixed inset-0 z-[9998] bg-slate-900/50 backdrop-blur-[2px]" @click="closePop(true)" aria-hidden="true"></div>
+    </template>
+    <template x-teleport="body">
     <div id="notePop" x-ref="notePop" x-show="pop" x-cloak tabindex="-1" role="dialog" aria-label="Nota informativa"
-         class="note-card fixed z-[60] overflow-y-auto p-3.5 text-[12px] leading-5 text-slate-700 outline-none" :style="popStyle" @click.outside="outsidePop($event)">
-        <div class="mb-1.5 flex items-start justify-between gap-2">
+         class="note-card fixed z-[9999] text-[12px] leading-5 text-slate-700 outline-none" :style="popStyle" @click.outside="outsidePop($event)">
+        <span class="pop-arrow" :data-side="popModal ? 'none' : popSide" :style="popArrow"></span>
+        <div class="pop-scroll relative overflow-y-auto rounded-xl p-3.5" style="max-height:inherit">
+        <div class="relative mb-1.5 flex items-start justify-between gap-2">
             <p class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-700"><span aria-hidden="true">ⓘ</span>
                 <span x-text="pop === 'meta' ? 'Análisis' : (pop === 'ia' ? 'Uso responsable de la IA' : '¿Cómo se calcula?')"></span></p>
             <button type="button" class="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100" @click="closePop(true)" aria-label="Cerrar nota">
@@ -495,7 +516,9 @@
             <p class="mt-1"><strong>IA estimada:</strong> &lt; 40 % sin indicios, 40-69 % indicios, ≥ 70 % posible IA.</p>
             <button type="button" class="mt-2 font-bold text-brand-700 underline-offset-2 hover:underline" @click="closePop(false); openCalc($event)">Ver tabla completa</button>
         </div>
+        </div>
     </div>
+    </template>
 
     <!-- MODAL: ¿Cómo se calcula? -->
     <div x-show="calcOpen" x-cloak x-transition.opacity.duration.150ms class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 backdrop-blur-sm sm:items-center"
@@ -597,6 +620,9 @@
             opener: null,
             pop: null,
             popStyle: "",
+            popArrow: "",
+            popSide: "right",
+            popModal: false,
             popOpener: null,
             hintOpen: true,
             init() {
@@ -614,23 +640,51 @@
             },
             togglePop(name, ev) {
                 if (this.pop === name) { this.closePop(true); return; }
-                var vw = document.documentElement.clientWidth;
                 this.popOpener = ev.currentTarget;
                 this.pop = name;
-                this.popStyle = "visibility:hidden;left:8px;top:8px;width:" + Math.min(320, vw - 16) + "px";
+                this.popModal = document.documentElement.clientWidth < 768;
+                this.popStyle = "visibility:hidden;left:8px;top:8px;width:320px";
                 var self = this;
                 this.$nextTick(function () { self.placePop(); self.$refs.notePop.focus({ preventScroll: true }); });
             },
-            // Coloca el popover junto al disparador sin salirse de la pantalla.
+            // Coloca el popover junto al botón: derecha > arriba > abajo; siempre dentro del viewport.
+            // En <768 px se muestra como hoja modal centrada.
             placePop() {
                 var p = this.$refs.notePop, b = this.popOpener;
                 if (!p || !b || !this.pop) return;
-                var r = b.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight, m = 8;
-                var w = Math.min(320, vw - 2 * m), h = p.offsetHeight;
-                var left = Math.max(m, Math.min(r.left, vw - w - m));
-                var top = r.bottom + 6;
-                if (top + h > vh - m) top = Math.max(m, r.top - h - 6);
-                this.popStyle = "width:" + w + "px;left:" + left + "px;top:" + top + "px;max-height:" + (vh - 2 * m) + "px";
+                var vw = document.documentElement.clientWidth, vh = window.innerHeight, m = 12, gap = 10, arrow = 16;
+                this.popModal = vw < 768;
+                var w = vw < 640 ? vw - 2 * m : 320;
+                if (this.popModal) {
+                    var mh = vh - 2 * m;
+                    p.style.maxHeight = mh + "px";
+                    var hh = Math.min(p.offsetHeight, mh);
+                    this.popSide = "none"; this.popArrow = "";
+                    this.popStyle = "width:" + w + "px;left:" + Math.round((vw - w) / 2) + "px;top:" + Math.round(Math.max(m, (vh - hh) / 2)) + "px;max-height:" + mh + "px";
+                    return;
+                }
+                var r = b.getBoundingClientRect(), mh2 = vh - 2 * m;
+                p.style.maxHeight = mh2 + "px";
+                var h = Math.min(p.offsetHeight, mh2), left, top, side;
+                if (r.right + gap + w <= vw - m) {            // derecha del botón
+                    side = "left"; left = r.right + gap;
+                    top = r.top + r.height / 2 - h / 2;
+                } else if (r.top - gap - h >= m) {            // arriba
+                    side = "top"; top = r.top - gap - h;
+                    left = r.left + r.width / 2 - w / 2;
+                } else {                                      // abajo (recortado al viewport)
+                    side = "bottom"; top = r.bottom + gap;
+                    left = r.left + r.width / 2 - w / 2;
+                    mh2 = Math.max(120, vh - m - top);
+                }
+                left = Math.max(m, Math.min(left, vw - w - m));
+                top = Math.max(m, Math.min(top, vh - m - Math.min(h, mh2)));
+                var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+                this.popSide = side;
+                this.popArrow = side === "left"
+                    ? "top:" + Math.max(arrow, Math.min(cy - top - 6, Math.min(h, mh2) - arrow - 6)) + "px"
+                    : "left:" + Math.max(arrow, Math.min(cx - left - 6, w - arrow - 6)) + "px";
+                this.popStyle = "width:" + w + "px;left:" + Math.round(left) + "px;top:" + Math.round(top) + "px;max-height:" + Math.round(mh2) + "px";
             },
             outsidePop(ev) {
                 if (this.popOpener && this.popOpener.contains(ev.target)) return;

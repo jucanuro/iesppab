@@ -226,14 +226,16 @@
         </form>
     {% endif %}
 
-    <!-- Cabecera de columnas (escritorio) -->
-    <div class="hidden gap-4 px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px]">
-        <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
-    </div>
+    <!-- Bandeja con scroll interno: cabecera de columnas fija arriba del cuerpo -->
+    <div class="card overflow-hidden !p-0" x-data="{ stuck: false }">
+        <div class="tray-scroll scroll-pane px-3 pb-3" @scroll.passive="stuck = $el.scrollTop > 2">
+            <div class="tray-head sticky top-0 z-20 -mx-3 mb-2 hidden gap-4 border-b-2 border-brand-700/25 bg-white/90 px-7 py-3 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-800 backdrop-blur-md transition-shadow lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px]" :class="stuck && 'is-stuck'">
+                <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
+            </div>
 
-    <ul class="space-y-2.5">
+            <ul class="space-y-2.5 pt-2 lg:pt-0">
         {% for document in recent_documents %}
-            <li class="row-card grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px] lg:items-center lg:gap-4">
+            <li class="row-card hover:!bg-brand-50/70 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px] lg:items-center lg:gap-4">
                 <div class="flex min-w-0 items-center gap-3">
                     <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
@@ -288,7 +290,9 @@
                 {% endif %}
             </li>
         {% endfor %}
-    </ul>
+            </ul>
+        </div>
+    </div>
 
     {% if page_obj.paginator.num_pages > 1 %}
         <nav aria-label="Paginación" class="mt-4 flex items-center justify-between gap-3 text-[12.5px]">

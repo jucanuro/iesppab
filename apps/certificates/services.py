@@ -25,6 +25,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
+    HRFlowable,
     Image,
     PageBreak,
     Paragraph,
@@ -39,6 +40,13 @@ from apps.certificates.models import Certificate
 from apps.documents.models import DocumentStatus
 from apps.reports.ai_estimate import build_ai_estimate
 from apps.reports.models import AnalysisReport, ReportRiskLevel
+from apps.reports.pdf_style import (
+    NumberedCanvas,
+    draw_page_chrome,
+    fallback_logo,
+    gauge_drawing,
+    level_color,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -304,7 +312,18 @@ class CertificateGenerationService:
                 styles["subtitle"],
             )
         )
-        story.append(Spacer(1, 0.7 * cm))
+        story.append(Spacer(1, 0.25 * cm))
+        story.append(
+            HRFlowable(
+                width="18%",
+                thickness=2,
+                color=colors.HexColor("#F5B400"),
+                spaceBefore=2,
+                spaceAfter=2,
+                hAlign="CENTER",
+            )
+        )
+        story.append(Spacer(1, 0.45 * cm))
 
         header_table = Table(
             [
@@ -375,33 +394,46 @@ class CertificateGenerationService:
 
         band = report.similarity_band
         ai = build_ai_estimate(report)
+        def gauge_cell(label: str, percent: Any, text: str, level: int, caption: str, caption_color: str) -> list[Any]:
+            return [
+                Paragraph(label, styles["metric_label_dark"]),
+                Spacer(1, 0.12 * cm),
+                gauge_drawing(percent, text, level_color(level), size=2.5 * cm, font_size=13),
+                Spacer(1, 0.12 * cm),
+                Paragraph(
+                    f'<font size="8" color="{caption_color}"><b>{caption}</b></font>',
+                    styles["metric_label_dark"],
+                ),
+            ]
+
         metrics_table = Table(
             [
                 [
-                    Paragraph("SIMILITUD", styles["metric_label_red"]),
-                    Paragraph("IA ESTIMADA", styles["metric_label_blue"]),
-                    Paragraph("RIESGO", styles["metric_label_dark"]),
-                ],
-                [
-                    Paragraph(
-                        f'<font color="{band["fg"]}">'
-                        f"{self._format_decimal(report.similarity_percent)}%</font>"
-                        f'<br/><font size="7" color="{band["fg"]}">'
-                        f'{band["label"].upper()}</font>',
-                        styles["metric_value_red"],
+                    gauge_cell(
+                        "SIMILITUD",
+                        report.similarity_percent,
+                        f"{self._format_decimal(report.similarity_percent)}%",
+                        report.similarity_assessment,
+                        band["label"].upper(),
+                        band["fg"],
                     ),
-                    Paragraph(
-                        f'<font color="{ai.band["fg"]}">'
-                        f"{floatformat(ai.percent, 1)}%</font>"
-                        f'<br/><font size="7" color="{ai.band["fg"]}">'
-                        f'{ai.band_label.upper()} · INDICATIVO</font>',
-                        styles["metric_value_blue"],
+                    gauge_cell(
+                        "IA ESTIMADA",
+                        ai.percent,
+                        f"{floatformat(ai.percent, 1)}%",
+                        report.ai_assessment,
+                        f'{ai.band_label.upper()} · INDICATIVO',
+                        ai.band["fg"],
                     ),
-                    Paragraph(
-                        report.get_risk_level_display().upper(),
-                        styles["metric_value_dark"],
-                    ),
-                ],
+                    [
+                        Paragraph("RIESGO", styles["metric_label_dark"]),
+                        Spacer(1, 0.9 * cm),
+                        Paragraph(
+                            report.get_risk_level_display().upper(),
+                            styles["metric_value_dark"],
+                        ),
+                    ],
+                ]
             ],
             colWidths=[5.4 * cm, 5.4 * cm, 5.4 * cm],
         )
@@ -481,7 +513,7 @@ class CertificateGenerationService:
                         "<br/><br/>______________________________<br/>"
                         f"<b>{advisor_name}</b><br/>"
                         "Asesor(a) responsable<br/>"
-                        f"<font size=6.5 color='#64748B'>Emitido por: "
+                        f"<font size=8 color='#64748B'>Emitido por: "
                         f"{issued_by.get_full_name() or issued_by.username}</font>",
                         styles["signature"],
                     ),
@@ -489,7 +521,9 @@ class CertificateGenerationService:
                 ],
                 [
                     Paragraph(
-                        f"<b>Hash de verificación:</b><br/>{certificate.verification_hash}",
+                        f"<b>Hash de verificación:</b><br/>{certificate.verification_hash}"
+                        f"<br/><b>URL de verificación:</b><br/>"
+                        f"{html.escape(verification_url, quote=False)}",
                         styles["hash"],
                     ),
                     Paragraph(
@@ -513,10 +547,13 @@ class CertificateGenerationService:
             )
         )
 
+        self._footer_text = f"Verificación SHA-256: {certificate.verification_hash}"
+
         doc.build(
             story,
             onFirstPage=self._decorate_page,
             onLaterPages=self._decorate_page,
+            canvasmaker=NumberedCanvas,
         )
 
         return buffer.getvalue()
@@ -529,10 +566,10 @@ class CertificateGenerationService:
                 "title",
                 parent=base["Title"],
                 fontName="Helvetica-Bold",
-                fontSize=18,
-                leading=22,
+                fontSize=19,
+                leading=23,
                 alignment=TA_CENTER,
-                textColor=colors.HexColor("#123f9e"),
+                textColor=colors.HexColor("#0B2A6B"),
                 spaceAfter=4,
             ),
             "subtitle": ParagraphStyle(
@@ -653,8 +690,8 @@ class CertificateGenerationService:
                 "hash",
                 parent=base["Normal"],
                 fontName="Helvetica",
-                fontSize=6.5,
-                leading=9,
+                fontSize=8,
+                leading=11,
                 textColor=colors.HexColor("#64748B"),
             ),
             "qr_text": ParagraphStyle(
@@ -713,9 +750,10 @@ class CertificateGenerationService:
     def _card_table_style(self) -> TableStyle:
         return TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EEF3FF")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#BCD2FF")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#DCE8FF")),
+                ("ROUNDEDCORNERS", [6, 6, 6, 6]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("PADDING", (0, 0), (-1, -1), 8),
             ]
@@ -726,7 +764,7 @@ class CertificateGenerationService:
             [
                 ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
                 ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F1F5F9")),
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#EEF3FF")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("PADDING", (0, 0), (-1, -1), 7),
             ]
@@ -737,11 +775,11 @@ class CertificateGenerationService:
             [
                 ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
                 ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
-                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#FEF2F2")),
-                ("BACKGROUND", (1, 0), (1, -1), colors.HexColor("#ECFEFF")),
-                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#F8FAFC")),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("PADDING", (0, 0), (-1, -1), 9),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+                ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("PADDING", (0, 0), (-1, -1), 10),
             ]
         )
 
@@ -885,6 +923,7 @@ class CertificateGenerationService:
         self._letterhead_logo: ImageReader | None = None
 
         if not institution.logo:
+            self._letterhead_logo = fallback_logo()
             return
 
         try:
@@ -892,6 +931,7 @@ class CertificateGenerationService:
             image_bytes = institution.logo.read()
             self._letterhead_logo = ImageReader(BytesIO(image_bytes))
         except Exception:
+            self._letterhead_logo = fallback_logo()
             logger.warning(
                 "No se pudo cargar el logo institucional para el certificado. "
                 "institution_id=%s",
@@ -902,51 +942,13 @@ class CertificateGenerationService:
             institution.logo.close()
 
     def _decorate_page(self, canvas: Any, doc: Any) -> None:
-        width, height = A4
-        bar_height = 1.0 * cm
-
-        canvas.saveState()
-
-        canvas.setFillColor(colors.HexColor("#123f9e"))
-        canvas.rect(0, height - bar_height, width, bar_height, fill=1, stroke=0)
-
-        canvas.setFillColor(colors.HexColor("#0F172A"))
-        canvas.rect(0, 0, width, 0.45 * cm, fill=1, stroke=0)
-
-        text_x = 1.7 * cm
-        logo = getattr(self, "_letterhead_logo", None)
-
-        if logo is not None:
-            logo_size = bar_height - 0.2 * cm
-            canvas.drawImage(
-                logo,
-                1.4 * cm,
-                height - bar_height + 0.1 * cm,
-                width=logo_size,
-                height=logo_size,
-                preserveAspectRatio=True,
-                mask="auto",
-            )
-            text_x = 1.4 * cm + logo_size + 0.3 * cm
-
-        institution_name = getattr(self, "_letterhead_name", "INSTITUCIÓN")
-
-        canvas.setFillColor(colors.white)
-        canvas.setFont("Helvetica-Bold", 7)
-        canvas.drawString(
-            text_x,
-            height - 0.65 * cm,
-            f"{institution_name} - INTEGRIDAD ACADÉMICA",
+        draw_page_chrome(
+            canvas,
+            institution_name=getattr(self, "_letterhead_name", "INSTITUCIÓN"),
+            label="CERTIFICADO DE ORIGINALIDAD",
+            logo=getattr(self, "_letterhead_logo", None),
+            footer_text=getattr(self, "_footer_text", "Integridad académica"),
         )
-
-        canvas.setFont("Helvetica", 6.5)
-        canvas.drawRightString(
-            width - 1.7 * cm,
-            0.17 * cm,
-            f"Pagina {doc.page}",
-        )
-
-        canvas.restoreState()
 
     def _build_receipt_section(
         self,

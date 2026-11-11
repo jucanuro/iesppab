@@ -7,35 +7,55 @@
     #dropZone[data-state="drag"] { border-color: #236bfd; background: #eef3ff; }
     #dropZone[data-state="ready"] { border-color: #6ee7b7; background: #ecfdf5; }
     #dropZone[data-state="ready"] #dropIcon { background: #d1fae5; color: #047857; }
-    #nuevo-documento > summary::-webkit-details-marker { display: none; }
-    #nuevo-documento[open] .chev { transform: rotate(180deg); }
+    /* ≥1024 px: la página no hace scroll; la tabla ocupa el alto restante y scrollea por dentro. */
+    @media (min-width: 1024px) {
+        body > div > footer { display: none; }
+        .inbox-page { display: flex; flex-direction: column; height: calc(100vh - 68px - 4rem); height: calc(100dvh - 68px - 4rem); min-height: 30rem; }
+        .inbox-table { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+        .inbox-table .tray-scroll { flex: 1 1 0; min-height: 0; max-height: none; }
+    }
+    @media (max-width: 1023.98px) { .inbox-table .tray-scroll { max-height: none; overflow: visible; } }
+    @media (min-width: 1024px) { .inbox-page .tray-cols { grid-template-columns: minmax(0,2.4fr) minmax(0,1.7fr) 96px 120px 76px 112px; } }
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="inbox-page" x-data="{ uploadOpen: {% if not has_any_documents %}true{% else %}false{% endif %} }"
+     @open-upload.window="uploadOpen = true" @keydown.escape.window="uploadOpen = false">
 
-{% include "components/page_header.html" with eyebrow="Plataforma de originalidad" title="Bandeja de documentos" %}
+    <!-- FRANJA SUPERIOR (~64 px): título · KPIs · Subir documento -->
+    <header class="glass mb-3 flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 lg:min-h-16 lg:flex-nowrap">
+        <div class="min-w-0 flex-1 basis-48">
+            <p class="eyebrow">Plataforma de originalidad</p>
+            <h1 class="h-title truncate !text-[18px] leading-tight">Bandeja de documentos</h1>
+        </div>
+        <ul class="flex flex-wrap items-center gap-1.5" aria-label="Resumen">
+            <li class="badge badge-info"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5"/></svg><span class="num text-[13px] font-extrabold" data-count="{{ documents_total }}">{{ documents_total }}</span> total</li>
+            <li class="badge badge-warning"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16"/></svg>PDF/DOCX · 25 MB</li>
+            <li class="badge badge-success"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>Privado</li>
+        </ul>
+        <button type="button" id="uploadOpen" class="btn btn-primary shrink-0" @click="uploadOpen = true" aria-haspopup="dialog">
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
+            Subir documento
+        </button>
+    </header>
 
-{% include "components/kpi_strip.html" with total=documents_total %}
-
-<!-- SUBIR DOCUMENTO (panel colapsable) -->
-<details id="nuevo-documento" class="glass mb-5 overflow-hidden"{% if not has_any_documents %} open{% endif %}>
-    <summary class="flex h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 transition hover:bg-brand-50/50 sm:px-5" id="uploadBar">
-        <span class="flex items-center gap-3">
-            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-cyan-400 text-white shadow-glow">
-                <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
-            </span>
-            <span>
-                <span class="block text-[14.5px] font-bold text-brand-900">Subir documento <span class="ml-1 hidden text-[12.5px] font-medium text-slate-500 md:inline">· haz clic o arrastra un PDF/DOCX aquí</span></span>
-            </span>
-        </span>
-        <span class="flex items-center gap-2 text-[12px] font-semibold text-brand-700">
-            <span class="badge badge-neutral hidden sm:inline-flex">25 MB</span><span class="badge badge-info hidden sm:inline-flex">PDF/DOCX</span>
-            <svg class="chev h-5 w-5 text-slate-400 transition" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </span>
-    </summary>
-
-    <form method="post" enctype="multipart/form-data" id="documentUploadForm" class="border-t border-slate-100 px-5 py-5 sm:px-6">
+    <!-- MODAL DE SUBIDA (mismo formulario y validaciones) -->
+    <div x-show="uploadOpen" x-cloak class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto p-4 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="uploadTitle"
+         x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         x-effect="if (uploadOpen) $nextTick(() => document.getElementById('title') && document.getElementById('title').focus())">
+        <div class="fixed inset-0 bg-slate-900/50" @click="uploadOpen = false" aria-hidden="true"></div>
+        <div class="relative w-full max-w-3xl rounded-xl2 border border-slate-200 bg-white shadow-lift"
+             x-show="uploadOpen" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 translate-y-2 scale-[0.98]" x-transition:enter-end="opacity-100 translate-y-0 scale-100">
+            <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5 sm:px-6">
+                <h2 id="uploadTitle" class="flex items-center gap-2.5 text-[15px] font-bold text-brand-900">
+                    <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-cyan-400 text-white shadow-glow"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg></span>
+                    Subir documento
+                </h2>
+                <button type="button" class="icon-btn" @click="uploadOpen = false" aria-label="Cerrar"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+            </div>
+    <form method="post" enctype="multipart/form-data" id="documentUploadForm" class="px-5 py-5 sm:px-6">
         {% csrf_token %}
 
         <div class="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -98,7 +118,7 @@
             <div class="flex min-w-0 flex-col">
                 <span class="field-label">Archivo</span>
                 <label for="document_file" id="dropZone" data-state="idle"
-                       class="group flex min-h-[170px] flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl2 border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50">
+                       class="group flex min-h-[190px] flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl2 border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50">
                     <span id="dropIcon" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-100 text-brand-700 transition group-hover:scale-105">
                         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
                     </span>
@@ -129,22 +149,57 @@
             <div class="h-full w-1/3 animate-pulse rounded-full bg-brand-500"></div>
         </div>
     </form>
-</details>
+        </div>
+    </div>
 
-<!-- BANDEJA DOCUMENTAL -->
-<section class="mb-6" aria-label="Trabajos académicos registrados">
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-[15px] font-bold tracking-tight text-slate-800">Trabajos académicos registrados</h2>
-        {% if has_any_documents %}
-        <details class="group w-full text-[12px] sm:w-auto">
-                            <summary class="btn btn-secondary btn-sm w-full cursor-pointer list-none sm:w-auto [&::-webkit-details-marker]:hidden">
-                                <svg class="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <path d="M9 6L15 12L9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-                                </svg>
-                                ¿Qué significan los estados?
-                            </summary>
+    <!-- BANDEJA DOCUMENTAL -->
+    <section class="inbox-table lg:flex-1" aria-label="Trabajos académicos registrados">
+        <!-- Título + filtros en una sola fila -->
+        <div class="mb-3 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-2 xl:flex-nowrap">
+            <h2 class="mr-1 shrink-0 text-[15px] font-bold tracking-tight text-slate-800">Trabajos académicos</h2>
+            {% if has_any_documents %}
+            <form method="get" class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-[12px] xl:flex-nowrap">
+                <div class="relative min-w-[170px] flex-1">
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+                    <label for="filtro-q" class="sr-only">Buscar por título o alumno</label>
+                    <input id="filtro-q" type="search" name="q" value="{{ active_filters.q }}" placeholder="Buscar por título o alumno" class="field h-9 pl-9 text-[12.5px]">
+                </div>
+                <label class="sr-only" for="filtro-estado">Estado</label>
+                <select id="filtro-estado" name="estado" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                    <option value="">Todos los estados</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if active_filters.estado == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <label class="sr-only" for="filtro-tipo">Tipo</label>
+                <select id="filtro-tipo" name="tipo" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                    <option value="">Todos los tipos</option>
+                    {% for value, label in kind_choices %}
+                        <option value="{{ value }}" {% if active_filters.tipo == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <label class="flex shrink-0 items-center gap-1.5 text-[11.5px] font-semibold text-slate-500">
+                    Por página
+                    <select name="por_pagina" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
+                        {% for choice in page_size_choices %}
+                            <option value="{{ choice }}" {% if page_size == choice %}selected{% endif %}>{{ choice }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button type="submit" class="btn btn-secondary btn-sm h-9 shrink-0">Filtrar</button>
+                {% if has_active_filters %}
+                    <a href="{% url 'documents:upload' %}" class="btn btn-ghost btn-sm h-9 shrink-0">Limpiar</a>
+                {% endif %}
+                <span class="shrink-0 whitespace-nowrap text-[12px] font-semibold text-slate-500">{{ documents_total }} resultado{{ documents_total|pluralize }}</span>
+            </form>
 
-                            <div class="mt-3 space-y-2.5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12.5px] text-slate-600">
+            <div class="relative shrink-0" x-data="{ help: false }" @keydown.escape.window="help = false" @click.outside="help = false">
+                <button type="button" class="btn btn-secondary btn-sm h-9" @click="help = !help" :aria-expanded="help" aria-controls="estados-ayuda">
+                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17v.1"/></svg>
+                    ¿Qué significan los estados?
+                </button>
+                <div id="estados-ayuda" x-show="help" x-cloak x-transition.opacity.duration.200ms class="absolute right-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white shadow-lift">
+<div class="space-y-2.5 p-4 text-[12.5px] text-slate-600">
                                 <div class="flex items-start gap-2.5">
                                     <span class="shrink-0">{% include "documents/_status_badge.html" with status="UPLOADED" only %}</span>
                                     <p>Subido, pendiente de análisis. Pulsa «Analizar originalidad» en la fila.</p>
@@ -180,69 +235,28 @@
                                     </a>
                                 </p>
                             </div>
-                        </details>
-        {% endif %}
-    </div>
-
-    {% if has_any_documents %}
-        <form method="get" class="card mb-4 flex flex-wrap items-center gap-2 p-3 text-[12px]">
-            <div class="relative min-w-[200px] flex-1">
-                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
-                <label for="filtro-q" class="sr-only">Buscar por título o alumno</label>
-                <input id="filtro-q" type="search" name="q" value="{{ active_filters.q }}" placeholder="Buscar por título o alumno" class="field h-9 pl-9 text-[12.5px]">
+                </div>
             </div>
-
-            <label class="sr-only" for="filtro-estado">Estado</label>
-            <select id="filtro-estado" name="estado" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
-                <option value="">Todos los estados</option>
-                {% for value, label in status_choices %}
-                    <option value="{{ value }}" {% if active_filters.estado == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-
-            <label class="sr-only" for="filtro-tipo">Tipo</label>
-            <select id="filtro-tipo" name="tipo" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
-                <option value="">Todos los tipos</option>
-                {% for value, label in kind_choices %}
-                    <option value="{{ value }}" {% if active_filters.tipo == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-
-            <label class="flex items-center gap-1.5 text-[11.5px] font-semibold text-slate-500">
-                Por página
-                <select name="por_pagina" onchange="this.form.submit()" class="field h-9 w-auto text-[12.5px]">
-                    {% for choice in page_size_choices %}
-                        <option value="{{ choice }}" {% if page_size == choice %}selected{% endif %}>{{ choice }}</option>
-                    {% endfor %}
-                </select>
-            </label>
-
-            <button type="submit" class="btn btn-secondary btn-sm h-9">Filtrar</button>
-            {% if has_active_filters %}
-                <a href="{% url 'documents:upload' %}" class="btn btn-ghost btn-sm h-9">Limpiar</a>
             {% endif %}
+        </div>
 
-            <span class="ml-auto text-[12px] font-semibold text-slate-500">{{ documents_total }} resultado{{ documents_total|pluralize }}</span>
-        </form>
-    {% endif %}
+        <!-- Bandeja: cabecera opaca fija, cuerpo con scroll interno -->
+        <div class="card flex min-h-0 flex-1 flex-col overflow-hidden !p-0 !bg-white" x-data="{ stuck: false }">
+            <div class="tray-scroll scroll-pane px-3 pb-2" @scroll.passive="stuck = .scrollTop > 2">
+                <div class="tray-head tray-cols sticky top-0 z-30 -mx-3 hidden gap-4 border-b-2 border-brand-700/25 bg-white px-7 py-2.5 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-800 transition-shadow lg:grid" :class="stuck && 'is-stuck'">
+                    <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
+                </div>
 
-    <!-- Bandeja con scroll interno: cabecera de columnas fija arriba del cuerpo -->
-    <div class="card overflow-hidden !p-0" x-data="{ stuck: false }">
-        <div class="tray-scroll scroll-pane px-3 pb-3" @scroll.passive="stuck = $el.scrollTop > 2">
-            <div class="tray-head sticky top-0 z-20 -mx-3 mb-2 hidden gap-4 border-b-2 border-brand-700/25 bg-white/90 px-7 py-3 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-slate-800 backdrop-blur-md transition-shadow lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px]" :class="stuck && 'is-stuck'">
-                <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
-            </div>
-
-            <ul class="space-y-2.5 pt-2 lg:pt-0">
+                <ul class="space-y-1.5 pt-2">
         {% for document in recent_documents %}
-            <li class="row-card hover:!bg-brand-50/70 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px] lg:items-center lg:gap-4">
+            <li class="row-card !px-4 !py-1.5 hover:!bg-brand-50/70 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 tray-cols lg:items-center lg:gap-4"
                 <div class="flex min-w-0 items-center gap-3">
-                    <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
-                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
+                    <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-700">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
                     </span>
                     <div class="min-w-0">
-                        <p class="line-clamp-2 break-words text-[13.5px] font-semibold leading-snug text-brand-700" title="{{ document.title }}">{{ document.title }}</p>
-                        <p class="mt-0.5 truncate text-[11.5px] text-slate-500">{{ document.original_filename }}</p>
+                        <p class="line-clamp-1 break-words text-[13px] font-semibold leading-tight text-brand-700" title="{{ document.title }}">{{ document.title }}</p>
+                        <p class="truncate text-[11px] leading-tight text-slate-500">{{ document.original_filename }}</p>
                     </div>
                 </div>
 
@@ -286,30 +300,31 @@
                     {% include "components/empty_state.html" with title="Sin resultados" text="Ningún documento coincide con el filtro. Prueba a limpiar los filtros." %}
                     <p class="-mt-8 pb-8 text-center text-[13px]"><a href="{% url 'documents:upload' %}" class="font-semibold text-brand-500 hover:underline">Limpiar filtros</a></p>
                 {% else %}
-                    {% include "components/empty_state.html" with title="Aún no hay documentos enviados" text="Usa el formulario de arriba para registrar el primer trabajo académico." %}
+                    {% include "components/empty_state.html" with title="Aún no hay documentos enviados" text="Pulsa «Subir documento» para registrar el primer trabajo académico." %}
                 {% endif %}
             </li>
         {% endfor %}
-            </ul>
+                </ul>
+            </div>
         </div>
-    </div>
 
-    {% if page_obj.paginator.num_pages > 1 %}
-        <nav aria-label="Paginación" class="mt-4 flex items-center justify-between gap-3 text-[12.5px]">
+        <!-- Paginación fija abajo -->
+        <nav aria-label="Paginación" class="flex shrink-0 items-center justify-between gap-3 pt-3 text-[12.5px]">
             {% if page_obj.has_previous %}
                 <a href="?page={{ page_obj.previous_page_number }}{{ filter_querystring }}" class="btn btn-secondary btn-sm">← Anterior</a>
             {% else %}
-                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40">← Anterior</span>
+                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40" aria-disabled="true">← Anterior</span>
             {% endif %}
             <span class="font-semibold text-slate-500">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
             {% if page_obj.has_next %}
                 <a href="?page={{ page_obj.next_page_number }}{{ filter_querystring }}" class="btn btn-secondary btn-sm">Siguiente →</a>
             {% else %}
-                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40">Siguiente →</span>
+                <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-40" aria-disabled="true">Siguiente →</span>
             {% endif %}
         </nav>
-    {% endif %}
-</section>
+    </section>
+
+</div>
 
 {% endblock %}
 
@@ -325,7 +340,6 @@
         const submitButton = document.getElementById("submitButton");
         const submitText = document.getElementById("submitText");
         const progress = document.getElementById("uploadProgress");
-        const panel = document.getElementById("nuevo-documento");
         const MAX_FILE_SIZE = 25 * 1024 * 1024;
         const ALERT_CLASSES = {
             error: ["border-red-200", "bg-red-50", "text-red-700"],
@@ -333,12 +347,21 @@
             info: ["border-brand-200", "bg-brand-50", "text-brand-700"]
         };
 
-        // Arrastrar un archivo sobre la barra abre el panel.
-        var bar = document.getElementById("uploadBar");
-        if (bar && panel) bar.addEventListener("dragenter", function () { panel.open = true; });
+        function openModal() { window.dispatchEvent(new CustomEvent("open-upload")); }
+        if (location.hash === "#nuevo-documento") openModal();
 
-        // Abrir el panel al llegar con #nuevo-documento.
-        if (panel && location.hash === "#nuevo-documento") panel.open = true;
+        // Arrastrar un archivo sobre la página abre el modal; soltarlo fuera de la zona también lo adjunta.
+        function hasFiles(e) { return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") !== -1; }
+        window.addEventListener("dragenter", function (e) { if (hasFiles(e)) openModal(); });
+        window.addEventListener("dragover", function (e) { if (hasFiles(e)) e.preventDefault(); });
+        window.addEventListener("drop", function (e) {
+            if (!hasFiles(e) || (dropZone && dropZone.contains(e.target))) return;
+            e.preventDefault();
+            var f = e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f && validateAndPreviewFile(f) && fileInput) {
+                var dt = new DataTransfer(); dt.items.add(f); fileInput.files = dt.files;
+            }
+        });
 
         function showAlert(type, message) {
             if (!uploadAlert) return;

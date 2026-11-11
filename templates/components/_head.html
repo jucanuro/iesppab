@@ -91,9 +91,9 @@
     .fold.is-open { grid-template-rows: 1fr; opacity: 1; }
     .fold > .fold-in { min-height: 0; overflow: hidden; }
     /* Paneles con scroll interno y barra fina. --pane-h: alto máximo según las barras fijas de la página. */
-    :root { --pane-h: max(26rem, calc(100vh - 24rem)); --tray-h: max(20rem, calc(100vh - 31rem)); }
+    :root { --pane-h: max(26rem, calc(100vh - 24rem)); }
     .scroll-pane { max-height: var(--pane-h); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
-    .tray-scroll { max-height: var(--tray-h); }
+    .tray-head { background: #fff; }
     .tray-head.is-stuck { box-shadow: 0 8px 16px -10px rgba(15,45,110,.4); }
     .scroll-pane-x { scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
     .scroll-pane::-webkit-scrollbar, .scroll-pane-x::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -1,54 +1,38 @@
-{% comment %}Menú ⋯ de acciones de una fila de la bandeja. Espera `document`.{% endcomment %}
+{% comment %}Menú ⋯ de acciones de una fila de la bandeja. Espera `document`. Iconos Lucide en línea.{% endcomment %}
 {% include "components/action_menu_start.html" with label="Más acciones de "|add:document.title %}
-    {% if document.status == "UPLOADED" %}
-        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="El reporte estará disponible tras analizar el documento">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5s7.4 2.3 9.5 6.5c-2.1 4.2-5.4 6.5-9.5 6.5S4.6 16.2 2.5 12Z"/><path d="M4 4l16 16"/></svg>
-            Ver reporte
-        </span>
-    {% else %}
-        <a href="{% url 'reports:detail' document.id %}" role="menuitem" class="menu-item">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12C4.6 7.8 7.9 5.5 12 5.5s7.4 2.3 9.5 6.5c-2.1 4.2-5.4 6.5-9.5 6.5S4.6 16.2 2.5 12Z"/><circle cx="12" cy="12" r="2.5"/></svg>
-            Ver reporte
-        </a>
-    {% endif %}
-
     {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
-        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true">
-            <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-            Analizando originalidad…
-        </span>
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="Hay un análisis en curso; espera a que termine."><svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Analizando originalidad…</span>
     {% else %}
         <form method="post" action="{% url 'analysis:analyze' document.id %}" data-submit-spinner>
             {% csrf_token %}
             <button type="submit" role="menuitem" class="menu-item" data-loading-label="Enviando…">
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    {% if document.status == "COMPLETED" or document.status == "FAILED" %}<path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/>{% else %}<path d="M14 3v4a1 1 0 0 0 1 1h4M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4"/><circle cx="14" cy="17.5" r="2.5"/><path d="m18.5 19.5 2.5 2.5"/>{% endif %}
-                </svg>
-                {% if document.status == "COMPLETED" or document.status == "FAILED" %}Reanalizar originalidad{% else %}Analizar originalidad{% endif %}
+                {% if document.status == "COMPLETED" or document.status == "FAILED" %}<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>Reanalizar originalidad{% else %}<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg>Analizar originalidad{% endif %}
             </button>
         </form>
     {% endif %}
 
     <div class="my-1 border-t border-slate-100"></div>
 
+    {% if document.report and document.status == "COMPLETED" %}
+        <a href="{% url 'reports:download_highlighted' document.id %}" role="menuitem" class="menu-item"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>Informe de similitud</a>
+        <a href="{% url 'reports:download_ai_report' document.id %}" role="menuitem" class="menu-item"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>Informe de IA</a>
+    {% else %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="El informe estará disponible tras analizar el documento."><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M10 9H8M16 13H8M16 17H8"/></svg>Informe de similitud</span>
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="El informe estará disponible tras analizar el documento."><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>Informe de IA</span>
+    {% endif %}
+
     {% if document.report.certificate.is_active %}
-        <a href="{% url 'certificates:download' document.report.certificate.id %}" role="menuitem" class="menu-item">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-            Descargar certificado
-        </a>
+        <a href="{% url 'certificates:download' document.report.certificate.id %}" role="menuitem" class="menu-item"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/></svg>Descargar certificado</a>
     {% elif document.status == "COMPLETED" and document.report and document.report.risk_level != "HIGH" and document.report.risk_level != "CRITICAL" %}
         <form method="post" action="{% url 'certificates:generate' document.id %}" data-submit-spinner>
             {% csrf_token %}
-            <button type="submit" role="menuitem" class="menu-item" data-loading-label="Generando…">
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-                Generar certificado
-            </button>
+            <button type="submit" role="menuitem" class="menu-item" data-loading-label="Generando…"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/></svg>Generar certificado</button>
         </form>
     {% else %}
         <span class="menu-item is-disabled" role="menuitem" aria-disabled="true"
-              title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' or document.status == 'COMPLETED' and document.report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un documento con riesgo alto o crítico. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-            Certificado no disponible
-        </span>
+              title="{% if document.status == 'COMPLETED' and document.report.risk_level == 'HIGH' or document.status == 'COMPLETED' and document.report.risk_level == 'CRITICAL' %}No se puede emitir un certificado con riesgo alto o crítico. Revísalo y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="6"/><path d="M15.48 12.89 17 22l-5-3-5 3 1.52-9.11"/></svg>Certificado no disponible</span>
     {% endif %}
+
+    <div class="my-1 border-t border-slate-100"></div>
+    <span class="menu-item is-disabled !text-red-300" role="menuitem" aria-disabled="true" title="La eliminación de documentos aún no está disponible en la plataforma."><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>Eliminar</span>
 {% include "components/action_menu_end.html" %}

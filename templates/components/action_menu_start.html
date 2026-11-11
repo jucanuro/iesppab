@@ -3,4 +3,4 @@
     <button type="button" class="icon-btn" aria-haspopup="menu" :aria-expanded="open" aria-label="{{ label|default:'Más acciones' }}" @click="open = !open">
         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
     </button>
-    <div x-show="open" x-cloak x-transition.origin.top.right.duration.150ms role="menu" class="menu-panel">
+    <div x-show="open" x-cloak x-transition:enter="transition ease-out duration-150" x-transition:enter-start="opacity-0 scale-95 -translate-y-1" x-transition:enter-end="opacity-100 scale-100 translate-y-0" x-transition:leave="transition ease-in duration-100" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" role="menu" class="menu-panel">

@@ -14,29 +14,23 @@
 
 {% block content %}
 
-{% include "components/page_header.html" with eyebrow="Plataforma de originalidad" title="Bandeja de documentos" subtitle="Revisa tus documentos académicos, envía nuevos trabajos y analiza originalidad e IA." %}
+{% include "components/page_header.html" with eyebrow="Plataforma de originalidad" title="Bandeja de documentos" %}
 
-<!-- KPIs -->
-<section class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3" aria-label="Resumen">
-    {% include "components/kpi.html" with label="Total de documentos" value=documents_total tone="brand" icon='<path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/>' %}
-    {% include "components/kpi.html" with label="Formatos aceptados" value="PDF / DOCX" hint="Hasta 25 MB por archivo" tone="gold" icon='<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16M8 13h4"/>' %}
-    {% include "components/kpi.html" with label="Privacidad" value="Almacenamiento privado" tone="emerald" icon='<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/>' %}
-</section>
+{% include "components/kpi_strip.html" with total=documents_total %}
 
 <!-- SUBIR DOCUMENTO (panel colapsable) -->
-<details id="nuevo-documento" class="card mb-6 overflow-hidden"{% if not has_any_documents %} open{% endif %}>
-    <summary class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 px-5 py-4 transition hover:bg-brand-50/50 sm:px-6">
+<details id="nuevo-documento" class="glass mb-5 overflow-hidden"{% if not has_any_documents %} open{% endif %}>
+    <summary class="flex h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 transition hover:bg-brand-50/50 sm:px-5" id="uploadBar">
         <span class="flex items-center gap-3">
-            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-brand-700 to-brand-500 text-white shadow-glow">
+            <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-cyan-400 text-white shadow-glow">
                 <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4M12 4 7 9M12 4l5 5M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2"/></svg>
             </span>
             <span>
-                <span class="block text-[16px] font-bold text-brand-900">Subir documento</span>
-                <span class="block text-[12.5px] text-slate-500">Envía un nuevo trabajo para análisis de originalidad, similitud e IA.</span>
+                <span class="block text-[14.5px] font-bold text-brand-900">Subir documento <span class="ml-1 hidden text-[12.5px] font-medium text-slate-500 md:inline">· haz clic o arrastra un PDF/DOCX aquí</span></span>
             </span>
         </span>
         <span class="flex items-center gap-2 text-[12px] font-semibold text-brand-700">
-            <span class="badge badge-neutral">25 MB</span><span class="badge badge-info">PDF/DOCX</span><span class="badge badge-success">Privado</span>
+            <span class="badge badge-neutral hidden sm:inline-flex">25 MB</span><span class="badge badge-info hidden sm:inline-flex">PDF/DOCX</span>
             <svg class="chev h-5 w-5 text-slate-400 transition" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
     </summary>
@@ -233,13 +227,13 @@
     {% endif %}
 
     <!-- Cabecera de columnas (escritorio) -->
-    <div class="hidden gap-4 px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_112px]">
+    <div class="hidden gap-4 px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400 lg:grid lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px]">
         <span>Trabajo</span><span>Alumno</span><span>Tipo</span><span>Estado</span><span>Fecha</span><span class="text-right">Acciones</span>
     </div>
 
     <ul class="space-y-2.5">
         {% for document in recent_documents %}
-            <li class="row-card grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_112px] lg:items-center lg:gap-4">
+            <li class="row-card grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-3 lg:grid-cols-[minmax(0,2.4fr)_minmax(0,1.7fr)_110px_130px_84px_132px] lg:items-center lg:gap-4">
                 <div class="flex min-w-0 items-center gap-3">
                     <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-700">
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
@@ -271,9 +265,9 @@
 
                 <div class="flex items-center justify-end gap-1.5 lg:order-none">
                     {% if document.status == "UPLOADED" %}
-                        <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" title="El reporte estará disponible tras analizar el documento" aria-disabled="true">Ver</span>
+                        <span class="btn btn-secondary btn-sm cursor-not-allowed opacity-50" title="El reporte estará disponible tras analizar el documento" aria-disabled="true"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 7.51 7.36 4.5 12 4.5s8.58 3.01 9.94 7.15a1 1 0 0 1 0 .7C20.58 16.49 16.64 19.5 12 19.5s-8.58-3.01-9.94-7.15Z"/><circle cx="12" cy="12" r="3"/></svg>Ver</span>
                     {% else %}
-                        <a href="{% url 'reports:detail' document.id %}" class="btn btn-secondary btn-sm" aria-label="Ver reporte de {{ document.title }}">Ver</a>
+                        <a href="{% url 'reports:detail' document.id %}" class="btn btn-secondary btn-sm" aria-label="Ver reporte de {{ document.title }}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.06 12.35a1 1 0 0 1 0-.7C3.42 7.51 7.36 4.5 12 4.5s8.58 3.01 9.94 7.15a1 1 0 0 1 0 .7C20.58 16.49 16.64 19.5 12 19.5s-8.58-3.01-9.94-7.15Z"/><circle cx="12" cy="12" r="3"/></svg>Ver</a>
                     {% endif %}
                     {% include "documents/_row_menu.html" %}
                 </div>
@@ -334,6 +328,10 @@
             success: ["border-emerald-200", "bg-emerald-50", "text-emerald-700"],
             info: ["border-brand-200", "bg-brand-50", "text-brand-700"]
         };
+
+        // Arrastrar un archivo sobre la barra abre el panel.
+        var bar = document.getElementById("uploadBar");
+        if (bar && panel) bar.addEventListener("dragenter", function () { panel.open = true; });
 
         // Abrir el panel al llegar con #nuevo-documento.
         if (panel && location.hash === "#nuevo-documento") panel.open = true;

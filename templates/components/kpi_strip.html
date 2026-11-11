@@ -1,0 +1,18 @@
+{# Franja compacta de KPIs (~64 px). Parámetro: items no; usa contexto del upload. Se incluye con: total, #}
+<section class="glass mb-4 grid grid-cols-1 divide-y divide-slate-200/70 sm:grid-cols-3 sm:divide-x sm:divide-y-0" aria-label="Resumen">
+    <div class="flex h-16 items-center gap-3 px-4">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg></span>
+        <span class="num text-[22px] font-extrabold leading-none text-brand-700" data-count="{{ total }}">{{ total }}</span>
+        <span class="text-[12px] font-semibold leading-tight text-slate-600">Total de documentos</span>
+    </div>
+    <div class="flex h-16 items-center gap-3 px-4">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gold-50 text-gold-700"><svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 9.5h16M8 13h4"/></svg></span>
+        <span class="text-[16px] font-extrabold leading-none text-gold-700">PDF / DOCX</span>
+        <span class="text-[12px] font-semibold leading-tight text-slate-600">Formatos · hasta 25 MB</span>
+    </div>
+    <div class="flex h-16 items-center gap-3 px-4">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><svg class="h-[18px] w-[18px]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg></span>
+        <span class="text-[16px] font-extrabold leading-none text-emerald-700">Privado</span>
+        <span class="text-[12px] font-semibold leading-tight text-slate-600">Almacenamiento seguro</span>
+    </div>
+</section>

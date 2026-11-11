@@ -85,6 +85,21 @@
         .tab-link[aria-selected="true"], .tab-link.is-active { @apply text-brand-700; }
         .tab-link[aria-selected="true"]::after, .tab-link.is-active::after { content: ""; @apply absolute inset-x-0 -bottom-px h-0.5 rounded-full; background: linear-gradient(90deg,#236bfd,#22d3ee); }
     }
+
+    /* Acordeón con transición suave (grid 0fr→1fr). El contenido plegado se marca `inert` desde Alpine. */
+    .fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .35s cubic-bezier(.22,1,.36,1), opacity .25s ease; }
+    .fold.is-open { grid-template-rows: 1fr; opacity: 1; }
+    .fold > .fold-in { min-height: 0; overflow: hidden; }
+    /* Paneles con scroll interno y barra fina. --pane-h: alto máximo según las barras fijas de la página. */
+    :root { --pane-h: max(26rem, calc(100vh - 24rem)); --tray-h: max(20rem, calc(100vh - 31rem)); }
+    .scroll-pane { max-height: var(--pane-h); overflow-y: auto; scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
+    .tray-scroll { max-height: var(--tray-h); }
+    .tray-head.is-stuck { box-shadow: 0 8px 16px -10px rgba(15,45,110,.4); }
+    .scroll-pane-x { scrollbar-width: thin; scrollbar-color: #8fb0f7 transparent; }
+    .scroll-pane::-webkit-scrollbar, .scroll-pane-x::-webkit-scrollbar { width: 8px; height: 8px; }
+    .scroll-pane::-webkit-scrollbar-track, .scroll-pane-x::-webkit-scrollbar-track { background: transparent; }
+    .scroll-pane::-webkit-scrollbar-thumb, .scroll-pane-x::-webkit-scrollbar-thumb { background: #b8cdfa; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+    .scroll-pane::-webkit-scrollbar-thumb:hover, .scroll-pane-x::-webkit-scrollbar-thumb:hover { background: #236bfd; background-clip: content-box; }
     @keyframes sweep { to { background-position: -200% 0; } }
     @keyframes ping-soft { 75%, 100% { transform: scale(2.4); opacity: 0; } }
     .bg-mesh { background-color: #eef2fb; background-image: radial-gradient(900px 480px at 88% -8%, rgba(35,107,253,.16), transparent 60%), radial-gradient(700px 420px at 4% 12%, rgba(34,211,238,.12), transparent 60%), radial-gradient(800px 500px at 50% 112%, rgba(18,63,158,.12), transparent 60%); background-attachment: fixed; }

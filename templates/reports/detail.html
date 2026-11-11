@@ -4,95 +4,119 @@
 
 {% block content %}
 
-<div class="space-y-6">
+<div class="space-y-4" x-data="reportFold('{{ document.id }}')">
 
-    <!-- CABECERA DEL REPORTE -->
-    <section class="card overflow-hidden">
+    <!-- CABECERA DEL REPORTE (acordeón: se pliega sola a los 45 s) -->
+    <section class="card overflow-hidden" aria-label="Cabecera del reporte">
         <div class="h-1 bg-gradient-to-r from-gold-500 via-brand-500 to-brand-700"></div>
-        <div class="flex flex-col gap-5 px-5 py-5 sm:px-6 xl:flex-row xl:items-start xl:justify-between">
-            <div class="min-w-0">
-                <a href="{% url 'documents:upload' %}" class="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500 transition hover:text-brand-700">
-                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                    Volver
-                </a>
-                <p class="eyebrow">Reporte de originalidad</p>
-                <h1 class="mt-1 break-words text-[22px] font-bold leading-snug tracking-tight text-brand-900 sm:text-[26px]">{{ document.title }}</h1>
-                <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-slate-500">
-                    <span class="inline-flex items-center gap-2">
-                        {% include "components/avatar.html" with name=document.owner.get_full_name|default:document.owner.username size="h-6 w-6 text-[10px]" %}
-                        {{ document.owner.get_full_name|default:document.owner.username }}
-                    </span>
-                    <span aria-hidden="true">·</span>{{ document.get_kind_display }}
-                    <span aria-hidden="true">·</span>{{ document.created_at|date:"d/m/Y H:i" }}
-                </p>
-            </div>
 
-            <div class="flex flex-wrap items-center gap-2 xl:max-w-[560px] xl:justify-end">
-                {% if analysis_in_progress %}
-                    <span class="btn btn-secondary cursor-not-allowed opacity-70">
-                        <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"></span>
-                        Analizando…
-                    </span>
-                {% elif report or analysis_job.status == "FAILED" %}
-                    <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex flex-wrap items-center gap-2" data-submit-spinner>
-                        {% csrf_token %}
-                        {% include "reports/_exclusion_options.html" %}
-                        <button type="submit" title="Reanalizar originalidad" data-loading-label="Enviando…" class="btn btn-secondary">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/></svg>
-                            Reanalizar
-                        </button>
-                    </form>
-                {% else %}
-                    <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex flex-wrap items-center gap-2" data-submit-spinner>
-                        {% csrf_token %}
-                        {% include "reports/_exclusion_options.html" %}
-                        <button type="submit" title="Analizar originalidad" data-loading-label="Enviando…" class="btn btn-primary">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4"/><circle cx="14" cy="17.5" r="2.5"/><path d="m18.5 19.5 2.5 2.5"/></svg>
-                            Analizar originalidad
-                        </button>
-                    </form>
-                {% endif %}
-
-                {% if report %}
-                    <a href="{% url 'reports:download_highlighted' document.id %}" title="Descargar el informe de similitud en PDF" class="btn btn-secondary">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
-                        Informe de similitud
-                    </a>
-                    <a href="{% url 'reports:download_ai_report' document.id %}" title="Descargar el informe de IA estimada en PDF" class="btn btn-secondary">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
-                        Informe de IA
-                    </a>
-                {% endif %}
-
-                {% if certificate %}
-                    <a href="{% url 'certificates:download' certificate.id %}" id="certDownloadLink" title="Descargar certificado"
-                       class="btn border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-                        Descargar certificado
-                    </a>
-                {% elif report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
-                    <form method="post" action="{% url 'certificates:generate' document.id %}" class="inline-flex" data-submit-spinner>
-                        {% csrf_token %}
-                        <button type="submit" title="Generar certificado" data-loading-label="Generando…"
-                                class="btn border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
-                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-                            Generar certificado
-                        </button>
-                    </form>
-                {% else %}
-                    <span class="btn btn-secondary cursor-not-allowed text-slate-400 opacity-70"
-                          title="{% if report.risk_level == 'HIGH' or report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un reporte con riesgo alto o crítico. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
-                        Certificado no disponible
-                    </span>
-                {% endif %}
+        <!-- Barra compacta (plegado) -->
+        <div class="fold" :class="!headOpen && 'is-open'">
+            <div class="fold-in" :inert="headOpen">
+                <div class="flex items-center gap-3 px-4 py-2 sm:px-6">
+                    <span class="eyebrow hidden shrink-0 sm:inline">Reporte</span>
+                    <p class="min-w-0 flex-1 truncate text-[14.5px] font-bold text-brand-900" title="{{ document.title }}">{{ document.title }}</p>
+                    <button type="button" class="icon-btn shrink-0" @click="toggle('head')" :aria-expanded="headOpen" aria-controls="head-body" aria-label="Desplegar cabecera del reporte" title="Desplegar cabecera">
+                        <svg class="h-4 w-4 transition-transform duration-300" :class="headOpen && 'rotate-180'" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
             </div>
         </div>
 
-        <p class="border-t border-slate-100 bg-slate-50/60 px-5 py-3 text-[12.5px] leading-5 text-slate-600 sm:px-6">
-            Este reporte muestra los resultados técnicos del análisis de similitud, posibles patrones IA y fuentes detectadas.
-        </p>
+        <!-- Cuerpo completo (desplegado) -->
+        <div class="fold" id="head-body" :class="headOpen && 'is-open'">
+            <div class="fold-in" :inert="!headOpen">
+                <div class="flex items-start justify-between gap-4 px-5 py-5 sm:px-6">
+                    <div class="min-w-0">
+                        <a href="{% url 'documents:upload' %}" class="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-500 transition hover:text-brand-700">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            Volver
+                        </a>
+                        <p class="eyebrow">Reporte de originalidad</p>
+                        <h1 class="mt-1 break-words text-[22px] font-bold leading-snug tracking-tight text-brand-900 sm:text-[26px]">{{ document.title }}</h1>
+                        <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-slate-500">
+                            <span class="inline-flex items-center gap-2">
+                                {% include "components/avatar.html" with name=document.owner.get_full_name|default:document.owner.username size="h-6 w-6 text-[10px]" %}
+                                {{ document.owner.get_full_name|default:document.owner.username }}
+                            </span>
+                            <span aria-hidden="true">·</span>{{ document.get_kind_display }}
+                            <span aria-hidden="true">·</span>{{ document.created_at|date:"d/m/Y H:i" }}
+                        </p>
+                    </div>
+                    <button type="button" class="icon-btn shrink-0" @click="toggle('head')" :aria-expanded="headOpen" aria-controls="head-body" aria-label="Plegar cabecera del reporte" title="Plegar cabecera">
+                        <svg class="h-4 w-4 transition-transform duration-300" :class="headOpen && 'rotate-180'" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </button>
+                </div>
+                <p class="border-t border-slate-100 bg-slate-50/60 px-5 py-3 text-[12.5px] leading-5 text-slate-600 sm:px-6">
+                    Este reporte muestra los resultados técnicos del análisis de similitud, posibles patrones IA y fuentes detectadas.
+                </p>
+            </div>
+        </div>
     </section>
+
+    <!-- BARRA DE ACCIONES (siempre visible, fija bajo la barra superior) -->
+    <div class="report-actions sticky top-[68px] z-30 rounded-xl2 border border-white/70 bg-white/85 px-3 py-2 shadow-soft ring-1 ring-slate-900/[0.06] backdrop-blur-xl" role="toolbar" aria-label="Acciones del reporte">
+        <div class="scroll-pane-x flex flex-nowrap items-center gap-2 overflow-x-auto xl:flex-wrap xl:overflow-visible">
+                        {% if analysis_in_progress %}
+                            <span class="btn btn-secondary shrink-0 cursor-not-allowed opacity-70">
+                                <span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500"></span>
+                                Analizando…
+                            </span>
+                        {% elif report or analysis_job.status == "FAILED" %}
+                            <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex shrink-0 flex-nowrap items-center gap-2" data-submit-spinner>
+                                {% csrf_token %}
+                                {% include "reports/_exclusion_options.html" %}
+                                <button type="submit" title="Reanalizar originalidad" data-loading-label="Enviando…" class="btn btn-secondary shrink-0">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4"/></svg>
+                                    Reanalizar
+                                </button>
+                            </form>
+                        {% else %}
+                            <form method="post" action="{% url 'analysis:analyze' document.id %}" class="inline-flex shrink-0 flex-nowrap items-center gap-2" data-submit-spinner>
+                                {% csrf_token %}
+                                {% include "reports/_exclusion_options.html" %}
+                                <button type="submit" title="Analizar originalidad" data-loading-label="Enviando…" class="btn btn-primary shrink-0">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4M12 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v4"/><circle cx="14" cy="17.5" r="2.5"/><path d="m18.5 19.5 2.5 2.5"/></svg>
+                                    Analizar originalidad
+                                </button>
+                            </form>
+                        {% endif %}
+
+                        {% if report %}
+                            <a href="{% url 'reports:download_highlighted' document.id %}" title="Descargar el informe de similitud en PDF" class="btn btn-secondary shrink-0">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
+                                Informe de similitud
+                            </a>
+                            <a href="{% url 'reports:download_ai_report' document.id %}" title="Descargar el informe de IA estimada en PDF" class="btn btn-secondary shrink-0">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14"/></svg>
+                                Informe de IA
+                            </a>
+                        {% endif %}
+
+                        {% if certificate %}
+                            <a href="{% url 'certificates:download' certificate.id %}" id="certDownloadLink" title="Descargar certificado"
+                               class="btn shrink-0 border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                                Descargar certificado
+                            </a>
+                        {% elif report and report.risk_level != "HIGH" and report.risk_level != "CRITICAL" %}
+                            <form method="post" action="{% url 'certificates:generate' document.id %}" class="inline-flex shrink-0" data-submit-spinner>
+                                {% csrf_token %}
+                                <button type="submit" title="Generar certificado" data-loading-label="Generando…"
+                                        class="btn shrink-0 border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                                    Generar certificado
+                                </button>
+                            </form>
+                        {% else %}
+                            <span class="btn btn-secondary shrink-0 cursor-not-allowed text-slate-400 opacity-70"
+                                  title="{% if report.risk_level == 'HIGH' or report.risk_level == 'CRITICAL' %}No se puede emitir un certificado para un reporte con riesgo alto o crítico. Revisa el documento y vuelve a analizarlo.{% else %}El certificado estará disponible cuando termine el análisis.{% endif %}">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="9" r="6"/><circle cx="12" cy="9" r="2.4"/><path d="M8.5 14 7.5 21l4.5-2.2 4.5 2.2-1-7"/></svg>
+                                Certificado no disponible
+                            </span>
+                        {% endif %}
+        </div>
+    </div>
 
     {% if not report %}
 
@@ -150,9 +174,39 @@
             </section>
         {% endif %}
 
-        <!-- VALORACIÓN GLOBAL + MEDIDORES -->
+
+        <!-- VALORACIÓN GLOBAL + MEDIDORES (acordeón: se pliega a una franja a los 45 s) -->
         {% with oa=report.overall_assessment %}
-        <section class="grid gap-4 lg:grid-cols-12" aria-label="Resultados principales">
+        <section aria-label="Resultados principales">
+            <!-- Franja compacta (plegado) -->
+            <div class="fold" :class="!metricsOpen && 'is-open'">
+                <div class="fold-in" :inert="metricsOpen">
+                    <div class="glass flex flex-wrap items-center gap-2 px-4 py-2">
+                        <span class="eyebrow mr-1">Resultados</span>
+                        <span class="badge {% if oa.key == 'high' %}badge-danger{% elif oa.key == 'medium' %}badge-warning{% else %}badge-success{% endif %}">Valoración global: {{ oa.label }}</span>
+                        <span class="badge" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">Similitud {{ report.similarity_percent }}% · {{ report.similarity_band.label }}</span>
+                        {% if ai_estimate %}
+                            <span class="badge" style="background-color:{{ ai_estimate.band.bg }};border-color:{{ ai_estimate.band.border }};color:{{ ai_estimate.band.fg }};">IA {{ ai_estimate.percent|floatformat:1 }}% · {{ ai_estimate.band.label }}</span>
+                        {% else %}
+                            <span class="badge badge-neutral">IA no disponible</span>
+                        {% endif %}
+                        <button type="button" class="icon-btn ml-auto" @click="toggle('metrics')" :aria-expanded="metricsOpen" aria-controls="metrics-body" aria-label="Desplegar resultados" title="Desplegar resultados">
+                            <svg class="h-4 w-4 transition-transform duration-300" :class="metricsOpen && 'rotate-180'" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fila completa (desplegado) -->
+            <div class="fold" id="metrics-body" :class="metricsOpen && 'is-open'">
+                <div class="fold-in pb-3" :inert="!metricsOpen">
+                    <div class="mb-2 flex justify-end">
+                        <button type="button" class="btn btn-ghost btn-sm" @click="toggle('metrics')" :aria-expanded="metricsOpen" aria-controls="metrics-body">
+                            Plegar resultados
+                            <svg class="h-4 w-4 transition-transform duration-300" :class="metricsOpen && 'rotate-180'" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                <div class="grid gap-4 lg:grid-cols-12">
 
             <article class="card relative overflow-hidden p-6 lg:col-span-3
                 {% if oa.key == 'high' %}border-red-200 bg-gradient-to-br from-red-50 to-white{% elif oa.key == 'medium' %}border-gold-500/40 bg-gradient-to-br from-gold-50 to-white{% else %}border-emerald-200 bg-gradient-to-br from-emerald-50 to-white{% endif %}">
@@ -205,18 +259,16 @@
                     <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Fuentes</dt><dd class="num font-bold text-slate-800">{{ sources|length }}</dd></div>
                     <div class="flex items-center justify-between gap-3"><dt class="text-slate-500">Motor</dt><dd class="truncate font-bold text-slate-800">{{ report.engine_version }}</dd></div>
                 </dl>
-                <div class="mt-auto space-y-2 border-t border-slate-100 pt-3">
-                    <a href="{% url 'reports:download_highlighted' document.id %}" class="btn btn-secondary btn-sm w-full justify-start">Informe de similitud (PDF)</a>
-                    <a href="{% url 'reports:download_ai_report' document.id %}" class="btn btn-secondary btn-sm w-full justify-start">Informe de IA (PDF)</a>
-                    {% if certificate %}<a href="{% url 'certificates:download' certificate.id %}" class="btn btn-secondary btn-sm w-full justify-start">Descargar certificado</a>{% endif %}
-                </div>
             </aside>
+        </div>
+                </div>
+            </div>
         </section>
         {% endwith %}
 
         <!-- PESTAÑAS -->
         <section x-data="{ tab: (location.hash || '#resumen').slice(1) }" x-init="if (!['resumen','fuentes','ia','texto'].includes(tab)) tab = 'resumen'" class="card overflow-hidden">
-            <div role="tablist" aria-label="Secciones del reporte" class="flex gap-5 overflow-x-auto border-b border-slate-200 px-5 sm:px-6">
+            <div role="tablist" aria-label="Secciones del reporte" class="flex gap-5 overflow-x-auto border-b border-slate-200 bg-white/70 px-5 sm:px-6">
                 <button type="button" role="tab" id="tab-resumen" class="tab-link" :aria-selected="tab === 'resumen'" aria-controls="panel-resumen" @click="tab = 'resumen'; history.replaceState(null, '', '#resumen')">Resumen</button>
                 <button type="button" role="tab" id="tab-fuentes" class="tab-link" :aria-selected="tab === 'fuentes'" aria-controls="panel-fuentes" @click="tab = 'fuentes'; history.replaceState(null, '', '#fuentes')">Fuentes <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">{{ sources|length }}</span></button>
                 <button type="button" role="tab" id="tab-ia" class="tab-link" :aria-selected="tab === 'ia'" aria-controls="panel-ia" @click="tab = 'ia'; history.replaceState(null, '', '#ia')">IA</button>
@@ -224,7 +276,7 @@
             </div>
 
             <!-- RESUMEN -->
-            <div id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" x-show="tab === 'resumen'" class="grid gap-6 p-5 sm:p-6 lg:grid-cols-2">
+            <div id="panel-resumen" role="tabpanel" aria-labelledby="tab-resumen" x-show="tab === 'resumen'" class="scroll-pane grid gap-6 p-5 sm:p-6 lg:grid-cols-2">
                 <div>
                     <h2 class="mb-3 text-[13px] font-bold uppercase tracking-[0.12em] text-slate-500">Resumen del reporte</h2>
                     <dl class="divide-y divide-slate-100 rounded-xl border border-slate-200 text-[13px]">
@@ -264,7 +316,7 @@
             </div>
 
             <!-- FUENTES -->
-            <div id="panel-fuentes" role="tabpanel" aria-labelledby="tab-fuentes" x-show="tab === 'fuentes'" class="p-5 sm:p-6">
+            <div id="panel-fuentes" role="tabpanel" aria-labelledby="tab-fuentes" x-show="tab === 'fuentes'" class="scroll-pane p-5 sm:p-6">
                 <h2 class="mb-3 text-[13px] font-bold uppercase tracking-[0.12em] text-slate-500">Fuentes detectadas</h2>
                 <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
                     {% for source in sources %}
@@ -342,7 +394,7 @@
             </div>
 
             <!-- IA -->
-            <div id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" x-show="tab === 'ia'" class="p-5 sm:p-6">
+            <div id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" x-show="tab === 'ia'" class="scroll-pane p-5 sm:p-6">
                 <h2 class="mb-3 text-[13px] font-bold uppercase tracking-[0.12em] text-slate-500">Posibles patrones IA</h2>
                 <div class="grid gap-3 lg:grid-cols-2">
                     {% for finding in ai_findings %}
@@ -392,7 +444,7 @@
                     </div>
                 </div>
 
-                <div id="markViewport" class="max-h-[70vh] overflow-y-auto p-5 sm:p-6">
+                <div id="markViewport" class="scroll-pane p-5 sm:p-6">
                     <div class="mx-auto max-w-3xl whitespace-pre-wrap rounded-xl border border-slate-200 bg-white p-6 font-serif text-[15px] leading-8 text-slate-700 shadow-soft sm:p-8">
                         {% for segment in highlighted_segments %}
                             {% if segment.finding_type == "SIMILARITY" %}
@@ -420,6 +472,52 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    // Acordeones del reporte (cabecera y resultados): se pliegan solos a los 45 s,
+    // con un único temporizador compartido. Un pliegue manual se recuerda en
+    // sessionStorage (no se vuelve a desplegar solo); al desplegar a mano el
+    // temporizador se reinicia. El pliegue automático no se guarda.
+    function reportFold(docId) {
+        var KEY = "report-fold:" + docId, DELAY = 45000;
+        function read() { try { return JSON.parse(sessionStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+        function write(s) {
+            try {
+                if (Object.keys(s).length) sessionStorage.setItem(KEY, JSON.stringify(s));
+                else sessionStorage.removeItem(KEY);
+            } catch (e) { /* sin almacenamiento: el estado solo vive en la página */ }
+        }
+        return {
+            headOpen: true,
+            metricsOpen: true,
+            timer: null,
+            init() {
+                var s = read();
+                if (s.head === "closed") this.headOpen = false;
+                if (s.metrics === "closed") this.metricsOpen = false;
+                this.arm();
+            },
+            arm() {
+                clearTimeout(this.timer);
+                if (!this.headOpen && !this.metricsOpen) return;
+                var self = this;
+                this.timer = setTimeout(function () { self.headOpen = false; self.metricsOpen = false; }, DELAY);
+            },
+            toggle(name) {
+                var key = name + "Open", s = read();
+                this[key] = !this[key];
+                if (this[key]) {
+                    delete s[name];
+                    this.arm();
+                    // Los medidores se animan al entrar en pantalla: si estaban plegados, se arman al abrir.
+                    document.querySelectorAll("[data-gauge]").forEach(function (g) { g.classList.add("gauge-ready"); });
+                } else {
+                    s[name] = "closed";
+                }
+                write(s);
+            }
+        };
+    }
+</script>
 <script>
     // Tras generar el certificado la vista redirige aquí con
     // ?descargar_certificado=1: disparamos la descarga automáticamente y

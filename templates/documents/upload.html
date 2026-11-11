@@ -245,7 +245,7 @@
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8.5 13h7M8.5 16.5H13"/></svg>
                     </span>
                     <div class="min-w-0">
-                        <p class="truncate text-[13.5px] font-semibold text-brand-700">{{ document.title }}</p>
+                        <p class="line-clamp-2 break-words text-[13.5px] font-semibold leading-snug text-brand-700" title="{{ document.title }}">{{ document.title }}</p>
                         <p class="mt-0.5 truncate text-[11.5px] text-slate-500">{{ document.original_filename }}</p>
                     </div>
                 </div>

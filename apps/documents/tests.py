@@ -278,3 +278,46 @@ class DocxTableExtractionTests(DocxDocumentTestMixin, TestCase):
             ],
         )
         self.assertEqual(content.count("Comprensión lectora"), 1)
+
+
+class InboxTemplateTests(DocxDocumentTestMixin, TestCase):
+    """La bandeja renderiza el modal de subida y la vista rápida por fila."""
+
+    def test_bandeja_renderiza_modal_y_vista_rapida(self) -> None:
+        from decimal import Decimal
+
+        from django.urls import reverse
+
+        from apps.reports.models import AnalysisReport
+
+        document = self.make_docx_document(["Texto de prueba para la bandeja."])
+        document.status = "COMPLETED"
+        document.save(update_fields=["status"])
+        AnalysisReport.objects.create(
+            document=document,
+            similarity_percent=Decimal("12.50"),
+            ai_probability_percent=Decimal("45.00"),
+        )
+
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("documents:upload"))
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('id="documentUploadForm"', html)
+        self.assertIn("Subir documento", html)
+        self.assertNotIn('id="uploadBar"', html)
+        self.assertIn(f'id="peek-{document.id}"', html)
+        self.assertIn("Informe de similitud", html)
+        self.assertIn("Valoración global", html)
+
+    def test_bandeja_sin_reporte_deshabilita_acciones(self) -> None:
+        from django.urls import reverse
+
+        document = self.make_docx_document(["Otro texto."])
+        self.client.force_login(self.student)
+        html = self.client.get(reverse("documents:upload")).content.decode()
+
+        self.assertIn(f'id="peek-{document.id}"', html)
+        self.assertIn("Aún sin análisis", html)
+        self.assertIn("Certificado no disponible", html)

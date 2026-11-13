@@ -76,6 +76,21 @@ def ai_classifier_band(percent) -> dict:
 
 AI_CLASSIFIER_NOTE = AI_RESPONSIBLE_USE_NOTE
 
+# Cuando el clasificador no pudo medir (casi todo el texto son listas, tablas,
+# ruido u otro idioma) no se muestra un 0 % engañoso sino "no evaluable".
+AI_NOT_EVALUABLE_LABEL = "IA: no evaluable"
+AI_NOT_EVALUABLE_BAND = {
+    "key": "na",
+    "label": AI_NOT_EVALUABLE_LABEL,
+    "bg": "#F1F5F9",
+    "fg": "#475569",
+    "border": "#CBD5E1",
+}
+AI_NOT_EVALUABLE_DEFAULT_NOTE = (
+    "IA: no evaluable. El documento tiene muy poca prosa corrida analizable, "
+    "por lo que no se puede estimar un porcentaje fiable."
+)
+
 
 class ReportRiskLevel(models.TextChoices):
     LOW = "LOW", _("Bajo")
@@ -298,11 +313,60 @@ class AnalysisReport(TimeStampedModel):
         % IA del clasificador (indicativo) con su rango, o None si el reporte
         no se analizó con AI_DETECTION_MODE=classifier o el clasificador falló.
         """
-        data = ((self.summary or {}).get("ai_score_breakdown") or {}).get("classifier")
+        data = self._classifier_data()
         if not data or data.get("error") or "ai_percent" not in data:
+            return None
+        if data.get("evaluable") is False:
             return None
         percent = Decimal(str(data["ai_percent"]))
         return {"percent": percent, **ai_classifier_band(percent)}
+
+    def _classifier_data(self) -> dict | None:
+        return ((self.summary or {}).get("ai_score_breakdown") or {}).get("classifier")
+
+    @property
+    def ai_not_evaluable(self) -> dict | None:
+        """
+        `{"reason", "note"}` si el clasificador no pudo evaluar el documento
+        (se guarda en el JSON de desglose, sin migración); None en otro caso.
+        """
+        data = self._classifier_data()
+        if not data or data.get("error") or data.get("evaluable") is not False:
+            return None
+        return {
+            "reason": data.get("not_evaluable_reason", ""),
+            "note": data.get("note") or AI_NOT_EVALUABLE_DEFAULT_NOTE,
+        }
+
+    @property
+    def ai_classifier_flagged_pieces(self) -> list[dict] | None:
+        """
+        Piezas señaladas por el clasificador (probabilidad >= 50 %), en
+        orden de aparición; None si el reporte no usa el clasificador (ahí
+        valen los hallazgos de la heurística).
+        """
+        data = self._classifier_data()
+        if not data or data.get("error") or "ai_percent" not in data:
+            return None
+        if data.get("evaluable") is False:
+            return []
+        # Se listan solo las piezas con >= 50 %, aunque el umbral del modelo
+        # (que define el % total) sea menor.
+        threshold = max(float(data.get("threshold", 0.5)), 0.5)
+        pieces = []
+        for segment in data.get("segments") or []:
+            for piece in segment.get("pieces") or []:
+                if piece.get("text") and piece.get("probability", 0) >= threshold:
+                    pieces.append(
+                        {
+                            "text": piece["text"],
+                            "probability_percent": Decimal(
+                                str(round(piece["probability"] * 100, 1))
+                            ),
+                            "words": piece.get("words", 0),
+                        }
+                    )
+        return pieces
 
     @property
     def ai_level(self) -> str:
@@ -320,10 +384,14 @@ class AnalysisReport(TimeStampedModel):
         classifier = self.ai_classifier
         if classifier is not None:
             return classifier["percent"]
+        if self.ai_not_evaluable is not None:
+            return Decimal("0.00")
         return Decimal(str(self.ai_probability_percent))
 
     @property
     def ai_estimated_band(self) -> dict:
+        if self.ai_not_evaluable is not None:
+            return AI_NOT_EVALUABLE_BAND
         return ai_classifier_band(self.ai_estimated_percent)
 
     @property
@@ -338,7 +406,7 @@ class AnalysisReport(TimeStampedModel):
     def ai_assessment(self) -> int:
         """0 bajo (<40), 1 medio (40-69), 2 alto (>=70)."""
         key = self.ai_estimated_band["key"]
-        return {"low": 0, "mild": 1, "high": 2}[key]
+        return {"na": 0, "low": 0, "mild": 1, "high": 2}[key]
 
     @property
     def overall_assessment(self) -> dict:

@@ -12,7 +12,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from apps.reports.models import AI_RESPONSIBLE_USE_NOTE, AnalysisReport, ai_classifier_band
+from apps.reports.models import (
+    AI_NOT_EVALUABLE_LABEL,
+    AI_RESPONSIBLE_USE_NOTE,
+    AnalysisReport,
+    ai_classifier_band,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +29,10 @@ class AiEstimate:
     ai_detector: str
     method: str
     note: str
+    # False cuando el clasificador no pudo medir: no hay % que mostrar.
+    evaluable: bool = True
+    not_evaluable_note: str = ""
+    percent_label: str = ""
 
     @property
     def band_label(self) -> str:
@@ -37,6 +46,21 @@ class AiEstimate:
 
 
 def build_ai_estimate(report: AnalysisReport) -> AiEstimate:
+    not_evaluable = report.ai_not_evaluable
+    if not_evaluable is not None:
+        return AiEstimate(
+            percent=Decimal("0.00"),
+            band=report.ai_estimated_band,
+            generated_at=report.generated_at,
+            engine_version=report.engine_version,
+            ai_detector=report.ai_detector or "",
+            method="Clasificador de IA",
+            note=AI_RESPONSIBLE_USE_NOTE,
+            evaluable=False,
+            not_evaluable_note=not_evaluable["note"],
+            percent_label=AI_NOT_EVALUABLE_LABEL,
+        )
+
     classifier = report.ai_classifier
     if classifier is not None:
         percent = classifier["percent"]
@@ -53,4 +77,5 @@ def build_ai_estimate(report: AnalysisReport) -> AiEstimate:
         ai_detector=report.ai_detector or "",
         method=method,
         note=AI_RESPONSIBLE_USE_NOTE,
+        percent_label=f"{percent:.1f}%",
     )

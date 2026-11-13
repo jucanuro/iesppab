@@ -2471,6 +2471,49 @@ class BandasDePresentacionTests(SimpleTestCase):
         self.assertEqual(r.ai_classifier["label"], "Posible IA: revisar")
 
 
+class IaNoEvaluableModelTests(SimpleTestCase):
+    def _report(self, classifier):
+        from apps.reports.models import AnalysisReport
+
+        return AnalysisReport(
+            ai_probability_percent=Decimal("29.07"),
+            summary={"ai_score_breakdown": {"classifier": classifier}},
+        )
+
+    def test_no_evaluable_no_cae_a_la_heuristica_ni_muestra_cero(self):
+        r = self._report({"evaluable": False, "ai_percent": "0.00", "note": "IA: no evaluable. Nota"})
+        self.assertIsNone(r.ai_classifier)
+        self.assertEqual(r.ai_not_evaluable["note"], "IA: no evaluable. Nota")
+        self.assertEqual(r.ai_estimated_band["key"], "na")
+        self.assertEqual(r.ai_assessment, 0)
+        self.assertEqual(r.ai_classifier_flagged_pieces, [])
+
+    def test_piezas_señaladas_solo_las_del_clasificador(self):
+        r = self._report({
+            "ai_percent": "50.00", "threshold": 0.5,
+            "segments": [{"pieces": [
+                {"words": 80, "probability": 0.91, "text": "Pieza A"},
+                {"words": 80, "probability": 0.2},
+            ]}],
+        })
+        self.assertEqual(
+            [(p["text"], p["probability_percent"]) for p in r.ai_classifier_flagged_pieces],
+            [("Pieza A", Decimal("91.0"))],
+        )
+        self.assertIsNone(self._report({}).ai_classifier_flagged_pieces)
+
+
+class InformePdfIaClasificadorTests(TestCase):
+    def test_escape_colapsa_saltos_simples_y_conserva_parrafos(self):
+        from apps.reports.services import _BasePdfBuilder
+
+        builder = _BasePdfBuilder.__new__(_BasePdfBuilder)
+        self.assertEqual(
+            builder._escape("uno\ndos\ntres\n\ncuatro & cinco"),
+            "uno dos tres<br/><br/>cuatro &amp; cinco",
+        )
+
+
 class ResponsibleUseNoteTests(TestCase):
     """RN-CER-08: un único texto para la nota de uso responsable."""
 

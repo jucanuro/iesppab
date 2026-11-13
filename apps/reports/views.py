@@ -95,9 +95,18 @@ class ReportDetailView(LoginRequiredMixin, View):
             if report:
                 certificate = self._get_certificate(report=report)
 
+                classifier_mode = report.ai_classifier_flagged_pieces is not None
                 highlighted_segments = self._build_highlight_segments(
                     content=resolve_analyzed_content(report),
-                    findings=list(report.findings.all()),
+                    # Con el clasificador no se pinta la heurística.
+                    findings=[
+                        finding
+                        for finding in report.findings.all()
+                        if not (
+                            classifier_mode
+                            and finding.finding_type == FindingType.AI_GENERATED
+                        )
+                    ],
                     excluded_ranges=report.excluded_quote_ranges,
                     common_ranges=report.common_text_ranges,
                 )
@@ -125,6 +134,17 @@ class ReportDetailView(LoginRequiredMixin, View):
 
             all_sources = list(report.sources.all()) if report else []
 
+            # Con el clasificador, las piezas señaladas son las suyas; los
+            # hallazgos de la heurística no se listan ni se pintan.
+            ai_classifier_pieces = (
+                report.ai_classifier_flagged_pieces if report else None
+            )
+            ai_findings = (
+                report.findings.filter(finding_type=FindingType.AI_GENERATED)
+                if report and ai_classifier_pieces is None
+                else []
+            )
+
             context = {
                 "document": document,
                 "report": report,
@@ -145,9 +165,15 @@ class ReportDetailView(LoginRequiredMixin, View):
                 "similarity_findings": report.findings.filter(
                     finding_type=FindingType.SIMILARITY,
                 ) if report else [],
-                "ai_findings": report.findings.filter(
-                    finding_type=FindingType.AI_GENERATED,
-                ) if report else [],
+                "ai_findings": ai_findings,
+                "ai_classifier_pieces": ai_classifier_pieces,
+                # Con el clasificador la pestaña IA solo existe si hay piezas
+                # señaladas o si el documento no fue evaluable (nota).
+                "show_ai_tab": (
+                    ai_classifier_pieces is None
+                    or bool(ai_classifier_pieces)
+                    or (report is not None and report.ai_not_evaluable is not None)
+                ),
                 "improvement_suggestions": (
                     build_improvement_suggestions(report) if report else []
                 ),

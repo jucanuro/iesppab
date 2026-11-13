@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import statistics
 from dataclasses import dataclass
 
 from django.db import transaction
@@ -237,12 +238,123 @@ def normalize_pdf_pages(pages_text: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
+# Un PDF de Google Docs (y algunos exportados desde Word) coloca cada palabra
+# como un fragmento de texto aparte: pypdf devuelve una palabra por línea y
+# el texto queda inservible para el clasificador y la similitud. Si la
+# mediana de palabras por línea de una página es <= este valor, se reextrae
+# con el modo "layout" y, si aun así sigue partida, se unen las líneas.
+PDF_SPLIT_MEDIAN_WORDS = 2
+# Páginas con menos líneas que esto no sirven para medir (portadas casi vacías).
+PDF_SPLIT_MIN_LINES = 5
+# Fracción mínima de las palabras crudas que debe conservar el modo layout.
+PDF_LAYOUT_MIN_WORD_RATIO = 0.9
+
+
+def _median_words_per_line(text: str) -> float:
+    counts = [len(line.split()) for line in text.split("\n") if line.strip()]
+    return float(statistics.median(counts)) if counts else 0.0
+
+
+# Relación saltos de línea / caracteres a partir de la cual el texto completo
+# se considera partido (sano ≈ 0,01; palabra por línea ≈ 0,1).
+DAMAGED_NEWLINE_RATIO = 0.05
+
+
+def text_damage_metrics(content: str) -> dict:
+    """Líneas, mediana de palabras por línea y palabras del texto guardado."""
+    lines = [line for line in content.split("\n") if line.strip()]
+    return {
+        "lines": len(lines),
+        "median": _median_words_per_line(content),
+        "words": len(content.split()),
+        "newline_ratio": content.count("\n") / len(content) if content else 0.0,
+    }
+
+
+def is_damaged_text(content: str, threshold: float = PDF_SPLIT_MEDIAN_WORDS) -> bool:
+    """
+    Detecta el texto de una palabra por línea ya guardado: mediana de palabras
+    por línea <= `threshold` (con líneas suficientes) o proporción de saltos
+    anómala. Misma regla que `audit_extraccion` y `reextraer_textos`.
+    """
+    metrics = text_damage_metrics(content)
+    if metrics["lines"] < PDF_SPLIT_MIN_LINES:
+        return False
+    return (
+        metrics["median"] <= threshold
+        or metrics["newline_ratio"] > DAMAGED_NEWLINE_RATIO
+    )
+
+
+def _is_split_page(text: str) -> bool:
+    lines = [line for line in text.split("\n") if line.strip()]
+    return (
+        len(lines) >= PDF_SPLIT_MIN_LINES
+        and _median_words_per_line(text) <= PDF_SPLIT_MEDIAN_WORDS
+    )
+
+
+def _tidy_layout_text(text: str) -> str:
+    """
+    El modo layout rellena con espacios para imitar las columnas: se quita la
+    sangría común de la página (si no, cada línea parecería un párrafo nuevo)
+    y se colapsan los espacios repetidos dentro de cada línea.
+    """
+    lines = text.split("\n")
+    margin = min(
+        (len(line) - len(line.lstrip(" ")) for line in lines if line.strip()),
+        default=0,
+    )
+    tidy = []
+    for line in lines:
+        body = line[margin:]
+        indent = len(body) - len(body.lstrip(" "))
+        tidy.append(" " * indent + re.sub(r" {2,}", " ", body.lstrip(" ")))
+    return "\n".join(tidy)
+
+
+def _join_split_lines(text: str) -> str:
+    """Une las líneas sueltas en párrafos; los saltos dobles reales se conservan."""
+    paragraphs = []
+    for block in re.split(r"\n\s*\n", text):
+        joined = " ".join(block.split())
+        if joined:
+            paragraphs.append(joined)
+    return "\n\n".join(paragraphs)
+
+
+def _recover_split_page(page, raw_text: str) -> str:
+    try:
+        layout = _tidy_layout_text(page.extract_text(extraction_mode="layout") or "")
+    except Exception:
+        logger.warning("No se pudo reextraer la página en modo layout.", exc_info=True)
+        layout = ""
+
+    # El modo layout a veces pega palabras contiguas: si pierde palabras
+    # respecto a la lectura cruda, no es de fiar y se prefiere unir esta.
+    layout_ok = (
+        len(layout.split()) >= len(raw_text.split()) * PDF_LAYOUT_MIN_WORD_RATIO
+    )
+
+    if layout_ok and not _is_split_page(normalize_pdf_pages([layout])):
+        return layout
+
+    return _join_split_lines(raw_text)
+
+
 def read_pdf_pages(file_obj) -> list[str]:
     """
     Texto crudo de cada página. Lo comparten la extracción de documentos y
     la cosecha de texto completo OAI, para que ambas lean el PDF igual.
+    Las páginas con una palabra por línea se recuperan aquí (ver arriba).
     """
-    return [page.extract_text() or "" for page in PdfReader(file_obj).pages]
+    pages = []
+    for page in PdfReader(file_obj).pages:
+        text = page.extract_text() or ""
+        if _is_split_page(text):
+            text = _recover_split_page(page, text)
+        pages.append(text)
+    return pages
 
 
 class TextExtractionError(Exception):
@@ -294,6 +406,43 @@ class DocumentTextExtractor:
         )
 
         return document_text
+
+    def repair_if_damaged(
+        self, document: Document, existing: DocumentText | None
+    ) -> tuple[DocumentText | None, str]:
+        """
+        Devuelve (texto, estado): "sano", "reparado", "danado" (no se pudo
+        reparar: sin archivo o falla la extracción) o "ausente" (sin texto).
+        Idempotente: un texto ya sano no se toca.
+        """
+        if existing is None:
+            return None, "ausente"
+        if not is_damaged_text(existing.content):
+            return existing, "sano"
+        if not document.original_file:
+            logger.warning(
+                "Texto guardado dañado y sin archivo original. document_id=%s",
+                document.id,
+            )
+            return existing, "danado"
+        try:
+            repaired = self.extract_and_save(document=document)
+        except Exception:
+            logger.warning(
+                "No se pudo reextraer el texto dañado. document_id=%s",
+                document.id,
+                exc_info=True,
+            )
+            return existing, "danado"
+        if is_damaged_text(repaired.content):
+            return repaired, "danado"
+        logger.info(
+            "Texto dañado reparado reextrayendo del archivo original. "
+            "document_id=%s palabras=%s",
+            document.id,
+            repaired.word_count,
+        )
+        return repaired, "reparado"
 
     def extract(self, document: Document) -> ExtractedTextResult:
         if document.mime_type == self.PDF_MIME:

@@ -2,9 +2,10 @@
 Clasificador de IA por segmentos (BETO afinado, ver
 `notebooks/entrenar_clasificador_ia.ipynb`).
 
-Solo INDICATIVO: con `AI_DETECTION_MODE=classifier` el resultado se guarda en
-`ai_score_breakdown["classifier"]` y NO cambia `ai_probability_percent`, el
-nivel de riesgo ni los certificados.
+Con `AI_DETECTION_MODE=classifier` el resultado se guarda en
+`ai_score_breakdown["classifier"]` y su % es también `ai_probability_percent`
+(la heurística queda en `heuristic_ai_score`). NO cambia el nivel de riesgo
+ni los certificados: dependen solo de la similitud.
 
 Los segmentos salen de `ai_segments.build_segments` (mismos offsets que el
 visor) y se normalizan igual que en el dataset de entrenamiento
@@ -30,8 +31,26 @@ from django.conf import settings
 
 from apps.analysis import ia_dataset
 from apps.analysis.engines import ai_segments
+from apps.analysis.engines.language import REASON_OTHER_LANGUAGE, is_other_language
 
 logger = logging.getLogger(__name__)
+
+# "No evaluable": si casi todo el documento queda fuera (listas, ruido,
+# tablas, otro idioma...) o se evalúan muy pocas palabras, un 0,0 % sería
+# engañoso: no se midió nada. Se guarda como no evaluable.
+NOT_EVALUABLE_EXCLUDED_RATIO = 0.90
+NOT_EVALUABLE_MIN_WORDS = 200
+NOT_EVALUABLE_NOTE = (
+    "IA: no evaluable. El documento tiene muy poca prosa corrida analizable "
+    "(predominan listas, tablas, texto en otro idioma o texto con ruido de "
+    "extracción), por lo que no se puede estimar un porcentaje fiable."
+)
+# Texto de cada pieza señalada que se guarda en el desglose.
+EXCERPT_CHARS = 300
+# Solo se LISTAN (texto en el desglose, página e informe) las piezas con al
+# menos esta probabilidad. El umbral del modelo (muy bajo, para el % total)
+# no decide qué se lista; el % total no cambia.
+LISTING_MIN_PROBABILITY = 0.5
 
 AI_LABEL_INDEX = 1
 DEFAULT_MAX_LENGTH = 384
@@ -71,6 +90,8 @@ class ClassifierResult:
     ai_percent: Decimal
     threshold: float
     segments: list[ClassifiedSegment]
+    evaluable: bool = True
+    not_evaluable_reason: str = ""
 
     @property
     def pieces(self) -> list[ClassifiedPiece]:
@@ -81,13 +102,21 @@ class ClassifierResult:
         return sum(piece.word_count for piece in self.pieces)
 
     def to_breakdown(self) -> dict:
-        return {
+        evaluated = self.evaluated_words if self.evaluable else 0
+        data = {
             "indicative": True,
+            "evaluable": self.evaluable,
             "ai_percent": str(self.ai_percent),
             "threshold": self.threshold,
-            "evaluated_words": self.evaluated_words,
-            "evaluated_pieces": len(self.pieces),
-            "flagged_pieces": sum(p.probability >= self.threshold for p in self.pieces),
+            "evaluated_words": evaluated,
+            "evaluated_pieces": len(self.pieces) if self.evaluable else 0,
+            "flagged_pieces": (
+                sum(p.probability >= self.threshold for p in self.pieces)
+                if self.evaluable
+                else 0
+            ),
+            "total_segments": len(self.segments),
+            "excluded_segments": sum(bool(s.excluded_reason) for s in self.segments),
             "segments": [
                 {
                     "start": segment.start,
@@ -95,13 +124,30 @@ class ClassifierResult:
                     "words": segment.word_count,
                     "excluded_reason": segment.excluded_reason,
                     "pieces": [
-                        {"words": p.word_count, "probability": round(p.probability, 6)}
+                        {
+                            "words": p.word_count,
+                            "probability": round(p.probability, 6),
+                            # Solo las piezas listables (>= 50 %) llevan texto:
+                            # es lo que listan la página y el informe.
+                            **(
+                                {"text": p.text[:EXCERPT_CHARS]}
+                                if p.probability >= max(self.threshold, LISTING_MIN_PROBABILITY)
+                                else {}
+                            ),
+                        }
                         for p in segment.pieces
-                    ],
+                    ]
+                    if self.evaluable
+                    else [],
                 }
                 for segment in self.segments
             ],
         }
+        if not self.evaluable:
+            data["not_evaluable_reason"] = self.not_evaluable_reason
+            data["candidate_words"] = self.evaluated_words
+            data["note"] = NOT_EVALUABLE_NOTE
+        return data
 
 
 def classifier_pieces(segment_text: str) -> list[str]:
@@ -202,7 +248,9 @@ class SegmentAIClassifier:
                 word_count=segment.word_count,
                 excluded_reason=segment.excluded_reason,
             )
-            if segment.evaluable:
+            if segment.evaluable and is_other_language(segment.evaluable_text):
+                classified.excluded_reason = REASON_OTHER_LANGUAGE
+            elif segment.evaluable:
                 classified.pieces = [
                     ClassifiedPiece(text=text, word_count=len(text.split()), probability=0.0)
                     for text in classifier_pieces(segment.evaluable_text)
@@ -210,6 +258,20 @@ class SegmentAIClassifier:
             segments.append(classified)
 
         pieces = [piece for segment in segments for piece in segment.pieces]
+        threshold = self.threshold
+        reason = self._not_evaluable_reason(segments, pieces)
+
+        if reason:
+            # No se usa el modelo: no hay prosa suficiente que medir.
+            unload(self.model_dir)
+            return ClassifierResult(
+                ai_percent=Decimal("0.00"),
+                threshold=threshold,
+                segments=segments,
+                evaluable=False,
+                not_evaluable_reason=reason,
+            )
+
         try:
             probabilities = self.predict([p.text for p in pieces])
         finally:
@@ -217,7 +279,6 @@ class SegmentAIClassifier:
         for piece, probability in zip(pieces, probabilities):
             piece.probability = probability
 
-        threshold = self.threshold
         total = sum(p.word_count for p in pieces)
         flagged = sum(p.word_count for p in pieces if p.probability >= threshold)
         percent = (
@@ -226,3 +287,16 @@ class SegmentAIClassifier:
             else Decimal("0.00")
         )
         return ClassifierResult(ai_percent=percent, threshold=threshold, segments=segments)
+
+    @staticmethod
+    def _not_evaluable_reason(
+        segments: list[ClassifiedSegment], pieces: list[ClassifiedPiece]
+    ) -> str:
+        if not segments:
+            return "sin-segmentos"
+        excluded = sum(bool(segment.excluded_reason) for segment in segments)
+        if excluded / len(segments) >= NOT_EVALUABLE_EXCLUDED_RATIO:
+            return "segmentos-excluidos"
+        if sum(piece.word_count for piece in pieces) < NOT_EVALUABLE_MIN_WORDS:
+            return "pocas-palabras-evaluadas"
+        return ""

@@ -9,7 +9,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
 
 ## Fase A — Verificación y banco (PC / Gerente)
 
-- [ ] T01 — Ejecutar V-01: ¿se usaron los 60 de chat para fijar el umbral v2?
+- [x] T01 — Ejecutar V-01: ¿se usaron los 60 de chat para fijar el umbral v2?
   - Corre en: PC (solo lectura) · Depende de: — · REQ: REQ-IA-17, REQ-IA-07
   - Archivos: `specs/ORI-IA/V-01.md` (informe "usados"/"no usados" con evidencia: `umbral.json`, celdas del notebook v2, fechas)
   - Verificación: revisión del Gerente; el resultado fija `visto` de los 60 en el manifiesto

@@ -187,6 +187,32 @@ class BraveWebSearchClient:
         # 402 (límite de gasto agotado) o 429 (cuota): seguir consultando
         # no sirve; el colector deja de buscar.
         self.quota_exhausted = False
+        # Consultas reales a la API (no desde caché) y errores seguidos, solo
+        # para el log del análisis; no se guarda nada en la base.
+        self.api_queries = 0
+        self.consecutive_errors = 0
+
+    # Errores seguidos de la API a partir de los cuales se avisa en el log.
+    CONSECUTIVE_ERRORS_WARNING = 3
+
+    def _register_api_error(self, code: str, query: str) -> None:
+        self.consecutive_errors += 1
+        logger.error(
+            "Brave Search falló: error=%s consulta_n=%s errores_seguidos=%s query=%s",
+            code,
+            self.api_queries,
+            self.consecutive_errors,
+            query,
+        )
+        if self.consecutive_errors == self.CONSECUTIVE_ERRORS_WARNING:
+            logger.warning(
+                "AVISO: Brave Search lleva %s errores seguidos (último: %s, "
+                "consulta n.º %s). La similitud web puede estar incompleta; "
+                "revisa la cuota y la clave de la API.",
+                self.consecutive_errors,
+                code,
+                self.api_queries,
+            )
 
     def cache_key(self, query: str, count: int) -> str | None:
         cleaned_query = self._clean_query(query)
@@ -238,6 +264,8 @@ class BraveWebSearchClient:
         if self.extra_snippets:
             params["extra_snippets"] = "true"
 
+        self.api_queries += 1
+
         def request() -> requests.Response:
             response = requests.get(
                 self.BASE_URL,
@@ -254,6 +282,13 @@ class BraveWebSearchClient:
 
         except requests.RequestException as exc:
             status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None:
+                code = f"HTTP {status}"
+            elif isinstance(exc, requests.Timeout):
+                code = "timeout"
+            else:
+                code = type(exc).__name__
+            self._register_api_error(code, cleaned_query)
 
             if status in self.QUOTA_STATUS_CODES:
                 self.quota_exhausted = True
@@ -269,7 +304,10 @@ class BraveWebSearchClient:
 
         except ValueError as exc:
             logger.warning("JSON inválido Brave Search. query=%s error=%s", cleaned_query, exc)
+            self._register_api_error("JSON inválido", cleaned_query)
             return []
+
+        self.consecutive_errors = 0
 
         # Solo se guarda una respuesta válida (aunque venga vacía); los
         # errores se vuelven a consultar en el próximo análisis.

@@ -4695,7 +4695,7 @@ class _FakeWebResponse:
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
+            raise requests.HTTPError(f"HTTP {self.status_code}", response=self)
 
     def json(self) -> dict:
         return self._payload
@@ -4735,6 +4735,91 @@ _REMOTE_DISCONNECTED = requests.ConnectionError(
     BRAVE_SEARCH_LANG="es",
     WEB_SEARCH_CACHE_DAYS=30,
 )
+class AcademicTextFilterTableOfContentsTests(SimpleTestCase):
+    """Índice sintético con la forma del de "Proyecto directora" (una sola
+    línea larga con puntos suspensivos y página, pegada a la portada)."""
+
+    PROSE = (
+        "La depresión durante la adolescencia constituye una problemática "
+        "relevante, ya que puede afectar diferentes áreas de la vida cotidiana. "
+        "Durante esta etapa, los vínculos con los pares adquieren importancia."
+    )
+    DOTS = "." * 90
+    ENTRIES = (
+        f"RESUMEN ABSTRACT 1. INTRODUCCIÓN {DOTS} 1 "
+        f"1.1 Descripción del problema {DOTS} 1 "
+        f"1.2 Justificación {DOTS} 2 "
+        f"2. CONCLUSIONES {DOTS} 7 REFERENCIAS 8"
+    )
+
+    def _filter(self, text: str):
+        return AcademicTextFilter().filter_for_similarity(text)
+
+    def test_removes_table_of_contents_block_glued_to_cover(self) -> None:
+        text = (
+            "THE IMPACT OF DEPRESSION ON ADOLESCENTS\nRELATIONSHIPS\n"
+            f"TABLA DE CONTENIDO\n{self.ENTRIES}\n\n{self.PROSE}"
+        )
+        result = self._filter(text)
+        self.assertNotIn("Justificación", result.content)
+        self.assertNotIn("CONCLUSIONES", result.content)
+        self.assertNotIn("....", result.content)
+        self.assertIn("vínculos con los pares", result.content)
+
+    def test_removes_index_of_tables_and_figures_heading(self) -> None:
+        text = (
+            f"{self.PROSE}\n\nÍNDICE DE TABLAS Y FIGURAS\n"
+            f"Tabla 1 Resultados {self.DOTS} 12\nFigura 1 Modelo {self.DOTS} 14\n\n{self.PROSE} Fin."
+        )
+        result = self._filter(text)
+        self.assertNotIn("Tabla 1", result.content)
+        self.assertNotIn("Figura 1", result.content)
+        self.assertEqual(result.content.count("vínculos con los pares"), 2)
+
+    def test_removes_leader_entries_without_heading(self) -> None:
+        text = f"{self.PROSE}\n\n1.1 Descripción del problema {self.DOTS} 1\n\n{self.PROSE} Fin."
+        result = self._filter(text)
+        self.assertNotIn("Descripción del problema", result.content)
+
+    def test_heading_does_not_eat_following_prose(self) -> None:
+        text = f"ÍNDICE\n{self.PROSE}\n\n{self.PROSE} Fin."
+        result = self._filter(text)
+        self.assertIn("vínculos con los pares", result.content)
+
+
+class BraveSearchErrorLogTests(TestCase):
+    def setUp(self) -> None:
+        sleep_patch = mock.patch("apps.analysis.engines.web_search.time.sleep")
+        sleep_patch.start()
+        self.addCleanup(sleep_patch.stop)
+
+    def test_logs_each_error_with_code_and_warns_after_three_in_a_row(self) -> None:
+        client = BraveWebSearchClient()
+        with override_settings(BRAVE_SEARCH_API_KEY="k"), mock.patch(
+            "requests.get", return_value=_FakeWebResponse(status_code=500)
+        ), self.assertLogs("apps.analysis.engines.web_search", level="WARNING") as logs:
+            client.api_key = "k"
+            for number in range(3):
+                client.search(query=f'"consulta {number}"')
+        text = "\n".join(logs.output)
+        self.assertIn("HTTP 500", text)
+        self.assertIn("consulta_n=3", text)
+        self.assertEqual(text.count("AVISO: Brave Search lleva 3 errores seguidos"), 1)
+
+    def test_success_resets_consecutive_errors(self) -> None:
+        client = BraveWebSearchClient()
+        client.api_key = "k"
+        with mock.patch("requests.get", return_value=_FakeWebResponse(status_code=500)):
+            client.search(query='"a b c"')
+            client.search(query='"d e f"')
+        self.assertEqual(client.consecutive_errors, 2)
+        with mock.patch(
+            "requests.get", return_value=_FakeWebResponse(payload=_brave_payload("https://a.org/1"))
+        ):
+            client.search(query='"g h i"')
+        self.assertEqual(client.consecutive_errors, 0)
+
+
 class BraveSearchCacheTests(TestCase):
     def setUp(self) -> None:
         sleep_patch = mock.patch("apps.analysis.engines.web_search.time.sleep")

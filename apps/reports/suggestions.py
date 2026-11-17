@@ -101,7 +101,11 @@ def build_improvement_suggestions(report: "AnalysisReport") -> list[dict]:
             }
         )
 
-    if report.similarity_level == "bajo" and report.ai_assessment == 0:
+    if (
+        report.similarity_level == "bajo"
+        and report.ai_assessment == 0
+        and not report.ai_not_evaluable
+    ):
         suggestions.append(
             {
                 "title": "Buen trabajo de redacción original",

@@ -14,12 +14,12 @@ muestra sin un documento real.
 {% if st == "COMPLETED" %}
     {% if risk == "HIGH" %}
         <span class="badge badge-danger"
-              title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Revisión requerida.">
+              title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · {% if document.report.ai_not_evaluable %}IA: no evaluable{% else %}IA {{ document.report.ai_estimated_percent|floatformat:1 }}%{% endif %}.{% endif %} Revisión requerida.">
             <span class="badge-dot bg-red-500"></span>Riesgo alto
         </span>
     {% elif risk == "MEDIUM" %}
         <span class="badge badge-warning"
-              title="Análisis terminado con riesgo moderado.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %} Conviene revisar.">
+              title="Análisis terminado con riesgo moderado.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · {% if document.report.ai_not_evaluable %}IA: no evaluable{% else %}IA {{ document.report.ai_estimated_percent|floatformat:1 }}%{% endif %}.{% endif %} Conviene revisar.">
             <span class="badge-dot bg-gold-500"></span>Riesgo medio
         </span>
     {% elif document.report.overall_assessment.ai_review %}
@@ -29,7 +29,7 @@ muestra sin un documento real.
         </span>
     {% elif risk == "LOW" or document.report %}
         <span class="badge badge-success"
-              title="Análisis terminado sin observaciones relevantes.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · IA {{ document.report.ai_estimated_percent|floatformat:1 }}%.{% endif %}">
+              title="Análisis terminado sin observaciones relevantes.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · {% if document.report.ai_not_evaluable %}IA: no evaluable{% else %}IA {{ document.report.ai_estimated_percent|floatformat:1 }}%{% endif %}.{% endif %}">
             <span class="badge-dot bg-emerald-500"></span>Riesgo bajo
         </span>
     {% else %}

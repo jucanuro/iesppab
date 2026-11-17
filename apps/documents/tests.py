@@ -10,8 +10,13 @@ from docx import Document as DocxDocument
 
 from apps.accounts.models import User, UserRole
 from apps.core.models import Institution
-from apps.documents.extractors import DocumentTextExtractor, normalize_pdf_pages
-from apps.documents.models import Document, DocumentKind
+from apps.documents.extractors import (
+    DocumentTextExtractor,
+    is_damaged_text,
+    normalize_pdf_pages,
+    read_pdf_pages,
+)
+from apps.documents.models import Document, DocumentKind, DocumentText
 
 DOCX_MIME = DocumentTextExtractor.DOCX_MIME
 
@@ -205,6 +210,165 @@ class PdfTextNormalizationTests(TestCase):
 
         self.assertIn("\n1. Identificar", text.replace("\n\n", "\n"))
         self.assertIn("\n2. Identificar", text)
+
+
+def _pdf_bytes(*, split_words: bool, sentence: str, repeat: int = 8) -> bytes:
+    """
+    PDF sintético con reportlab. Con `split_words` cada palabra es un
+    fragmento de texto aparte (con un pequeño desnivel vertical), como hace
+    Google Docs: pypdf lo lee como una palabra por línea. Sin él, se dibuja
+    cada línea entera, como un PDF normal.
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+    words = ((sentence + " ") * repeat).split()
+    y, x, line = 800, 60, []
+
+    def flush() -> None:
+        if line and not split_words:
+            pdf.drawString(60, y, " ".join(line))
+        line.clear()
+
+    for index, word in enumerate(words):
+        width = pdf.stringWidth(word + " ", "Helvetica", 11)
+        if x + width > 530:
+            flush()
+            x, y = 60, y - 16
+        if split_words:
+            pdf.drawString(x, y + (2 if index % 2 else -2), word)
+        else:
+            line.append(word)
+        x += width
+
+    flush()
+    pdf.save()
+    return buffer.getvalue()
+
+
+class PdfSplitWordsRecoveryTests(TestCase):
+    SENTENCE = (
+        "La depresión durante la adolescencia constituye una problemática "
+        "relevante, ya que puede afectar diferentes áreas de la vida cotidiana."
+    )
+
+    def test_word_per_line_pdf_is_rebuilt_into_prose(self) -> None:
+        pdf = _pdf_bytes(split_words=True, sentence=self.SENTENCE)
+
+        pages = read_pdf_pages(io.BytesIO(pdf))
+        text = normalize_pdf_pages(pages)
+        lines = [line for line in text.split("\n") if line.strip()]
+
+        self.assertIn("La depresión durante la adolescencia", text)
+        self.assertGreater(max(len(line.split()) for line in lines), 10)
+        self.assertEqual(len(text.split()), len((self.SENTENCE + " ").split()) * 8)
+
+    def test_normal_pdf_is_left_untouched(self) -> None:
+        pdf = _pdf_bytes(split_words=False, sentence=self.SENTENCE)
+
+        from pypdf import PdfReader
+
+        expected = [page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages]
+
+        self.assertEqual(read_pdf_pages(io.BytesIO(pdf)), expected)
+
+    def test_layout_extraction_is_used_when_it_keeps_every_word(self) -> None:
+        from apps.documents.extractors import _recover_split_page
+
+        class Page:
+            def extract_text(self, extraction_mode=None):
+                return "      Una   frase   con   varias   palabras   juntas.\n      Otra   linea   igual   de   larga   aqui." if extraction_mode == "layout" else ""
+
+        raw = "Una\nfrase\ncon\nvarias\npalabras\njuntas.\nOtra\nlinea\nigual\nde\nlarga\naqui."
+        text = _recover_split_page(Page(), raw)
+
+        self.assertEqual(
+            text.split("\n"),
+            ["Una frase con varias palabras juntas.", "Otra linea igual de larga aqui."],
+        )
+
+    def test_real_double_breaks_survive_the_fallback(self) -> None:
+        from apps.documents.extractors import _join_split_lines
+
+        self.assertEqual(
+            _join_split_lines("Uno\ndos\ntres\n\nCuatro\ncinco"),
+            "Uno dos tres\n\nCuatro cinco",
+        )
+
+
+class DamagedStoredTextRepairTests(TestCase):
+    """`repair_if_damaged` es lo que usa Reanalizar antes de analizar."""
+
+    SENTENCE = PdfSplitWordsRecoveryTests.SENTENCE
+    DAMAGED = "\n".join((SENTENCE * 3).split())
+
+    def setUp(self) -> None:
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        institution = Institution.objects.create(name="IESPP")
+        owner = User.objects.create_user(
+            username="alumno", password="x", institution=institution,
+            role=UserRole.STUDENT,
+        )
+        self.document = Document(
+            institution=institution, owner=owner, uploaded_by=owner,
+            title="Proyecto", kind=DocumentKind.OTHER,
+            original_filename="p.pdf", mime_type="application/pdf",
+            file_size_bytes=1, sha256_hash="h",
+        )
+        self.extractor = DocumentTextExtractor()
+
+    def _store(self, content: str, *, pdf: bytes | None) -> DocumentText:
+        with override_settings(MEDIA_ROOT=self.media):
+            if pdf is not None:
+                self.document.original_file.save("p.pdf", ContentFile(pdf), save=False)
+            self.document.save()
+        return DocumentText.objects.create(
+            document=self.document, content=content,
+            word_count=len(content.split()), character_count=len(content),
+        )
+
+    def test_damaged_text_is_rebuilt_from_pdf(self) -> None:
+        pdf = _pdf_bytes(split_words=True, sentence=self.SENTENCE)
+        stored = self._store(self.DAMAGED, pdf=pdf)
+        self.assertTrue(is_damaged_text(stored.content))
+
+        with override_settings(MEDIA_ROOT=self.media):
+            text, state = self.extractor.repair_if_damaged(self.document, stored)
+
+        self.assertEqual(state, "reparado")
+        self.assertGreater(text.word_count, 0)
+        self.assertFalse(is_damaged_text(text.content))
+        stored.refresh_from_db()
+        self.assertFalse(is_damaged_text(stored.content))
+
+    def test_healthy_text_is_not_touched(self) -> None:
+        healthy = "\n\n".join([self.SENTENCE] * 8)
+        stored = self._store(healthy, pdf=_pdf_bytes(split_words=True, sentence=self.SENTENCE))
+
+        text, state = self.extractor.repair_if_damaged(self.document, stored)
+
+        self.assertEqual(state, "sano")
+        stored.refresh_from_db()
+        self.assertEqual(stored.content, healthy)
+
+    def test_damaged_text_without_file_does_not_fail(self) -> None:
+        stored = self._store(self.DAMAGED, pdf=None)
+
+        text, state = self.extractor.repair_if_damaged(self.document, stored)
+
+        self.assertEqual(state, "danado")
+        self.assertEqual(text.content, self.DAMAGED)
+
+    def test_repair_is_idempotent(self) -> None:
+        stored = self._store(self.DAMAGED, pdf=_pdf_bytes(split_words=True, sentence=self.SENTENCE))
+        with override_settings(MEDIA_ROOT=self.media):
+            first, _ = self.extractor.repair_if_damaged(self.document, stored)
+            second, state = self.extractor.repair_if_damaged(self.document, first)
+        self.assertEqual(state, "sano")
+        self.assertEqual(first.content, second.content)
 
 
 class DocxTableExtractionTests(DocxDocumentTestMixin, TestCase):

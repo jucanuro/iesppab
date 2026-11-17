@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 import logging
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
@@ -768,7 +769,12 @@ class _BasePdfBuilder:
 
     def _escape(self, text: str) -> str:
         escaped = html.escape(text, quote=False)
-        return escaped.replace("\n", "<br/>\n")
+        # Un "\n" suelto es solo el corte visual de una línea del PDF o del
+        # DOCX: pasa a espacio. Una línea en blanco ("\n\n") es un párrafo
+        # real y se conserva. Si no, el informe se inflaba una línea por
+        # cada salto del texto extraído.
+        escaped = re.sub(r"[ \t]*\n(?:[ \t]*\n)+[ \t]*", "<br/><br/>", escaped)
+        return re.sub(r"[ \t]*\n[ \t]*", " ", escaped)
 
     def _new_document(self, buffer: BytesIO, title: str) -> SimpleDocTemplate:
         """Documento A4 con los márgenes comunes de los informes."""
@@ -1045,20 +1051,35 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
             Spacer(1, 0.4 * cm),
         ]
 
-        findings = [
-            finding
-            for finding in self.report.findings.order_by("start_offset")
-            if finding.finding_type == FindingType.AI_GENERATED
-        ]
-        pieces = findings_in_paint_order(findings, len(content))
+        classifier_pieces = self.report.ai_classifier_flagged_pieces
+        pieces: list[tuple[int, int, ReportFinding]] = []
 
-        story.append(Paragraph("SEGMENTOS SEÑALADOS", styles["kicker"]))
-        story.append(Spacer(1, 0.2 * cm))
-
-        if pieces:
-            story.append(self._build_segments_table(pieces, content, styles))
+        if not estimate.evaluable:
+            # No evaluable: no hay segmentos que listar; la nota ya está
+            # en el bloque superior.
+            pass
+        elif classifier_pieces is not None:
+            # Con el clasificador valen sus piezas (no la heurística); si
+            # no hay ninguna, la sección se oculta.
+            if classifier_pieces:
+                story.append(Paragraph("SEGMENTOS SEÑALADOS", styles["kicker"]))
+                story.append(Spacer(1, 0.2 * cm))
+                story.append(self._build_classifier_pieces_table(classifier_pieces, styles))
         else:
-            story.append(Paragraph("Sin segmentos señalados.", styles["small"]))
+            findings = [
+                finding
+                for finding in self.report.findings.order_by("start_offset")
+                if finding.finding_type == FindingType.AI_GENERATED
+            ]
+            pieces = findings_in_paint_order(findings, len(content))
+
+            story.append(Paragraph("SEGMENTOS SEÑALADOS", styles["kicker"]))
+            story.append(Spacer(1, 0.2 * cm))
+
+            if pieces:
+                story.append(self._build_segments_table(pieces, content, styles))
+            else:
+                story.append(Paragraph("Sin segmentos señalados.", styles["small"]))
 
         story.append(Spacer(1, 0.5 * cm))
         story.append(Paragraph("MÉTODO", styles["kicker"]))
@@ -1097,6 +1118,9 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
 
     def _build_estimate_block(self, estimate: Any, styles: dict[str, ParagraphStyle]) -> Table:
         band = estimate.band
+        if not estimate.evaluable:
+            return self._build_not_evaluable_block(estimate, styles)
+
         gauge = gauge_drawing(
             estimate.percent,
             f"{floatformat(estimate.percent, 1)}%",
@@ -1139,6 +1163,89 @@ class _AiReportPdfBuilder(_BasePdfBuilder):
             )
         )
         return block
+
+    def _build_not_evaluable_block(
+        self, estimate: Any, styles: dict[str, ParagraphStyle]
+    ) -> Table:
+        band = estimate.band
+        gauge = gauge_drawing(0, "N/E", "#94A3B8", font_size=14)
+        caption = Paragraph(
+            '<font size="8" color="#64748B"><b>IA ESTIMADA</b></font><br/>'
+            f'<font size="8" color="{band["fg"]}"><b>NO EVALUABLE</b></font>',
+            styles["metric_caption"],
+        )
+        block = Table(
+            [
+                [
+                    [gauge, Spacer(1, 0.15 * cm), caption],
+                    Paragraph(
+                        "<b>IA: no evaluable</b><br/>"
+                        f"{self._escape(estimate.not_evaluable_note)}<br/>"
+                        f"<b>Fecha:</b> "
+                        f"{timezone.localtime(estimate.generated_at).strftime('%d/%m/%Y %H:%M')}<br/>"
+                        f"<b>Versión:</b> {self._escape(estimate.version_label)}",
+                        styles["small"],
+                    ),
+                ]
+            ],
+            colWidths=[6.0 * cm, 10.6 * cm],
+        )
+        block.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "CENTER"),
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#CBD5E1")),
+                    ("ROUNDEDCORNERS", [8, 8, 8, 8]),
+                    ("TOPPADDING", (0, 0), (-1, -1), 12),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 14),
+                ]
+            )
+        )
+        return block
+
+    def _build_classifier_pieces_table(
+        self,
+        pieces: list[dict],
+        styles: dict[str, ParagraphStyle],
+    ) -> Table:
+        rows = [
+            [
+                Paragraph("N.º", styles["sources_header_dark"]),
+                Paragraph("Probabilidad", styles["sources_header_dark"]),
+                Paragraph("Segmento", styles["sources_header_dark"]),
+            ]
+        ]
+        for number, piece in enumerate(pieces, start=1):
+            rows.append(
+                [
+                    Paragraph(f"<b>{number}</b>", styles["source_num_dark"]),
+                    Paragraph(
+                        f"{floatformat(piece['probability_percent'], 1)}%",
+                        styles["sources_percent"],
+                    ),
+                    Paragraph(
+                        self._escape(self._truncate(piece["text"], 220)),
+                        styles["sources_cell"],
+                    ),
+                ]
+            )
+        table = Table(rows, colWidths=[1.0 * cm, 2.6 * cm, 13.0 * cm], repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+                    ("LINEABOVE", (0, 0), (-1, 0), 1.0, colors.HexColor("#123F9E")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (0, -1), 0),
+                ]
+            )
+        )
+        return table
 
     def _build_segments_table(
         self,

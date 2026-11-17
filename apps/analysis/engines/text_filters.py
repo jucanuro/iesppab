@@ -238,6 +238,9 @@ class AcademicTextFilter:
         )
         excluded.extend(removed_index_runs)
 
+        normalized, removed_toc = self._remove_table_of_contents(normalized)
+        excluded.extend(removed_toc)
+
         paragraphs = [
             paragraph.strip()
             for paragraph in re.split(r"\n\s*\n", normalized)
@@ -632,6 +635,89 @@ class AcademicTextFilter:
             return content, []
 
         return content[:cut_position].strip(), ["bibliografía/anexos"]
+
+    # Encabezado propio de un índice ("TABLA DE CONTENIDO", "ÍNDICE",
+    # "ÍNDICE DE TABLAS Y FIGURAS"...), opcionalmente numerado.
+    TOC_HEADING = re.compile(
+        r"^(?:\d+[.)]?\s*)?(?:tabla\s+de\s+contenidos?|[ií]ndice"
+        r"(?:\s+general|\s+de\s+(?:tablas|figuras|cuadros|gr[aá]ficos)"
+        r"(?:\s*(?:y|e)\s*(?:tablas|figuras|cuadros|gr[aá]ficos))*)?)\s*:?$",
+        re.IGNORECASE,
+    )
+    # Entrada de índice: título + relleno de puntos (o "…") + número de
+    # página. En un PDF todo el índice puede llegar en UNA sola línea.
+    TOC_LEADER = r"(?:\s*(?:\.[ \t]?){4,}|\s*…{2,})"
+    TOC_LEADER_PAGE = re.compile(TOC_LEADER + r"[ \t]*\d{1,4}\b")
+    TOC_ENTRY_TITLE_MAX_LENGTH = 160
+    TOC_BLOCK_LINE_MAX_LENGTH = 90
+
+    def _remove_table_of_contents(self, content: str) -> tuple[str, list[str]]:
+        """
+        Quita (1) el bloque que sigue a un encabezado de índice, mientras las
+        líneas parezcan entradas de índice, y (2) cualquier entrada con
+        puntos suspensivos + número de página, aunque todas vengan pegadas
+        en una sola línea. Así el índice no se compara como prosa.
+        """
+        lines = content.split("\n")
+        result: list[str] = []
+        removed = False
+        index = 0
+
+        while index < len(lines):
+            line = lines[index]
+
+            if self.TOC_HEADING.match(line.strip()):
+                removed = True
+                index += 1
+
+                while index < len(lines):
+                    follow = lines[index].strip()
+
+                    if not follow:
+                        break
+
+                    is_entry = bool(self.TOC_LEADER_PAGE.search(follow)) or (
+                        len(follow) <= self.TOC_BLOCK_LINE_MAX_LENGTH
+                        and not follow.endswith((".", ":", ";"))
+                    )
+
+                    if not is_entry:
+                        break
+
+                    index += 1
+
+                continue
+
+            if self.TOC_LEADER_PAGE.search(line):
+                cleaned = self._strip_leader_entries(line)
+                removed = True
+
+                if cleaned.strip():
+                    result.append(cleaned)
+
+                index += 1
+                continue
+
+            result.append(line)
+            index += 1
+
+        if not removed:
+            return content, []
+
+        return "\n".join(result), ["índice de contenido"]
+
+    def _strip_leader_entries(self, line: str) -> str:
+        pieces = self.TOC_LEADER_PAGE.split(line)
+
+        # Cada pieza menos la última es el título de una entrada.
+        kept = [
+            piece
+            for position, piece in enumerate(pieces)
+            if position == len(pieces) - 1
+            or len(piece.strip()) > self.TOC_ENTRY_TITLE_MAX_LENGTH
+        ]
+
+        return " ".join(piece.strip() for piece in kept if piece.strip())
 
     def _remove_index_like_line_runs(
         self,

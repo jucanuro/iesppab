@@ -420,9 +420,9 @@ class CertificateGenerationService:
                     gauge_cell(
                         "IA ESTIMADA",
                         ai.percent,
-                        f"{floatformat(ai.percent, 1)}%",
-                        report.ai_assessment,
-                        f'{ai.band_label.upper()} · INDICATIVO',
+                        f"{floatformat(ai.percent, 1)}%" if ai.evaluable else "N/E",
+                        report.ai_assessment if ai.evaluable else -1,
+                        f'{ai.band_label.upper()} · INDICATIVO' if ai.evaluable else "IA: NO EVALUABLE",
                         ai.band["fg"],
                     ),
                     [
@@ -446,6 +446,14 @@ class CertificateGenerationService:
                 styles["small"],
             )
         )
+        if not ai.evaluable:
+            story.append(Spacer(1, 0.1 * cm))
+            story.append(
+                Paragraph(
+                    f"<b>{html.escape(ai.not_evaluable_note)}</b>",
+                    styles["small"],
+                )
+            )
         story.append(Spacer(1, 0.45 * cm))
 
         technical_table = Table(

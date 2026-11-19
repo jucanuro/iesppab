@@ -214,7 +214,11 @@
                         <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ report.similarity_band.bg }};border-color:{{ report.similarity_band.border }};color:{{ report.similarity_band.fg }};">{{ report.similarity_band.label }}</span>
                     </div>
                     <div class="flex flex-col items-center">
-                        {% if ai_estimate %}
+                        {% if ai_estimate and not ai_estimate.evaluable %}
+                            <div class="flex h-24 w-24 items-center justify-center rounded-full border-[7px] border-slate-200 px-2 text-center text-[11px] font-bold leading-tight text-slate-500" role="img" aria-label="IA: no evaluable">No evaluable</div>
+                            <span class="mt-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold leading-tight" style="background-color:{{ ai_estimate.band.bg }};border-color:{{ ai_estimate.band.border }};color:{{ ai_estimate.band.fg }};">{{ ai_estimate.band.label }}</span>
+                            <p class="mt-2 max-w-[15rem] text-[11px] leading-4 text-slate-600">{{ ai_estimate.not_evaluable_note }}</p>
+                        {% elif ai_estimate %}
                             {% if report.ai_assessment == 2 %}
                                 {% include "components/gauge.html" with value=ai_estimate.percent display=ai_estimate.percent|floatformat:1|add:"%" label="IA estimada" tone="danger" size=96 numsize="19px" %}
                             {% elif report.ai_assessment == 1 %}
@@ -261,7 +265,9 @@
             <div role="tablist" aria-label="Secciones del reporte" class="flex shrink-0 gap-5 overflow-x-auto border-b border-slate-200 bg-white/70 px-5">
                 <button type="button" role="tab" id="tab-resumen" class="tab-link" :aria-selected="tab === 'resumen'" aria-controls="panel-resumen" @click="setTab('resumen')">Resumen</button>
                 <button type="button" role="tab" id="tab-fuentes" class="tab-link" :aria-selected="tab === 'fuentes'" aria-controls="panel-fuentes" @click="setTab('fuentes')">Fuentes <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-600">{{ sources|length }}</span></button>
+                {% if show_ai_tab %}
                 <button type="button" role="tab" id="tab-ia" class="tab-link" :aria-selected="tab === 'ia'" aria-controls="panel-ia" @click="setTab('ia')">IA</button>
+                {% endif %}
                 <button type="button" role="tab" id="tab-texto" class="tab-link" :aria-selected="tab === 'texto'" aria-controls="panel-texto" @click="setTab('texto')">Texto</button>
             </div>
 
@@ -396,28 +402,46 @@
             </div>
 
             <!-- IA: segmentos con probabilidad; al pulsar uno salta a Texto y lo resalta -->
+            {% if show_ai_tab %}
             <div id="panel-ia" role="tabpanel" aria-labelledby="tab-ia" x-show="tab === 'ia'" class="desk-pane p-5">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <h2 class="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Posibles patrones IA</h2>
                     <button type="button" class="text-[11px] font-bold text-brand-700 underline-offset-2 hover:underline" @click="openCalc($event)" aria-haspopup="dialog">¿Cómo se calcula?</button>
                 </div>
                 <div class="grid gap-3 xl:grid-cols-2">
-                    {% for finding in ai_findings %}
-                        <button type="button" data-excerpt="{{ finding.text_excerpt|truncatechars:80 }}" data-ai-index="{{ forloop.counter0 }}"
-                                class="rounded-xl border border-brand-500/25 bg-brand-50 p-4 text-left transition hover:border-brand-500/60 hover:shadow-soft"
-                                @click="goAi($el)" title="Ver este segmento en el texto">
-                            <span class="flex items-center justify-between gap-2">
-                                <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-700">Probabilidad</span>
-                                <span class="badge badge-info bg-white">{{ finding.confidence_percent }}%</span>
-                            </span>
-                            <span class="mt-2 line-clamp-5 block text-[11.5px] leading-5 text-brand-800">{{ finding.text_excerpt }}</span>
-                            <span class="mt-2 block text-[11px] font-bold text-brand-700">Ver en el texto →</span>
-                        </button>
-                    {% empty %}
-                        <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500 xl:col-span-2">No se detectaron patrones IA relevantes.</p>
-                    {% endfor %}
+                    {% if ai_estimate and not ai_estimate.evaluable %}
+                        <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-600 xl:col-span-2">{{ ai_estimate.not_evaluable_note }}</p>
+                    {% elif ai_classifier_pieces is not None %}
+                        {% for piece in ai_classifier_pieces %}
+                            <div class="rounded-xl border border-brand-500/25 bg-brand-50 p-4 text-left">
+                                <span class="flex items-center justify-between gap-2">
+                                    <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-700">Probabilidad</span>
+                                    <span class="badge badge-info bg-white">{{ piece.probability_percent }}%</span>
+                                </span>
+                                <span class="mt-2 line-clamp-5 block text-[11.5px] leading-5 text-brand-800">{{ piece.text }}</span>
+                            </div>
+                        {% empty %}
+                            <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500 xl:col-span-2">No se detectaron patrones IA relevantes.</p>
+                        {% endfor %}
+                    {% else %}
+                        {% for finding in ai_findings %}
+                            <button type="button" data-excerpt="{{ finding.text_excerpt|truncatechars:80 }}" data-ai-index="{{ forloop.counter0 }}"
+                                    class="rounded-xl border border-brand-500/25 bg-brand-50 p-4 text-left transition hover:border-brand-500/60 hover:shadow-soft"
+                                    @click="goAi($el)" title="Ver este segmento en el texto">
+                                <span class="flex items-center justify-between gap-2">
+                                    <span class="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-700">Probabilidad</span>
+                                    <span class="badge badge-info bg-white">{{ finding.confidence_percent }}%</span>
+                                </span>
+                                <span class="mt-2 line-clamp-5 block text-[11.5px] leading-5 text-brand-800">{{ finding.text_excerpt }}</span>
+                                <span class="mt-2 block text-[11px] font-bold text-brand-700">Ver en el texto →</span>
+                            </button>
+                        {% empty %}
+                            <p class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-[12px] font-semibold text-slate-500 xl:col-span-2">No se detectaron patrones IA relevantes.</p>
+                        {% endfor %}
+                    {% endif %}
                 </div>
             </div>
+            {% endif %}
 
             <!-- TEXTO (VISOR INTERACTIVO) -->
             <div id="panel-texto" role="tabpanel" aria-labelledby="tab-texto" x-show="tab === 'texto'" class="desk-pane is-flex">
@@ -428,7 +452,7 @@
                     </div>
                     <div class="flex flex-wrap gap-2">
                         <span class="badge badge-danger">Rojo: similitud</span>
-                        <span class="badge badge-info">Azul: IA</span>
+                        {% if ai_classifier_pieces is None %}<span class="badge badge-info">Azul: IA</span>{% endif %}
                         {% if report.common_text_ranges %}<span class="badge badge-neutral">Gris: texto común, no cuenta en el %</span>{% endif %}
                     </div>
                 </div>

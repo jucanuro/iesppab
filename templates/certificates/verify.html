@@ -82,8 +82,13 @@
         {% with band=ai_estimate.band %}
         <section class="card p-5" style="background-color:{{ band.bg }};border-color:{{ band.border }};color:{{ band.fg }};">
             <p class="text-[11px] font-bold uppercase tracking-[0.18em]">IA estimada</p>
+            {% if ai_estimate.evaluable %}
             <p class="mt-3 text-4xl font-bold">{{ ai_estimate.percent|floatformat:1 }}%</p>
             <p class="mt-1 text-sm font-semibold">{{ band.label }}</p>
+            {% else %}
+            <p class="mt-3 text-2xl font-bold">IA: no evaluable</p>
+            <p class="mt-1 text-sm">{{ ai_estimate.not_evaluable_note }}</p>
+            {% endif %}
             <p class="mt-3 text-xs">{{ ai_estimate.note }}</p>
         </section>
         {% endwith %}

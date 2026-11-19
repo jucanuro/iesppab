@@ -61,7 +61,7 @@ from apps.analysis.models import (
 )
 from apps.analysis.retrieval import CandidateRetriever
 from apps.documents.extractors import DocumentTextExtractor
-from apps.documents.models import Document, DocumentStatus
+from apps.documents.models import Document, DocumentStatus, DocumentText
 from apps.reports.models import (
     AnalysisReport,
     FindingType,
@@ -146,6 +146,7 @@ class DocumentAnalysisService:
     AI_DETECTOR_HEURISTIC = "spanish-heuristic-v1"
     AI_DETECTOR_PERPLEXITY = "perplexity-burstiness-v1"
     AI_DETECTOR_PERPLEXITY_SEGMENTS = "perplexity-segments-v1"
+    AI_DETECTOR_CLASSIFIER = "classifier-beto-v1"
 
     def __init__(self, requested_by: User) -> None:
         self.requested_by = requested_by
@@ -206,9 +207,15 @@ class DocumentAnalysisService:
                 step="Extrayendo texto del documento",
             )
 
-            document_text = self.extractor.extract_and_save(
-                document=document,
+            existing_text = DocumentText.objects.filter(document=document).first()
+            document_text, text_state = self.extractor.repair_if_damaged(
+                document, existing_text
             )
+            if document_text is None:
+                document_text = self.extractor.extract_and_save(
+                    document=document,
+                )
+            possibly_damaged = text_state == "danado"
 
             filtered_text = self.text_filter.filter_for_similarity(
                 content=document_text.content,
@@ -301,6 +308,7 @@ class DocumentAnalysisService:
                     excluded_sections=filtered_text.excluded_sections,
                     analyzed_content=analysis_content,
                     ai_score_breakdown=ai_score_breakdown,
+                    possibly_damaged_text=possibly_damaged,
                     exclude_quotes=exclude_quotes,
                     exclude_bibliography=exclude_bibliography,
                     quoted_ranges=quoted_ranges,
@@ -383,18 +391,28 @@ class DocumentAnalysisService:
         quoted_ranges: list[tuple[int, int]] | None = None,
     ) -> tuple[Decimal, dict, str]:
         """
-        Con `AI_DETECTION_MODE=classifier` el % IA, el riesgo y el detector
-        son los del modo global/heurística de siempre; el clasificador solo
-        agrega `breakdown["classifier"]` (indicativo).
+        Con `AI_DETECTION_MODE=classifier` el % IA oficial (`ai_probability_percent`)
+        es el del clasificador; el score heurístico/perplejidad queda en
+        `breakdown["heuristic_ai_score"]`. Si el clasificador falla se conserva
+        el valor heurístico; si el documento no es evaluable se guarda 0 y la
+        interfaz muestra "no evaluable". El riesgo depende solo de la similitud.
         """
         percent, breakdown, detector = self._estimate_ai_probability_base(
             document, analysis_content, heuristic_result, quoted_ranges
         )
 
         if settings.AI_DETECTION_MODE == "classifier":
-            breakdown = {**breakdown, "classifier": self._classify_indicative(
+            classifier = self._classify_indicative(
                 document, analysis_content, quoted_ranges
-            )}
+            )
+            breakdown = {**breakdown, "classifier": classifier}
+
+            if not classifier.get("error") and "ai_percent" in classifier:
+                if classifier.get("evaluable") is False:
+                    percent = Decimal("0.00")
+                else:
+                    percent = Decimal(str(classifier["ai_percent"]))
+                detector = self.AI_DETECTOR_CLASSIFIER
 
         return percent, breakdown, detector
 
@@ -1266,6 +1284,7 @@ class DocumentAnalysisService:
         exclude_bibliography: bool = True,
         quoted_ranges: list[tuple[int, int]] | None = None,
         similarity: SimilarityRunResult | None = None,
+        possibly_damaged_text: bool = False,
     ) -> AnalysisReport:
         risk_level = self._resolve_risk_level(
             similarity_percent=total_similarity_percent,
@@ -1309,6 +1328,7 @@ class DocumentAnalysisService:
                         similarity.web_algorithm if similarity else ALGORITHM_CHUNK_WEB
                     ),
                     "ai_score_breakdown": ai_score_breakdown or {},
+                    "texto_posiblemente_danado": possibly_damaged_text,
                     "excluded_sections": excluded_sections,
                     # Rangos de `analyzed_content` descontados del %: el
                     # visor y el PDF no pintan similitud dentro de ellos.

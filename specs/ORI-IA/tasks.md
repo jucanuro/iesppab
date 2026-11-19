@@ -39,7 +39,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: T02 sobre el manifiesto real da OK en `no_vistos` (≥60, ≥3 familias; familias con <15 → "n bajo")
   - Rama: —
 
-- [ ] T06 — Constructor de mixtos por bloques de párrafos (C2)
+- [x] T06 — Constructor de mixtos por bloques de párrafos (C2)
   - Corre en: PC · Depende de: T02 · REQ: REQ-IA-03, REQ-IA-04
   - Archivos: `apps/analysis/ia_v3/mixtos.py`, `apps/analysis/tests_ia_v3_mixtos.py`
   - Verificación: tests — determinismo (misma semilla → mismo sha256); `pct_real_ia` tras `AcademicTextFilter` coincide con los tramos; 0 % y 100 % exactos; nunca mezcla fuentes de particiones distintas

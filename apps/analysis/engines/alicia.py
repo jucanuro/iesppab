@@ -1,0 +1,386 @@
+"""
+Cosecha de tesis peruanas a través de ALICIA (CONCYTEC).
+
+ALICIA no publica OAI-PMH (su `vufind/OAI/Server` responde "OAI Server Not
+Configured"), pero su API pública de VuFind (`/vufind/api/v1/search`) entrega
+en JSON los metadatos del registro original, su licencia y los enlaces
+directos a los archivos en el repositorio de origen. Su robots.txt pide
+`Crawl-delay: 10` y no prohíbe `/vufind/api`.
+
+El flujo tiene dos pasos, igual que con UPeU:
+1. `harvest_alicia` guarda metadatos como `OaiRecord` (con los enlaces en
+   `extra_metadata`), sin descargar archivos.
+2. `harvest_oai_fulltext --repositorio ALICIA` descarga los PDF desde cada
+   repositorio de origen, respetando su robots.txt, sin guardarlos.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from datetime import date
+from urllib.parse import urlsplit
+
+from bs4 import BeautifulSoup
+from django.db import transaction
+from django.utils import timezone
+
+from apps.analysis.engines.fingerprint import compute_fingerprints
+from apps.analysis.engines.oai_fulltext import (
+    FullTextFetchError,
+    FullTextOutcome,
+    OaiFullTextHarvester,
+    PoliteClient,
+    ResponseTooLarge,
+)
+from apps.analysis.engines.oai_harvester import OaiHarvester, OaiRepositoryConfig
+from apps.analysis.models import DocumentFingerprint, OaiFullTextStatus, OaiRecord
+
+logger = logging.getLogger(__name__)
+
+ALICIA_SEARCH_URL = "https://alicia.concytec.gob.pe/vufind/api/v1/search"
+ALICIA_SUFFIX = " (vía ALICIA)"
+ALICIA_REPOSITORY = OaiRepositoryConfig(
+    name="ALICIA (CONCYTEC)",
+    domain="alicia.concytec.gob.pe",
+    base_url=ALICIA_SEARCH_URL,
+)
+THESIS_FORMATS = ("bachelorThesis", "masterThesis", "doctoralThesis")
+
+# Repositorios cuyo robots.txt o protección anti-bots ya impidió descargar
+# (ver memoria del proyecto, 2026-10-31). Se omiten para no gastar
+# peticiones: los metadatos sin texto completo no aportan a la similitud.
+DEFAULT_EXCLUDED_DOMAINS = (
+    "repositorio.ucv.edu.pe",
+    "repositorio.une.edu.pe",
+    "repositorio.usil.edu.pe",
+    "tesis.pucp.edu.pe",
+    "repositorio.uni.edu.pe",
+)
+
+_FIELDS = ("id", "title", "rawData", "dcDateEmbargoEnd")
+_MAX_BITSTREAMS = 6
+
+
+class AliciaClient(PoliteClient):
+    """Cliente cortés para ALICIA: 10 s entre peticiones (su Crawl-delay)."""
+
+    MIN_INTERVAL_SECONDS = 10.0
+
+
+@dataclass(frozen=True)
+class AliciaQuery:
+    subject: str = "educación"
+    institutions: tuple[str, ...] = ()
+    year_from: int | None = None
+    year_to: int | None = None
+    page_size: int = 100
+
+    def params(self, page: int) -> dict:
+        filters = [f'~format:"{value}"' for value in THESIS_FORMATS]
+        filters += ['language:"spa"', 'eu_rights_str_mv:"openAccess"']
+        filters += [f'~institution:"{value}"' for value in self.institutions]
+
+        if self.year_from is not None or self.year_to is not None:
+            start = self.year_from if self.year_from is not None else "*"
+            end = self.year_to if self.year_to is not None else "*"
+            filters.append(f'publishDate:"[{start} TO {end}]"')
+
+        return {
+            "lookfor": self.subject,
+            "type": "Subject" if self.subject else "AllFields",
+            "filter[]": filters,
+            "field[]": list(_FIELDS),
+            "limit": self.page_size,
+            "page": page,
+        }
+
+
+@dataclass
+class AliciaRecord:
+    alicia_id: str
+    oai_identifier: str
+    title: str
+    authors: str
+    abstract: str
+    source_url: str
+    domain: str
+    repository_name: str
+    year: int | None
+    license: str
+    bitstream_urls: list[str] = field(default_factory=list)
+    embargo_end: date | None = None
+
+
+class AliciaSearch:
+    """Recorre la API de búsqueda de ALICIA página a página."""
+
+    MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+    MAX_PAGES = 500
+
+    def __init__(self, client: PoliteClient | None = None) -> None:
+        self.client = client or AliciaClient()
+
+    def total(self, query: AliciaQuery) -> int:
+        params = query.params(page=1)
+        params["limit"] = 0
+        return int(self._get(params).get("resultCount") or 0)
+
+    def iter_records(self, query: AliciaQuery) -> Iterator[AliciaRecord | None]:
+        for page in range(1, self.MAX_PAGES + 1):
+            data = self._get(query.params(page=page))
+            records = data.get("records") or []
+
+            for raw in records:
+                yield parse_record(raw)
+
+            if len(records) < query.page_size:
+                return
+
+    def _get(self, params: dict) -> dict:
+        response = self.client.get(
+            ALICIA_SEARCH_URL,
+            max_bytes=self.MAX_RESPONSE_BYTES,
+            params=params,
+        )
+
+        if response.status_code != 200:
+            raise FullTextFetchError(f"ALICIA respondió {response.status_code}.")
+
+        try:
+            data = json.loads(response.content)
+        except ValueError as exc:
+            raise FullTextFetchError(f"Respuesta de ALICIA ilegible: {exc}") from exc
+
+        if data.get("status") != "OK":
+            raise FullTextFetchError(
+                f"ALICIA devolvió error: {data.get('statusMessage', '')}"
+            )
+
+        return data
+
+
+def _first(value) -> str:
+    if isinstance(value, list):
+        value = value[0] if value else ""
+
+    return str(value or "").strip()
+
+
+def _host(url: str) -> str:
+    return urlsplit(url).netloc.lower() if url.startswith("http") else ""
+
+
+def _domain(oai_identifier: str, bitstreams: list[str], url: str) -> str:
+    """Dominio del repositorio de origen, donde están los archivos."""
+    for candidate in bitstreams:
+        if host := _host(candidate):
+            return host
+
+    parts = oai_identifier.split(":")
+
+    if len(parts) >= 3 and "." in parts[1]:
+        return parts[1].lower()
+
+    host = _host(url)
+    return "" if host.endswith("handle.net") else host
+
+
+def _year(raw: dict) -> int | None:
+    value = _first(raw.get("publishDate"))
+    return int(value[:4]) if value[:4].isdigit() else None
+
+
+def _embargo_end(record: dict) -> date | None:
+    raw = record.get("rawData") or {}
+    values = list(record.get("dcDateEmbargoEnd") or [])
+    values += [
+        _first(value) for key, value in raw.items() if "embargoend" in key.lower()
+    ]
+
+    for value in values:
+        try:
+            return date.fromisoformat(str(value)[:10])
+        except ValueError:
+            continue
+
+    return None
+
+
+def parse_record(record: dict) -> AliciaRecord | None:
+    raw = record.get("rawData") or {}
+    oai_identifier = _first(raw.get("oai_identifier_str"))
+    title = _first(raw.get("title")) or _first(record.get("title"))
+
+    if not oai_identifier or not title:
+        return None
+
+    bitstreams = [
+        url
+        for url in (raw.get("bitstream.url.fl_str_mv") or [])
+        if isinstance(url, str) and url.startswith("http")
+    ][:_MAX_BITSTREAMS]
+    url = _first(raw.get("url"))
+    domain = _domain(oai_identifier, bitstreams, url)
+
+    if not domain:
+        return None
+
+    license_value = next(
+        (
+            _first(value)
+            for key, value in raw.items()
+            if key.startswith("dc.rights.uri")
+        ),
+        "",
+    )
+
+    return AliciaRecord(
+        alicia_id=str(record.get("id") or raw.get("id") or ""),
+        oai_identifier=oai_identifier[:255],
+        title=title[:500],
+        authors="; ".join(raw.get("author_facet") or raw.get("author") or []),
+        abstract=_first(raw.get("description")),
+        source_url=url[:200],
+        domain=domain,
+        repository_name=_first(raw.get("repository.name.fl_str_mv")) or domain,
+        year=_year(raw),
+        license=license_value or "info:eu-repo/semantics/openAccess",
+        bitstream_urls=bitstreams,
+        embargo_end=_embargo_end(record),
+    )
+
+
+def save_record(record: AliciaRecord) -> OaiRecord:
+    """Crea el `OaiRecord` y las huellas del título y resumen."""
+    normalized = OaiHarvester()._normalize(f"{record.title} {record.abstract}")
+
+    with transaction.atomic():
+        oai_record = OaiRecord.objects.create(
+            oai_identifier=record.oai_identifier,
+            repository_name=f"{record.repository_name[:150]}{ALICIA_SUFFIX}",
+            repository_domain=record.domain[:180],
+            title=record.title,
+            authors=record.authors,
+            source_url=record.source_url,
+            text_excerpt=record.abstract or record.title,
+            normalized_text=normalized,
+            source_date=str(record.year or "")[:40],
+            harvested_at=timezone.now(),
+            is_active=True,
+            extra_metadata={
+                "fuente": "alicia",
+                "alicia_id": record.alicia_id,
+                "bitstream_urls": record.bitstream_urls,
+                "licencia": record.license,
+                "anio": record.year,
+            },
+        )
+        DocumentFingerprint.objects.bulk_create(
+            [
+                DocumentFingerprint(hash=value, source_type="oai", source_id=oai_record.id)
+                for value in compute_fingerprints(normalized)
+            ],
+            ignore_conflicts=True,
+        )
+
+    return oai_record
+
+
+class AliciaFullTextHarvester(OaiFullTextHarvester):
+    """
+    Texto completo de registros traídos desde ALICIA. Los archivos se piden
+    directo al repositorio de origen con los enlaces de ALICIA; los derechos
+    ya se filtraron al cosechar los metadatos (solo acceso abierto y sin
+    embargo vigente). Si no hay enlaces, se usa la página del ítem como con
+    los repositorios OAI.
+    """
+
+    # Muchos repositorios suben aparte la autorización o el reporte de
+    # similitud: si el primer PDF es corto, se prueba el siguiente.
+    MAX_PDFS_PER_RECORD = 3
+
+    def __init__(self, client: PoliteClient | None = None, indexer=None) -> None:
+        super().__init__(ALICIA_REPOSITORY, client=client, indexer=indexer)
+
+    def _process(self, record: OaiRecord) -> FullTextOutcome:
+        extra = record.extra_metadata or {}
+        urls = list(extra.get("bitstream_urls") or [])
+        base = {
+            "publication_year": extra.get("anio"),
+            "rights": extra.get("licencia") or "",
+            "pdf_url": "",
+            "embargo_end": None,
+        }
+
+        if not urls:
+            return self._process_landing(record, base)
+
+        allowed = [url for url in urls if self.client.allowed(url)]
+
+        if not allowed:
+            return FullTextOutcome(
+                status=OaiFullTextStatus.SIN_PDF,
+                error_message="robots.txt del repositorio no permite descargar.",
+                **base,
+            )
+
+        best: FullTextOutcome | None = None
+        pdfs_tried = 0
+
+        for url in allowed:
+            if pdfs_tried >= self.MAX_PDFS_PER_RECORD:
+                break
+
+            try:
+                response = self.client.get(url, max_bytes=self.MAX_PDF_BYTES)
+            except ResponseTooLarge:
+                continue
+
+            if response.status_code != 200 or not response.content.startswith(b"%PDF"):
+                continue
+
+            pdfs_tried += 1
+            outcome = self._extract(response.content, {**base, "pdf_url": url})
+
+            if outcome.status == OaiFullTextStatus.OK:
+                return outcome
+
+            best = best or outcome
+
+        if best is not None:
+            return best
+
+        return FullTextOutcome(
+            status=OaiFullTextStatus.SIN_PDF,
+            error_message="Ningún enlace de ALICIA entregó un PDF.",
+            **base,
+        )
+
+    def _process_landing(self, record: OaiRecord, base: dict) -> FullTextOutcome:
+        page = self.client.get(self._landing_url(record), max_bytes=self.MAX_PAGE_BYTES)
+
+        if page.status_code != 200:
+            raise FullTextFetchError(f"Página respondió {page.status_code}.")
+
+        pdf_url = self._meta(BeautifulSoup(page.text, "lxml"), "citation_pdf_url")
+
+        if not pdf_url:
+            return FullTextOutcome(status=OaiFullTextStatus.SIN_PDF, **base)
+
+        pdf = self.client.get(pdf_url, max_bytes=self.MAX_PDF_BYTES)
+
+        if pdf.status_code != 200 or not pdf.content.startswith(b"%PDF"):
+            raise FullTextFetchError(f"PDF inválido (HTTP {pdf.status_code}).")
+
+        return self._extract(pdf.content, {**base, "pdf_url": pdf_url})
+
+    def _landing_url(self, record: OaiRecord) -> str:
+        match = record.source_url.split("hdl.handle.net/", 1)
+
+        if len(match) == 2:
+            return f"https://{record.repository_domain}/handle/{match[1]}"
+
+        return record.source_url

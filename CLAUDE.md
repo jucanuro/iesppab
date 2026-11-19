@@ -77,6 +77,9 @@ order:
    external repositories via OAI-PMH (`OAI_HARVEST_REPOSITORIES` in `config/settings.py` — each entry is a
    manually-confirmed working endpoint; see the comment block above it for repos that were tried and don't
    have a confirmed OAI endpoint yet) into `OaiRecord`/knowledge chunks for similarity comparisons.
+   ALICIA (CONCYTEC) has no public OAI-PMH; `harvest_alicia` reads its VuFind JSON API (`engines/alicia.py`,
+   10 s between requests) into `OaiRecord` with the origin repository's file links in `extra_metadata`, and
+   `harvest_oai_fulltext --repositorio ALICIA` downloads the PDFs from each origin repository (robots.txt per host).
 5. **`apps.reports`** — `AnalysisReport`/`ReportFinding`/`ReportSource` persist the outcome of an analysis job
    (risk level, findings, detected sources) for display and downstream certificate generation. The similarity and
    AI PDF reports are built with ReportLab (`services.py`, shared look in `pdf_style.py`).

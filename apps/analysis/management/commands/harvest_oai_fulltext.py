@@ -9,6 +9,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Q, QuerySet
 from django.utils import timezone
 
+from apps.analysis.engines.alicia import (
+    ALICIA_REPOSITORY,
+    ALICIA_SUFFIX,
+    AliciaFullTextHarvester,
+)
 from apps.analysis.engines.oai_fulltext import (
     OaiFullTextHarvester,
     RepositoryThrottled,
@@ -43,7 +48,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--repositorio",
             required=True,
-            help="Parte del nombre o dominio en OAI_HARVEST_REPOSITORIES.",
+            help=(
+                "Parte del nombre o dominio en OAI_HARVEST_REPOSITORIES, o "
+                "ALICIA para los registros guardados con harvest_alicia."
+            ),
         )
         parser.add_argument(
             "--limite",
@@ -112,6 +120,9 @@ class Command(BaseCommand):
         quota = max(options["limite"] - finished_count, 0)
         records = list(pending.order_by("oai_identifier")[:quota])
 
+        if self._is_alicia(repository):
+            records = self._interleave_by_domain(records)
+
         self.stdout.write(
             f"{repository.name}: {queryset.count()} registros, "
             f"{finished_count} terminados, {len(records)} por procesar en "
@@ -135,6 +146,10 @@ class Command(BaseCommand):
         repository: OaiRepositoryConfig,
         records: list[OaiRecord],
     ) -> None:
+        if self._is_alicia(repository):
+            self._run_alicia(records)
+            return
+
         harvester = OaiFullTextHarvester(repository=repository)
         consecutive_errors = 0
         started_at = time.monotonic()
@@ -169,6 +184,78 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Corrida terminada en {(time.monotonic() - started_at) / 60:.1f} min."
         )
+
+    def _run_alicia(self, records: list[OaiRecord]) -> None:
+        """
+        Los registros de ALICIA vienen de muchos repositorios: si uno pide
+        bajar el ritmo, no tiene robots.txt legible o falla 5 veces seguidas,
+        se deja para otra corrida y se sigue con los demás.
+        """
+        harvester = AliciaFullTextHarvester()
+        consecutive_errors: Counter[str] = Counter()
+        skipped_domains: dict[str, str] = {}
+        started_at = time.monotonic()
+
+        for index, record in enumerate(records, start=1):
+            domain = record.repository_domain
+
+            if domain in skipped_domains:
+                continue
+
+            try:
+                full_text = harvester.harvest(record)
+            except (RepositoryThrottled, RobotsUnavailable) as exc:
+                skipped_domains[domain] = str(exc)[:150]
+                self.stdout.write(f"  {domain} se deja para otra corrida: {exc}")
+                continue
+
+            self.stdout.write(
+                f"[{index}/{len(records)}] {full_text.status} "
+                f"{full_text.word_count} palabras "
+                f"{record.oai_identifier} {full_text.error_message[:100]}"
+            )
+            self.stdout.flush()
+
+            if full_text.status == OaiFullTextStatus.ERROR:
+                consecutive_errors[domain] += 1
+            else:
+                consecutive_errors[domain] = 0
+
+            if consecutive_errors[domain] >= MAX_CONSECUTIVE_ERRORS:
+                skipped_domains[domain] = f"{MAX_CONSECUTIVE_ERRORS} errores seguidos"
+                self.stdout.write(
+                    f"  {domain} se deja para otra corrida: "
+                    f"{MAX_CONSECUTIVE_ERRORS} errores seguidos."
+                )
+
+        for domain, reason in skipped_domains.items():
+            self.stdout.write(f"Pendiente para otra corrida: {domain} ({reason})")
+
+        self.stdout.write(
+            f"Corrida terminada en {(time.monotonic() - started_at) / 60:.1f} min."
+        )
+
+    def _is_alicia(self, repository: OaiRepositoryConfig) -> bool:
+        return repository == ALICIA_REPOSITORY
+
+    def _interleave_by_domain(self, records: list[OaiRecord]) -> list[OaiRecord]:
+        """Alterna repositorios para no cargar uno solo durante horas."""
+        by_domain: dict[str, list[OaiRecord]] = {}
+
+        for record in records:
+            by_domain.setdefault(record.repository_domain, []).append(record)
+
+        queues = list(by_domain.values())
+        interleaved: list[OaiRecord] = []
+
+        while queues:
+            for queue in list(queues):
+                interleaved.append(queue.pop(0))
+
+                if not queue:
+                    queues.remove(queue)
+
+        return interleaved
 
     def _print_totals(self, queryset: QuerySet[OaiRecord]) -> None:
         full_texts = OaiFullText.objects.filter(record__in=queryset)
@@ -215,10 +302,16 @@ class Command(BaseCommand):
         repository: OaiRepositoryConfig,
         title_filter: str,
     ) -> QuerySet[OaiRecord]:
-        queryset = OaiRecord.objects.filter(
-            repository_domain=repository.domain,
-            is_active=True,
-        ).exclude(source_url="")
+        if self._is_alicia(repository):
+            queryset = OaiRecord.objects.filter(
+                repository_name__endswith=ALICIA_SUFFIX,
+                is_active=True,
+            )
+        else:
+            queryset = OaiRecord.objects.filter(
+                repository_domain=repository.domain,
+                is_active=True,
+            ).exclude(source_url="")
 
         if title_filter:
             queryset = queryset.filter(title__iregex=title_filter)
@@ -227,6 +320,10 @@ class Command(BaseCommand):
 
     def _repository(self, name: str) -> OaiRepositoryConfig:
         needle = name.lower()
+
+        if needle == "alicia":
+            return ALICIA_REPOSITORY
+
         matches = [
             repository
             for repository in getattr(settings, "OAI_HARVEST_REPOSITORIES", [])

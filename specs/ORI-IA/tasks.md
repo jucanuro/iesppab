@@ -15,7 +15,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: revisión del Gerente; el resultado fija `visto` de los 60 en el manifiesto
   - Rama: `ORI-IA/T01-verificacion-v01`
 
-- [ ] T02 — Cargador y validador del manifiesto (C1)
+- [x] T02 — Cargador y validador del manifiesto (C1)
   - Corre en: PC · Depende de: — · REQ: REQ-IA-01, REQ-IA-04, REQ-IA-07, REQ-IA-13, REQ-IA-16
   - Archivos: `apps/analysis/ia_v3/__init__.py`, `apps/analysis/ia_v3/manifest.py`, `apps/analysis/ia_v3/exceptions.py` (`IABankError`), `apps/analysis/tests_ia_v3_manifest.py`
   - Verificación: tests — SHA-256 ausente/distinto → `IABankError` con id; fuente en dos particiones → `IABankError`; test_fpr 149/150/183 entradas y 2/3 instituciones → "insuficiente"/OK; no_vistos <60 docs o <3 familias → "insuficiente"; ninguna institución >50 % de test_fpr

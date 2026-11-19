@@ -45,7 +45,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: tests — determinismo (misma semilla → mismo sha256); `pct_real_ia` tras `AcademicTextFilter` coincide con los tramos; 0 % y 100 % exactos; nunca mezcla fuentes de particiones distintas
   - Rama: `ORI-IA/T06-mixtos`
 
-- [ ] T07 — Métrica FPR con Clopper-Pearson bilateral (C3, parte 1)
+- [x] T07 — Métrica FPR con Clopper-Pearson bilateral (C3, parte 1)
   - Corre en: PC · Depende de: — · REQ: REQ-IA-06
   - Archivos: `apps/analysis/ia_v3/metrics.py`, `apps/analysis/tests_ia_v3_metrics.py`
   - Verificación: tests — 0/183 → CUMPLE; 1/183 → NO CUMPLE; cota comparada con valores de referencia tabulados (sin scipy)

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Manual de usuario{% endblock %}
+{% block content %}
+<style>
+  .manual-h2{font-size:1.5rem;font-weight:800;color:#123f9e;margin-bottom:1rem}
+  .manual-h3{font-size:1.1rem;font-weight:700;color:#123f9e;margin:1.5rem 0 .5rem}
+  .manual-section p{margin:.5rem 0;line-height:1.65;color:#334155}
+  .manual-section ul{list-style:disc;padding-left:1.4rem;margin:.5rem 0;color:#334155}
+  .manual-section ol{list-style:decimal;padding-left:1.4rem;margin:.5rem 0;color:#334155}
+  .manual-section li{margin:.3rem 0;line-height:1.6}
+  .manual-section{scroll-margin-top:5rem}
+  .manual-h3{scroll-margin-top:5rem}
+</style>
+<div class="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+  <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-extrabold text-[#123f9e]">Manual de usuario</h1>
+      <p class="text-sm text-slate-500">{{ institution_name }} · Versión {{ manual_version }}</p>
+    </div>
+    <a href="{% url 'manual:download' %}"
+       class="inline-flex items-center gap-2 rounded-xl bg-[#236bfd] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_8px_24px_-12px_rgba(35,107,253,.6)] transition hover:bg-[#123f9e]">
+      Descargar en PDF
+    </a>
+  </div>
+  <div class="grid gap-6 lg:grid-cols-[16rem_1fr]">
+    <nav aria-label="Índice del manual" class="h-fit rounded-xl border border-[#dbe5ff] bg-[#eef3ff] p-4 lg:sticky lg:top-20">
+      <p class="mb-2 text-xs font-bold uppercase tracking-wide text-[#123f9e]">Contenido</p>
+      <ul class="space-y-3 text-sm">
+        {% for s in sections %}
+        <li>
+          <a href="#{{ s.key }}" class="font-semibold text-[#123f9e] hover:underline">Guía para {{ s.title }}</a>
+          <ul class="mt-1 space-y-1 border-l border-[#c9d8ff] pl-3 text-[13px] text-slate-600">
+            <li><a href="#{{ s.key }}-sistema" class="hover:text-[#123f9e]">¿Qué es el sistema?</a></li>
+            <li><a href="#{{ s.key }}-subir" class="hover:text-[#123f9e]">Subir un documento</a></li>
+            <li><a href="#{{ s.key }}-reporte" class="hover:text-[#123f9e]">Leer el reporte</a></li>
+            <li><a href="#{{ s.key }}-certificado" class="hover:text-[#123f9e]">Certificado</a></li>
+            <li><a href="#{{ s.key }}-limitaciones" class="hover:text-[#123f9e]">Limitaciones</a></li>
+          </ul>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    <div class="space-y-8">
+      {% for s in sections %}
+      <article class="rounded-xl border border-[#dbe5ff] bg-white p-6 shadow-[0_10px_30px_-18px_rgba(18,63,158,.35)]">
+        {% include s.template %}
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

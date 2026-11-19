@@ -485,3 +485,26 @@ class InboxTemplateTests(DocxDocumentTestMixin, TestCase):
         self.assertIn(f'id="peek-{document.id}"', html)
         self.assertIn("Aún sin análisis", html)
         self.assertIn("Certificado no disponible", html)
+
+
+class UnicodeNormalizationTests(TestCase):
+    def setUp(self):
+        from apps.documents.extractors import DocumentTextExtractor
+
+        self.normalize = DocumentTextExtractor()._normalize_text
+
+    def test_quita_caracteres_invisibles(self):
+        self.assertEqual(self.normalize("in​ves­ti﻿gación"), "investigación")
+
+    def test_quita_controles_pero_conserva_saltos(self):
+        self.assertEqual(self.normalize("a\x07b\nc"), "ab\nc")
+
+    def test_mapea_homoglifos_en_palabra_mixta(self):
+        # "о" y "е" cirílicas dentro de una palabra latina
+        self.assertEqual(self.normalize("prоyectо de tеsis"), "proyecto de tesis")
+
+    def test_respeta_texto_cirilico_legitimo(self):
+        self.assertEqual(self.normalize("Привет мир"), "Привет мир")
+
+    def test_respeta_griego_legitimo(self):
+        self.assertEqual(self.normalize("αλφα βήτα"), "αλφα βήτα")

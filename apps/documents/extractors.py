@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 import statistics
 from dataclasses import dataclass
 
@@ -548,8 +549,45 @@ class DocumentTextExtractor:
 
         return rows
 
+    # Caracteres invisibles que rompen palabras sin verse (anti-detección).
+    _INVISIBLE_RE = re.compile(
+        "[\u200b\u200c\u200d\u2060\u00ad\ufeff"
+        "\x01-\x08\x0b\x0c\x0e-\x1f\x7f]"
+    )
+    # Homóglifos cirílicos/griegos frecuentes -> letra latina.
+    _HOMOGLYPHS = {
+        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x",
+        "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ɡ": "g",
+        "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O",
+        "Р": "P", "С": "C", "Т": "T", "Х": "X", "І": "I", "Ѕ": "S", "Ј": "J",
+        "ο": "o", "ν": "v", "ρ": "p", "α": "a", "ι": "i", "κ": "k", "τ": "t",
+        "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K",
+        "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    }
+    _HOMOGLYPH_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+    def _replace_homoglyphs(self, text: str) -> str:
+        """Cambia homóglifos solo dentro de palabras que mezclan latino con
+        cirílico/griego; una palabra totalmente cirílica/griega se respeta."""
+        def fix(match):
+            word = match.group(0)
+            if not any(ch in self._HOMOGLYPHS for ch in word):
+                return word
+            has_latin = any(
+                "LATIN" in unicodedata.name(ch, "")
+                for ch in word
+                if ch not in self._HOMOGLYPHS
+            )
+            if not has_latin:
+                return word
+            return "".join(self._HOMOGLYPHS.get(ch, ch) for ch in word)
+
+        return self._HOMOGLYPH_WORD_RE.sub(fix, text)
+
     def _normalize_text(self, text: str) -> str:
         text = text.replace("\x00", " ")
+        text = self._INVISIBLE_RE.sub("", text)
+        text = self._replace_homoglyphs(text)
         text = re.sub(r"[ \t]+", " ", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()

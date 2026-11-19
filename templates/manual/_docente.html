@@ -1,34 +1,39 @@
 <section id="docente" class="manual-section" aria-labelledby="docente-titulo">
 <h2 id="docente-titulo" class="manual-h2">Guía para docentes</h2>
-<h3 id="docente-sistema" class="manual-h3">1. ¿Qué es el sistema?</h3>
-<p>Es la plataforma del instituto para revisar la originalidad de los trabajos de los estudiantes. Como docente, puedes subir documentos en nombre de estudiantes de tu institución y revisar los reportes para apoyar tu evaluación.</p>
-<h3 id="docente-subir" class="manual-h3">2. Cómo subir un documento</h3>
-<ol>
-<li>Entra a <strong>Documentos</strong> y elige el estudiante a cuyo nombre se subirá el trabajo.</li>
-<li>Selecciona el archivo (<strong>PDF o DOCX</strong>) y súbelo.</li>
-<li>Inicia el análisis y espera a que el reporte esté listo.</li>
+<h3 id="docente-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>Como docente subes documentos en nombre de estudiantes de tu institución y revisas los reportes para apoyar tu evaluación.</p>
+<ol class="m-steps">
+<li>Ingresa con tu usuario o correo institucional y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>; llegarás a la bandeja de documentos.</li>
 </ol>
-<p>En <strong>Alumnos pendientes</strong> ves a los estudiantes que se registraron y esperan ser aprobados.</p>
-<h3 id="docente-reporte" class="manual-h3">3. Cómo leer el reporte</h3>
-<p>Al terminar el análisis se muestra un reporte con tres datos principales:</p>
-<ul>
-<li><strong>Similitud</strong>: porcentaje del texto que coincide con otras fuentes (trabajos de la institución, repositorios académicos y páginas de internet). Cada fuente aparece con su porcentaje y se marca con colores en el texto. Una coincidencia no siempre es plagio: pueden ser citas bien referenciadas o frases comunes.</li>
-<li><strong>IA estimada</strong>: cálculo aproximado de qué parte del texto se parece a escritura generada por IA. Es solo una orientación.</li>
-<li><strong>Nivel de riesgo</strong>, que depende solo de la similitud:</li>
-</ul>
-<ul>
-<li><strong>Bajo</strong> (menos de 15 %): sin observaciones relevantes.</li>
-<li><strong>Medio</strong> (15 % a menos de 30 %): conviene revisar las coincidencias.</li>
-<li><strong>Alto</strong> (30 % a menos de 50 %): requiere revisión; <em>no permite emitir certificado</em>.</li>
-<li><strong>Crítico</strong> (50 % o más): <em>no permite emitir certificado</em>.</li>
-</ul>
-<p>Abre cada fuente para comparar los fragmentos coincidentes. Si una fuente no corresponde (por ejemplo, un texto citado correctamente), puedes <strong>excluirla</strong> del cálculo y el reporte se recalcula. Tú decides qué coincidencias son aceptables.</p>
-<h3 id="docente-certificado" class="manual-h3">4. Cómo generar y verificar el certificado</h3>
-<ol>
-<li>Con riesgo <strong>bajo o medio</strong>, genera el certificado desde la página del reporte.</li>
+{% include "manual/_figura.html" with shot=shots.login %}
+<h3 id="docente-subir" class="manual-h3">2. Cómo subir un documento</h3>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong> y pulsa <strong>Subir documento</strong>.</li>
+<li>Elige el <strong>Alumno</strong> a cuyo nombre se subirá el trabajo y completa los datos.</li>
+<li>Selecciona el archivo (<strong>PDF o DOCX</strong>) y pulsa <strong>Registrar</strong>.</li>
+<li>Inicia el análisis desde el menú de acciones del documento y espera a que el reporte esté listo.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.bandeja %}
+{% include "manual/_figura.html" with shot=shots.subir %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>En <strong>Alumnos pendientes</strong> ves a los estudiantes que se registraron y esperan ser aprobados.</div>
+<h3 id="docente-acciones" class="manual-h3">3. Acciones sobre un documento</h3>
+<p>Cada fila de la bandeja tiene el botón <strong>Ver</strong> y un menú «…» con las acciones disponibles.</p>
+{% include "manual/_figura.html" with shot=shots.acciones %}
+<h3 id="docente-reporte" class="manual-h3">4. Cómo leer el reporte</h3>
+{% include "manual/_leer_reporte.html" with key="docente" con_capturas=True %}
+<ol class="m-steps">
+<li>Abre cada fuente para comparar los fragmentos coincidentes.</li>
+<li>Si una fuente no corresponde (por ejemplo, un texto citado correctamente), <strong>exclúyela</strong> del cálculo; el reporte se recalcula.</li>
+</ol>
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Tú decides qué coincidencias son aceptables; el sistema solo las señala.</div>
+<h3 id="docente-certificado" class="manual-h3">5. Cómo generar y verificar el certificado</h3>
+<ol class="m-steps">
+<li>Con riesgo <strong>bajo o medio</strong>, pulsa <strong>Generar certificado</strong> en la página del reporte (o en el menú «…» del documento).</li>
 <li>Descarga el PDF y entrégalo al estudiante.</li>
-</ol><p>Cada certificado incluye un código y un enlace de verificación (también en su código QR). Cualquier persona puede abrirlo, sin iniciar sesión, para comprobar que el certificado es auténtico y corresponde al documento indicado.</p>
-<h3 id="docente-limitaciones" class="manual-h3">5. Limitaciones importantes</h3>
-<p>La estimación de IA es <strong>solo indicativa</strong>: es un cálculo automático que puede equivocarse y no prueba que un texto haya sido escrito con inteligencia artificial. <strong>No define el nivel de riesgo ni impide o permite el certificado</strong>; estos dependen únicamente de la similitud. Cualquier decisión académica debe tomarla una persona, después de revisar el trabajo.</p>
-<p>Tampoco se detecta todo: una coincidencia con material que no esté en internet ni en el repositorio de la institución no aparecerá en el reporte.</p>
+<li>Para comprobarlo, abre el enlace de verificación o escanea el código QR.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<h3 id="docente-limitaciones" class="manual-h3">6. Limitaciones importantes</h3>
+{% include "manual/_limitaciones.html" %}
 </section>

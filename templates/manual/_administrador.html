@@ -1,30 +1,37 @@
 <section id="administrador" class="manual-section" aria-labelledby="administrador-titulo">
 <h2 id="administrador-titulo" class="manual-h2">Guía para administradores</h2>
-<h3 id="administrador-sistema" class="manual-h3">1. ¿Qué es el sistema?</h3>
-<p>Es la plataforma del instituto para revisar la originalidad de los trabajos académicos y emitir certificados verificables. Como administrador, además de usar todas las funciones, gestionas la institución, los usuarios y sus roles desde el menú <strong>Administración</strong>.</p>
+<h3 id="administrador-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>Además de usar todas las funciones, gestionas la institución, los usuarios y sus roles desde el menú <strong>Administración</strong>.</p>
+<ol class="m-steps">
+<li>Ingresa con tu usuario o correo y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.login %}
 <h3 id="administrador-subir" class="manual-h3">2. Cómo subir un documento</h3>
-<ol>
-<li>Entra a <strong>Documentos</strong>, elige al estudiante y sube el archivo (<strong>PDF o DOCX</strong>).</li>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong>, pulsa <strong>Subir documento</strong> y elige al estudiante.</li>
+<li>Sube el archivo (<strong>PDF o DOCX</strong>) y pulsa <strong>Registrar</strong>.</li>
 <li>Inicia el análisis y espera el reporte.</li>
 </ol>
-<p>Desde <strong>Administración</strong> puedes crear usuarios, asignarles rol (estudiante, docente, director o administrador) e indicar el dominio de correo institucional. Todo usuario, salvo los administradores, debe pertenecer a una institución.</p>
-<h3 id="administrador-reporte" class="manual-h3">3. Cómo leer el reporte</h3>
-<p>Al terminar el análisis se muestra un reporte con tres datos principales:</p>
-<ul>
-<li><strong>Similitud</strong>: porcentaje del texto que coincide con otras fuentes (trabajos de la institución, repositorios académicos y páginas de internet). Cada fuente aparece con su porcentaje y se marca con colores en el texto. Una coincidencia no siempre es plagio: pueden ser citas bien referenciadas o frases comunes.</li>
-<li><strong>IA estimada</strong>: cálculo aproximado de qué parte del texto se parece a escritura generada por IA. Es solo una orientación.</li>
-<li><strong>Nivel de riesgo</strong>, que depende solo de la similitud:</li>
-</ul>
-<ul>
-<li><strong>Bajo</strong> (menos de 15 %): sin observaciones relevantes.</li>
-<li><strong>Medio</strong> (15 % a menos de 30 %): conviene revisar las coincidencias.</li>
-<li><strong>Alto</strong> (30 % a menos de 50 %): requiere revisión; <em>no permite emitir certificado</em>.</li>
-<li><strong>Crítico</strong> (50 % o más): <em>no permite emitir certificado</em>.</li>
-</ul>
+<h3 id="administrador-acciones" class="manual-h3">3. Acciones sobre un documento</h3>
+{% include "manual/_figura.html" with shot=shots.acciones %}
+<h3 id="administrador-reporte" class="manual-h3">4. Cómo leer el reporte</h3>
+{% include "manual/_leer_reporte.html" with key="administrador" con_capturas=True %}
 <p>Puedes ver reportes de todas las instituciones registradas. Si un reporte parece incorrecto, pide al docente que lo revise antes de actuar.</p>
-<h3 id="administrador-certificado" class="manual-h3">4. Cómo generar y verificar el certificado</h3>
-<p>Con riesgo <strong>bajo o medio</strong> se genera el certificado desde la página del reporte.</p><p>Cada certificado incluye un código y un enlace de verificación (también en su código QR). Cualquier persona puede abrirlo, sin iniciar sesión, para comprobar que el certificado es auténtico y corresponde al documento indicado.</p>
-<h3 id="administrador-limitaciones" class="manual-h3">5. Limitaciones importantes</h3>
-<p>La estimación de IA es <strong>solo indicativa</strong>: es un cálculo automático que puede equivocarse y no prueba que un texto haya sido escrito con inteligencia artificial. <strong>No define el nivel de riesgo ni impide o permite el certificado</strong>; estos dependen únicamente de la similitud. Cualquier decisión académica debe tomarla una persona, después de revisar el trabajo.</p>
-<p>Tampoco se detecta todo: una coincidencia con material que no esté en internet ni en el repositorio de la institución no aparecerá en el reporte.</p>
+<h3 id="administrador-certificado" class="manual-h3">5. Cómo generar y verificar el certificado</h3>
+<ol class="m-steps">
+<li>Con riesgo <strong>bajo o medio</strong>, genera el certificado desde la página del reporte.</li>
+<li>Verifícalo con su enlace público o su código QR.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<h3 id="administrador-panel" class="manual-h3">6. Panel de administración</h3>
+<ol class="m-steps">
+<li>Abre <strong>Administración</strong> en el menú superior.</li>
+<li>En <strong>Usuarios</strong> pulsa <strong>Añadir</strong> para crear una cuenta y asígnale su rol (estudiante, docente, director o administrador).</li>
+<li>En <strong>Instituciones</strong> indica el dominio de correo institucional.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.admin %}
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Todo usuario, salvo los administradores, debe pertenecer a una institución, y su correo debe coincidir con el dominio institucional si este está configurado.</div>
+<h3 id="administrador-limitaciones" class="manual-h3">7. Limitaciones importantes</h3>
+{% include "manual/_limitaciones.html" %}
 </section>

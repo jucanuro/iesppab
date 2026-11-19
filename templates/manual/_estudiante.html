@@ -1,35 +1,35 @@
 <section id="estudiante" class="manual-section" aria-labelledby="estudiante-titulo">
 <h2 id="estudiante-titulo" class="manual-h2">Guía para estudiantes</h2>
-<h3 id="estudiante-sistema" class="manual-h3">1. ¿Qué es el sistema?</h3>
-<p>Es la plataforma del instituto para revisar la originalidad de tus trabajos académicos antes de entregarlos. Analiza tu documento, te muestra con qué se parece y, si el resultado es adecuado, te permite obtener un certificado verificable.</p>
+<h3 id="estudiante-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>La plataforma revisa la originalidad de tus trabajos académicos antes de entregarlos y, si el resultado es adecuado, te permite obtener un certificado verificable.</p>
+<ol class="m-steps">
+<li>Abre la página de la plataforma e ingresa tu usuario o correo institucional y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>. Si aún no tienes cuenta, usa <strong>Regístrate</strong> con tu correo institucional.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.login %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>Si olvidaste tu contraseña, usa el enlace «¿Olvidaste tu contraseña?» de la misma pantalla.</div>
 <h3 id="estudiante-subir" class="manual-h3">2. Cómo subir un documento</h3>
-<ol>
-<li>Entra a <strong>Documentos</strong> en el menú superior.</li>
-<li>Elige el archivo en formato <strong>PDF o DOCX</strong> y completa los datos que se piden.</li>
-<li>Pulsa el botón para subirlo y espera a que termine. El sistema revisa que el archivo sea válido.</li>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong> en el menú superior. Verás tu bandeja con el estado de cada trabajo.</li>
+<li>Pulsa <strong>Subir documento</strong>.</li>
+<li>Completa el título y los datos que se piden, y elige el archivo en formato <strong>PDF o DOCX</strong>.</li>
+<li>Pulsa <strong>Registrar</strong> y espera a que termine. El sistema comprueba que el archivo sea válido.</li>
 <li>Inicia el análisis y espera unos minutos; la pantalla se actualiza sola cuando el reporte está listo.</li>
 </ol>
-<p>Solo puedes subir documentos a tu propio nombre.</p>
+{% include "manual/_figura.html" with shot=shots.bandeja %}
+{% include "manual/_figura.html" with shot=shots.subir %}
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Solo puedes subir documentos a tu propio nombre. El archivo no debe superar los 25 MB.</div>
 <h3 id="estudiante-reporte" class="manual-h3">3. Cómo leer el reporte</h3>
-<p>Al terminar el análisis se muestra un reporte con tres datos principales:</p>
-<ul>
-<li><strong>Similitud</strong>: porcentaje del texto que coincide con otras fuentes (trabajos de la institución, repositorios académicos y páginas de internet). Cada fuente aparece con su porcentaje y se marca con colores en el texto. Una coincidencia no siempre es plagio: pueden ser citas bien referenciadas o frases comunes.</li>
-<li><strong>IA estimada</strong>: cálculo aproximado de qué parte del texto se parece a escritura generada por IA. Es solo una orientación.</li>
-<li><strong>Nivel de riesgo</strong>, que depende solo de la similitud:</li>
-</ul>
-<ul>
-<li><strong>Bajo</strong> (menos de 15 %): sin observaciones relevantes.</li>
-<li><strong>Medio</strong> (15 % a menos de 30 %): conviene revisar las coincidencias.</li>
-<li><strong>Alto</strong> (30 % a menos de 50 %): requiere revisión; <em>no permite emitir certificado</em>.</li>
-<li><strong>Crítico</strong> (50 % o más): <em>no permite emitir certificado</em>.</li>
-</ul>
+{% include "manual/_leer_reporte.html" with key="estudiante" con_capturas=False %}
 <p>Si algo del reporte no te parece correcto (por ejemplo, una fuente que corresponde a una cita bien referenciada), coméntalo con tu docente, que es quien interpreta el resultado.</p>
 <h3 id="estudiante-certificado" class="manual-h3">4. Cómo generar y verificar el certificado</h3>
-<ol>
-<li>Cuando el riesgo sea <strong>bajo o medio</strong>, aparece el botón para <strong>generar el certificado</strong> en la página del reporte.</li>
-<li>Pulsa el botón y luego descarga el PDF.</li>
-</ol><p>Cada certificado incluye un código y un enlace de verificación (también en su código QR). Cualquier persona puede abrirlo, sin iniciar sesión, para comprobar que el certificado es auténtico y corresponde al documento indicado.</p><p>Si el riesgo es alto o crítico, no se puede emitir el certificado. Revisa las fuentes marcadas, corrige tu trabajo (citas, paráfrasis y referencias) y vuelve a subirlo.</p>
+<ol class="m-steps">
+<li>Abre el reporte. Si el riesgo es <strong>bajo o medio</strong>, aparece el botón <strong>Generar certificado</strong>.</li>
+<li>Pulsa el botón y descarga el PDF.</li>
+<li>Para verificarlo, escanea su código QR o abre el enlace de verificación impreso en el certificado.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>Si el riesgo es alto o crítico, revisa las fuentes marcadas, corrige tu trabajo (citas, paráfrasis y referencias) y vuelve a subirlo.</div>
 <h3 id="estudiante-limitaciones" class="manual-h3">5. Limitaciones importantes</h3>
-<p>La estimación de IA es <strong>solo indicativa</strong>: es un cálculo automático que puede equivocarse y no prueba que un texto haya sido escrito con inteligencia artificial. <strong>No define el nivel de riesgo ni impide o permite el certificado</strong>; estos dependen únicamente de la similitud. Cualquier decisión académica debe tomarla una persona, después de revisar el trabajo.</p>
-<p>Tampoco se detecta todo: una coincidencia con material que no esté en internet ni en el repositorio de la institución no aparecerá en el reporte.</p>
+{% include "manual/_limitaciones.html" %}
 </section>

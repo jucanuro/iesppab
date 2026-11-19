@@ -1,0 +1,4 @@
+<figure class="m-figure">
+{% if shot.available %}<img src="{{ shot.src }}" alt="{{ shot.caption }}">{% else %}<span class="m-missing">Captura no disponible</span>{% endif %}
+<figcaption>{{ numero }}{{ shot.caption }}</figcaption>
+</figure>

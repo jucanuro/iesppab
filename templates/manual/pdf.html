@@ -1,20 +1,24 @@
-{% load static %}<!doctype html>
+<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><title>Manual de usuario</title>
 <style>
 @page { size: A4; margin: 2.2cm 2cm 2cm 2cm;
   @bottom-center { content: "Página " counter(page) " de " counter(pages); font-size: 9pt; color: #64748b; }
   @top-right { content: "Manual de usuario · v{{ manual_version }}"; font-size: 8.5pt; color: #64748b; } }
-@page :first { @bottom-center { content: none; } @top-right { content: none; } }
+@page :first { margin: 0; @bottom-center { content: none; } @top-right { content: none; } }
 body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; line-height: 1.5; color: #0f172a; }
-.cover { height: 24cm; text-align: center; padding-top: 7cm; page-break-after: always; }
-.cover .inst { font-size: 13pt; color: #123f9e; font-weight: bold; }
-.cover h1 { font-size: 30pt; color: #123f9e; margin: 1cm 0 .3cm; }
-.cover .meta { color: #475569; font-size: 11pt; margin-top: 2cm; }
-.cover .bar { width: 4cm; height: 3px; background: #F5B400; margin: 0 auto; }
+.cover { height: 29.7cm; box-sizing: border-box; text-align: center; padding-top: 5.5cm; page-break-after: always;
+  background: #eef3ff; border-top: .8cm solid #123f9e; }
+.cover img.logo { height: 4.2cm; width: auto; }
+.cover .inst { font-size: 14pt; color: #123f9e; font-weight: bold; margin-top: .8cm; }
+.cover h1 { font-size: 32pt; color: #123f9e; margin: 1cm 0 .3cm; }
+.cover .sub { color: #236bfd; font-size: 13pt; }
+.cover .meta { color: #475569; font-size: 11pt; margin-top: 2.5cm; }
+.cover .bar { width: 4cm; height: 3px; background: #F5B400; margin: .6cm auto 0; }
 .toc { page-break-after: always; }
 .toc h2 { color: #123f9e; }
 .toc ul { list-style: none; padding: 0; }
 .toc li { margin: .15cm 0; }
+.toc li.l1 { margin-top: .4cm; font-weight: bold; }
 .toc li.l2 { padding-left: .6cm; font-size: 10pt; }
 .toc a { color: #0f172a; text-decoration: none; }
 .toc a::after { content: leader('.') target-counter(attr(href), page); }
@@ -23,26 +27,33 @@ body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; line-he
 .manual-h3 { color: #123f9e; font-size: 12.5pt; margin-top: .7cm; }
 h2, h3 { page-break-after: avoid; }
 ul, ol { padding-left: .7cm; }
+.m-figure img { max-height: 8.5cm; width: auto; }
+{% include "manual/_estilos.html" %}
 </style></head><body>
 <div class="cover">
+  {% if logo_src %}<img class="logo" src="{{ logo_src }}" alt="Logo institucional">{% endif %}
   <p class="inst">{{ institution_name }}</p>
   <div class="bar"></div>
   <h1>Manual de usuario</h1>
-  <p>Sistema de originalidad documental y certificados</p>
+  <p class="sub">Plataforma de originalidad académica y certificados</p>
   <p class="meta">Versión {{ manual_version }}<br>{{ generated_on|date:"j \d\e F \d\e Y" }}</p>
 </div>
 <div class="toc">
   <h2>Índice</h2>
   <ul>
+    <li class="l1"><a href="#introduccion">Cómo funciona el sistema</a></li>
+    <li class="l2"><a href="#introduccion-ciclo">Ciclo de un documento</a></li>
+    <li class="l2"><a href="#introduccion-reporte">Cómo leer el reporte</a></li>
+    <li class="l2"><a href="#introduccion-roles">Quién ve qué</a></li>
   {% for s in sections %}
-    <li><a href="#{{ s.key }}">Guía para {{ s.title }}</a></li>
-    <li class="l2"><a href="#{{ s.key }}-sistema">1. ¿Qué es el sistema?</a></li>
-    <li class="l2"><a href="#{{ s.key }}-subir">2. Cómo subir un documento</a></li>
-    <li class="l2"><a href="#{{ s.key }}-reporte">3. Cómo leer el reporte</a></li>
-    <li class="l2"><a href="#{{ s.key }}-certificado">4. Cómo generar y verificar el certificado</a></li>
-    <li class="l2"><a href="#{{ s.key }}-limitaciones">5. Limitaciones importantes</a></li>
+    <li class="l1"><a href="#{{ s.key }}">Guía para {{ s.title }}</a></li>
+    {% for suffix, title in s.items %}<li class="l2"><a href="#{{ s.key }}-{{ suffix }}">{{ title }}</a></li>
+    {% endfor %}
   {% endfor %}
+    <li class="l1"><a href="#glosario">Glosario</a></li>
   </ul>
 </div>
+{% include "manual/_introduccion.html" %}
 {% for s in sections %}{% include s.template %}{% endfor %}
+{% include "manual/_glosario.html" %}
 </body></html>

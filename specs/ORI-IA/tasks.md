@@ -21,11 +21,11 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: tests — SHA-256 ausente/distinto → `IABankError` con id; fuente en dos particiones → `IABankError`; test_fpr 149/150/183 entradas y 2/3 instituciones → "insuficiente"/OK; no_vistos <60 docs o <3 familias → "insuficiente"; ninguna institución >50 % de test_fpr
   - Rama: `ORI-IA/T02-manifiesto`
 
-- [ ] T03 — Comando `construir_manifiesto_ia_v3` (carpetas + CSV de metadatos → manifiesto con particiones por semilla `IA_V3_SEED`)
+- [x] T03 — Comando `construir_manifiesto_ia_v3` (carpetas + CSV de metadatos → manifiesto con particiones por semilla `IA_V3_SEED`)
   - Corre en: PC · Depende de: T02 · REQ: REQ-IA-01, REQ-IA-04, REQ-IA-13
   - Archivos: `apps/analysis/management/commands/construir_manifiesto_ia_v3.py`, `apps/analysis/evaluation/ia_v3/metadatos_plantilla.csv`, tests en `tests_ia_v3_manifest.py`
   - Verificación: test — misma semilla → manifiesto idéntico (hash); Wikipedia nunca en test_fpr; ≥2022 → `diagnostico`; 60 de chat → `sellado` con `visto` según T01; carpeta `no_vistos_v3` → `no_vistos`
-  - Rama: `ORI-IA/T03-construir-manifiesto`
+  - Rama: `ORI-IA/T03-manifiesto-semilla`
 
 - [ ] T04 — Obtener humanos públicos ≤2021 de ≥3 instituciones (design §1.4)
   - Corre en: Gerente (descargas manuales) + PC (registro) · Depende de: T03 para registrar · REQ: REQ-IA-01

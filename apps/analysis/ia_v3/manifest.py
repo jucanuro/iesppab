@@ -15,6 +15,8 @@ from pathlib import Path
 
 from .exceptions import IABankError
 
+IA_V3_SEED = 20261113  # semilla fija de las particiones (design §4)
+
 PARTICIONES = {"train", "val", "test", "sellado", "no_vistos", "diagnostico"}
 ETIQUETAS = {"humano", "ia"}
 

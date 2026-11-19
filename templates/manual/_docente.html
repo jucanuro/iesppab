@@ -1,0 +1,39 @@
+<section id="docente" class="manual-section" aria-labelledby="docente-titulo">
+<h2 id="docente-titulo" class="manual-h2">Guía para docentes</h2>
+<h3 id="docente-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>Como docente subes documentos en nombre de estudiantes de tu institución y revisas los reportes para apoyar tu evaluación.</p>
+<ol class="m-steps">
+<li>Ingresa con tu usuario o correo institucional y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>; llegarás a la bandeja de documentos.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.login %}
+<h3 id="docente-subir" class="manual-h3">2. Cómo subir un documento</h3>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong> y pulsa <strong>Subir documento</strong>.</li>
+<li>Elige el <strong>Alumno</strong> a cuyo nombre se subirá el trabajo y completa los datos.</li>
+<li>Selecciona el archivo (<strong>PDF o DOCX</strong>) y pulsa <strong>Registrar</strong>.</li>
+<li>Inicia el análisis desde el menú de acciones del documento y espera a que el reporte esté listo.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.bandeja %}
+{% include "manual/_figura.html" with shot=shots.subir %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>En <strong>Alumnos pendientes</strong> ves a los estudiantes que se registraron y esperan ser aprobados.</div>
+<h3 id="docente-acciones" class="manual-h3">3. Acciones sobre un documento</h3>
+<p>Cada fila de la bandeja tiene el botón <strong>Ver</strong> y un menú «…» con las acciones disponibles.</p>
+{% include "manual/_figura.html" with shot=shots.acciones %}
+<h3 id="docente-reporte" class="manual-h3">4. Cómo leer el reporte</h3>
+{% include "manual/_leer_reporte.html" with key="docente" con_capturas=True %}
+<ol class="m-steps">
+<li>Abre cada fuente para comparar los fragmentos coincidentes.</li>
+<li>Si una fuente no corresponde (por ejemplo, un texto citado correctamente), <strong>exclúyela</strong> del cálculo; el reporte se recalcula.</li>
+</ol>
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Tú decides qué coincidencias son aceptables; el sistema solo las señala.</div>
+<h3 id="docente-certificado" class="manual-h3">5. Cómo generar y verificar el certificado</h3>
+<ol class="m-steps">
+<li>Con riesgo <strong>bajo o medio</strong>, pulsa <strong>Generar certificado</strong> en la página del reporte (o en el menú «…» del documento).</li>
+<li>Descarga el PDF y entrégalo al estudiante.</li>
+<li>Para comprobarlo, abre el enlace de verificación o escanea el código QR.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<h3 id="docente-limitaciones" class="manual-h3">6. Limitaciones importantes</h3>
+{% include "manual/_limitaciones.html" %}
+</section>

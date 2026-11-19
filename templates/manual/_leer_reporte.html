@@ -1,0 +1,18 @@
+{# Requiere: shots, key (clave de sección), con_capturas (bool) #}
+<p>Al terminar el análisis se abre el reporte. A la izquierda ves la <strong>Valoración global</strong> y los anillos de <strong>Similitud</strong> e <strong>IA estimada</strong>; a la derecha, las pestañas <strong>Resumen</strong>, <strong>Fuentes</strong>, <strong>IA</strong> y <strong>Texto</strong>.</p>
+{% if con_capturas %}{% include "manual/_figura.html" with shot=shots.reporte_resumen %}{% endif %}
+<ol class="m-steps">
+<li>Mira primero la <strong>Valoración global</strong>: es la <em>peor</em> de dos valoraciones, la de similitud y la de IA estimada. Es solo informativa.</li>
+<li>Abre la pestaña <strong>Fuentes</strong> para ver con qué coincide el texto (trabajos de la institución, repositorios académicos y páginas web) y cuánto aporta cada fuente.{% if con_capturas %}{% include "manual/_figura.html" with shot=shots.reporte_fuentes %}{% endif %}</li>
+<li>Revisa la pestaña <strong>IA</strong>: indica qué partes del texto se parecen a escritura generada por IA. Es una estimación orientativa.{% if con_capturas %}{% include "manual/_figura.html" with shot=shots.reporte_ia %}{% endif %}</li>
+<li>Consulta la pestaña <strong>Texto</strong> para ver el documento con las coincidencias marcadas por colores.</li>
+</ol>
+<table class="m-table">
+<tr><th></th><th>Bajo</th><th>Medio</th><th>Alto</th></tr>
+<tr><td><strong>Valoración por similitud</strong></td><td>menos de 25 %</td><td>25 % a menos de 50 %</td><td>50 % o más</td></tr>
+<tr><td><strong>Valoración por IA estimada</strong></td><td>menos de 40 % («Sin indicios concluyentes»)</td><td>40 % a menos de 70 % («Indicios: revisar con criterio docente»)</td><td>70 % o más («Posible IA: revisar»)</td></tr>
+</table>
+<div class="m-note m-important"><strong class="m-label">Importante</strong>
+La <strong>Valoración global</strong> toma la más alta de las dos filas anteriores. La <strong>IA estimada es indicativa y no bloquea el certificado</strong>, pero sí puede subir la Valoración global: por ejemplo, con similitud baja (5,6 %) y posible IA (77 %), la Valoración global sale <em>Alto</em> y aun así el certificado sigue disponible, porque lo único que lo bloquea es el <strong>nivel de riesgo</strong>, que depende solo de la similitud (ver «Certificado»).</div>
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>
+Una coincidencia no siempre es plagio: pueden ser citas bien referenciadas o frases comunes. Usa las opciones <strong>Excluir citas</strong> y <strong>Excluir bibliografía</strong> de la parte superior y recalcula antes de concluir.</div>

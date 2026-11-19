@@ -1,0 +1,32 @@
+<section id="director" class="manual-section" aria-labelledby="director-titulo">
+<h2 id="director-titulo" class="manual-h2">Guía para directores</h2>
+<h3 id="director-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>Como director consultas documentos y reportes de tu institución y supervisas el trabajo de docentes y estudiantes.</p>
+<ol class="m-steps">
+<li>Ingresa con tu usuario o correo institucional y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.login %}
+<h3 id="director-subir" class="manual-h3">2. Cómo subir un documento</h3>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong>, pulsa <strong>Subir documento</strong> y selecciona al estudiante.</li>
+<li>Sube el archivo (<strong>PDF o DOCX</strong>) y pulsa <strong>Registrar</strong>.</li>
+<li>Inicia el análisis y espera el reporte.</li>
+</ol>
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>En <strong>Alumnos pendientes</strong> puedes revisar las solicitudes de registro de estudiantes.</div>
+<h3 id="director-acciones" class="manual-h3">3. Acciones sobre un documento</h3>
+<p>Desde el menú «…» de cada documento puedes reanalizar, abrir los informes de similitud e IA y generar el certificado.</p>
+{% include "manual/_figura.html" with shot=shots.acciones %}
+<h3 id="director-reporte" class="manual-h3">4. Cómo leer el reporte</h3>
+{% include "manual/_leer_reporte.html" with key="director" con_capturas=True %}
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Para decisiones importantes, apóyate en las fuentes concretas del reporte y en el criterio del docente, no solo en el porcentaje total.</div>
+<h3 id="director-certificado" class="manual-h3">5. Cómo generar y verificar el certificado</h3>
+<ol class="m-steps">
+<li>Con riesgo <strong>bajo o medio</strong>, pulsa <strong>Generar certificado</strong> en la página del reporte.</li>
+<li>Descarga el PDF.</li>
+<li>Para comprobarlo, abre el enlace de verificación o escanea el código QR.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<h3 id="director-limitaciones" class="manual-h3">6. Limitaciones importantes</h3>
+{% include "manual/_limitaciones.html" %}
+</section>

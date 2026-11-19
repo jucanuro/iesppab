@@ -1,0 +1,35 @@
+<section id="estudiante" class="manual-section" aria-labelledby="estudiante-titulo">
+<h2 id="estudiante-titulo" class="manual-h2">Guía para estudiantes</h2>
+<h3 id="estudiante-sistema" class="manual-h3">1. Ingresar al sistema</h3>
+<p>La plataforma revisa la originalidad de tus trabajos académicos antes de entregarlos y, si el resultado es adecuado, te permite obtener un certificado verificable.</p>
+<ol class="m-steps">
+<li>Abre la página de la plataforma e ingresa tu usuario o correo institucional y tu contraseña.</li>
+<li>Pulsa <strong>Iniciar sesión</strong>. Si aún no tienes cuenta, usa <strong>Regístrate</strong> con tu correo institucional.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.login %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>Si olvidaste tu contraseña, usa el enlace «¿Olvidaste tu contraseña?» de la misma pantalla.</div>
+<h3 id="estudiante-subir" class="manual-h3">2. Cómo subir un documento</h3>
+<ol class="m-steps">
+<li>Entra a <strong>Documentos</strong> en el menú superior. Verás tu bandeja con el estado de cada trabajo.</li>
+<li>Pulsa <strong>Subir documento</strong>.</li>
+<li>Completa el título y los datos que se piden, y elige el archivo en formato <strong>PDF o DOCX</strong>.</li>
+<li>Pulsa <strong>Registrar</strong> y espera a que termine. El sistema comprueba que el archivo sea válido.</li>
+<li>Inicia el análisis y espera unos minutos; la pantalla se actualiza sola cuando el reporte está listo.</li>
+</ol>
+{% include "manual/_figura.html" with shot=shots.bandeja %}
+{% include "manual/_figura.html" with shot=shots.subir %}
+<div class="m-note m-important"><strong class="m-label">Importante</strong>Solo puedes subir documentos a tu propio nombre. El archivo no debe superar los 25 MB.</div>
+<h3 id="estudiante-reporte" class="manual-h3">3. Cómo leer el reporte</h3>
+{% include "manual/_leer_reporte.html" with key="estudiante" con_capturas=False %}
+<p>Si algo del reporte no te parece correcto (por ejemplo, una fuente que corresponde a una cita bien referenciada), coméntalo con tu docente, que es quien interpreta el resultado.</p>
+<h3 id="estudiante-certificado" class="manual-h3">4. Cómo generar y verificar el certificado</h3>
+<ol class="m-steps">
+<li>Abre el reporte. Si el riesgo es <strong>bajo o medio</strong>, aparece el botón <strong>Generar certificado</strong>.</li>
+<li>Pulsa el botón y descarga el PDF.</li>
+<li>Para verificarlo, escanea su código QR o abre el enlace de verificación impreso en el certificado.</li>
+</ol>
+{% include "manual/_certificado.html" %}
+<div class="m-note m-tip"><strong class="m-label">Consejo</strong>Si el riesgo es alto o crítico, revisa las fuentes marcadas, corrige tu trabajo (citas, paráfrasis y referencias) y vuelve a subirlo.</div>
+<h3 id="estudiante-limitaciones" class="manual-h3">5. Limitaciones importantes</h3>
+{% include "manual/_limitaciones.html" %}
+</section>

@@ -12,13 +12,14 @@ convention in new code.
 ## Commands
 
 ```bash
-# Activate the project virtualenv first (repo ships venv/ at root)
+# Activate the project virtualenv first (venv/ lives at the repo root but is gitignored; create it with
+# python -m venv venv && pip install -r requirements.txt; add requirements-local.txt for torch/transformers)
 source venv/bin/activate
 
 python manage.py runserver
 python manage.py migrate
 python manage.py makemigrations <app_label>
-python manage.py test                       # full suite
+DB_ENGINE=django.db.backends.sqlite3 python manage.py test   # full suite (run serially: --parallel crashes)
 python manage.py test apps.documents         # single app
 python manage.py test apps.documents.tests.SomeTestCase.test_method  # single test
 python manage.py createsuperuser
@@ -31,7 +32,11 @@ or `.env` (production), selectable via `DJANGO_ENV_FILE`. `DJANGO_ENV` must be `
 (Postgres connection, Brave Search API key for web-similarity, OAI-PMH harvesting toggles).
 
 Default DB is Postgres (`DB_ENGINE=django.db.backends.postgresql`); set `DB_ENGINE=django.db.backends.sqlite3`
-to fall back to the bundled `db.sqlite3` for quick local work.
+to use a local `db.sqlite3` (gitignored) for quick local work and for the test suite. Tests that need optional
+libraries from `requirements-local.txt` (torch, numpy, mwparserfromhell) are skipped when they are not installed.
+
+Production runs `AI_DETECTION_MODE=classifier` and `SIMILARITY_ENGINE=span`; the code defaults (`global`,
+`chunk`) are kept only as fallbacks/rollback.
 
 ## Architecture
 
@@ -63,15 +68,19 @@ order:
 4. **`apps.analysis`** — `DocumentAnalysisService` (`apps/analysis/services.py`) runs the originality/AI
    pipeline: text extraction (`apps.documents.extractors`), Winnowing fingerprinting
    (`engines/fingerprint.py`), internal similarity against previously indexed documents
-   (`engines/similarity.py` + `DocumentKnowledgeIndexer` in `indexers.py`), Spanish AI-generated-text detection
-   (`engines/ai_detector.py`), and optional external web similarity via Brave Search
+   (`engines/span_similarity.py` identical-span engine used in production, `engines/similarity.py` chunk engine,
+   + `DocumentKnowledgeIndexer` in `indexers.py`), Spanish AI-generated-text detection
+   (`engines/ai_classifier.py` — fine-tuned BETO classifier per segment, the production mode, indicative only and
+   not part of `risk_level`; `engines/ai_detector.py`/`perplexity_detector.py` are the older heuristic/perplexity
+   modes kept for rollback), and optional external web similarity via Brave Search
    (`engines/web_search.py`, gated by `WEB_ANALYSIS_ENABLED`/`BRAVE_SEARCH_API_KEY`). It also harvests
    external repositories via OAI-PMH (`OAI_HARVEST_REPOSITORIES` in `config/settings.py` — each entry is a
    manually-confirmed working endpoint; see the comment block above it for repos that were tried and don't
    have a confirmed OAI endpoint yet) into `OaiRecord`/knowledge chunks for similarity comparisons.
 5. **`apps.reports`** — `AnalysisReport`/`ReportFinding`/`ReportSource` persist the outcome of an analysis job
-   (risk level, findings, detected sources) for display and downstream certificate generation.
-6. **`apps.certificates`** — generates a verifiable PDF certificate (WeasyPrint) once a report clears, with a
+   (risk level, findings, detected sources) for display and downstream certificate generation. The similarity and
+   AI PDF reports are built with ReportLab (`services.py`, shared look in `pdf_style.py`).
+6. **`apps.certificates`** — generates a verifiable PDF certificate (ReportLab, not WeasyPrint) once a report clears, with a
    public hash-based verification URL (`certificates:verify`).
 
 URL routing: each app owns its own `urls.py` with an `app_name` namespace, all mounted at root in
@@ -88,3 +97,11 @@ Services over forms: business logic consistently lives in a `services.py` per ap
 `DocumentAnalysisService`, certificate generation service) rather than Django `forms.ModelForm`. Follow this
 pattern for new write paths — validate in the service, raise a domain-specific exception, catch and translate
 to a user message in the view.
+
+## Branches and workflow
+
+`main` is the only long-lived branch and is what production pulls (`git reset --hard origin/main` on the server).
+Work goes on a short branch per task/module (e.g. `ORI-IA/T10-...`, `feat/...`, `fix/...`) and reaches `main`
+through a pull request; delete the branch after it merges. The old `dev` branch was retired on 2026-11-19.
+Specs for each module live in `specs/ORI-<MOD>/` (requirements, design, tasks).
+

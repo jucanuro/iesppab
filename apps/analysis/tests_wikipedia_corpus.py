@@ -6,6 +6,8 @@ import io
 import tempfile
 from html import escape
 from pathlib import Path
+import importlib.util
+from unittest import skipUnless
 
 from django.core.management import call_command
 from django.test import SimpleTestCase
@@ -66,6 +68,10 @@ class ClasificacionTests(SimpleTestCase):
         self.assertIsNone(wiki.classify_theme(["Cocina"]))
 
 
+_SIN_MWPARSER = "requiere mwparserfromhell (requirements-local.txt)"
+
+
+@skipUnless(importlib.util.find_spec("mwparserfromhell"), _SIN_MWPARSER)
 class ProsaTests(SimpleTestCase):
     def setUp(self):
         self.prose = wiki.wikitext_to_prose(WIKITEXT)
@@ -113,6 +119,7 @@ class VolcadoTests(SimpleTestCase):
         self.assertEqual(len(run()), 3)
         self.assertEqual(run(), run())
 
+    @skipUnless(importlib.util.find_spec("mwparserfromhell"), _SIN_MWPARSER)
     def test_seleccion_balanceada_descarta_articulos_cortos(self):
         res = wiki.ThemeReservoir(5, seed=1)
         largo = (PARRAFO + "\n\n") * 30

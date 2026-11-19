@@ -11,6 +11,8 @@ import json
 import tempfile
 from pathlib import Path
 from unittest import mock
+import importlib.util
+from unittest import skipUnless
 
 from django.core.management import call_command
 from django.test import SimpleTestCase
@@ -198,6 +200,7 @@ class ExportacionTests(SimpleTestCase):
         self.assertEqual(export._handle("upeu_2019_20.500.12840_2096.pdf"), "20.500.12840/2096")
         self.assertEqual(export._handle("sin handle"), "")
 
+    @skipUnless(importlib.util.find_spec("numpy"), "requiere numpy (requirements-local.txt)")
     def test_prueba_de_formato_no_separa_textos_equivalentes(self):
         rows = []
         for i in range(40):

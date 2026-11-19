@@ -1,5 +1,7 @@
 from decimal import Decimal
 from unittest import mock
+import importlib.util
+from unittest import skipUnless
 
 from django.test import SimpleTestCase, override_settings
 
@@ -55,6 +57,7 @@ class MemoryTests(SimpleTestCase):
         self.assertEqual(ai_classifier.BATCH_SIZE, 2)
         self.assertEqual(ai_classifier.NUM_THREADS, 2)
 
+    @skipUnless(importlib.util.find_spec("torch"), "requiere torch (requirements-local.txt)")
     def test_predict_runs_in_batches_of_two_and_frees_memory(self):
         import torch
 

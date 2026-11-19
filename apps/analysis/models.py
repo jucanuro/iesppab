@@ -229,6 +229,15 @@ class OaiRecord(TimeStampedModel):
         db_index=True,
         verbose_name=_("Activo"),
     )
+    extra_metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("Metadatos adicionales"),
+        help_text=_(
+            "Datos de la fuente que no caben en los campos OAI, p. ej. los "
+            "enlaces directos a archivos que entrega la API de ALICIA."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Registro OAI")

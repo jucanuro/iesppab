@@ -51,7 +51,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: tests — 0/183 → CUMPLE; 1/183 → NO CUMPLE; cota comparada con valores de referencia tabulados (sin scipy)
   - Rama: `ORI-IA/T07-fpr-clopper-pearson`
 
-- [ ] T08 — Métricas MAE/p90, recall por familia con IC y curva de fiabilidad/ECE (C3, parte 2)
+- [x] T08 — Métricas MAE/p90, recall por familia con IC y curva de fiabilidad/ECE (C3, parte 2)
   - Corre en: PC · Depende de: T07 · REQ: REQ-IA-05, REQ-IA-07, REQ-IA-08
   - Archivos: `apps/analysis/ia_v3/metrics.py`, `apps/analysis/tests_ia_v3_metrics.py`
   - Verificación: tests — MAE 9,9 → CUMPLE, 10,1 → NO CUMPLE; recall separa vistas/no vistas; predicciones calibradas → ECE ≈0, sesgadas → ECE >0,05

@@ -57,7 +57,7 @@ Estado: Aprobado por Juan Carlos Núñez (Gerente), 2026-11-13
   - Verificación: tests — MAE 9,9 → CUMPLE, 10,1 → NO CUMPLE; recall separa vistas/no vistas; predicciones calibradas → ECE ≈0, sesgadas → ECE >0,05
   - Rama: `ORI-IA/T08-metricas-mae-recall-ece`
 
-- [ ] T09 — Comando `construir_banco_ia_v3 [--para-colab]`
+- [x] T09 — Comando `construir_banco_ia_v3 [--para-colab]`
   - Corre en: PC · Depende de: T03, T06 (código); T04 (datos reales) · REQ: REQ-IA-03, REQ-IA-04, REQ-IA-16
   - Archivos: `apps/analysis/management/commands/construir_banco_ia_v3.py`, tests
   - Verificación: tests — `--para-colab` excluye `sellado`/`no_vistos`/`diagnostico`; texto con `publico=false` → aborta; JSONL por partición con hash reproducible

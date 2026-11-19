@@ -116,6 +116,7 @@ INSTALLED_APPS = [
     "apps.analysis",
     "apps.reports",
     "apps.certificates",
+    "apps.manual",
 ]
 
 

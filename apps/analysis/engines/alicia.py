@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from bs4 import BeautifulSoup
 from django.db import transaction
@@ -29,6 +30,7 @@ from django.utils import timezone
 
 from apps.analysis.engines.fingerprint import compute_fingerprints
 from apps.analysis.engines.oai_fulltext import (
+    FetchedResponse,
     FullTextFetchError,
     FullTextOutcome,
     OaiFullTextHarvester,
@@ -61,6 +63,17 @@ DEFAULT_EXCLUDED_DOMAINS = (
 )
 
 _FIELDS = ("id", "title", "rawData", "dcDateEmbargoEnd")
+_DSPACE7_DOWNLOAD_RE = re.compile(r"/bitstreams/([0-9a-fA-F-]{36})/download")
+_LEGACY_BITSTREAM_RE = re.compile(r"/bitstream/(?:handle/)?(\d[\d.]*/[^/]+)/(\d+)/")
+_DSPACE7_REST_PREFIXES = ("/server/api", "/backend/api")
+# Derivados de DSpace (texto extraído, miniaturas) y licencia: no son la tesis.
+_SKIP_FILE_RE = re.compile(r"(license\.txt|\.txt|\.jpe?g|\.png|\.gif)$", re.IGNORECASE)
+# Archivos que suelen acompañar a la tesis y no son ella.
+_SIDE_FILE_RE = re.compile(
+    r"autoriza|ficha|reporte|turnitin|similitud|originalidad|acta|constancia|"
+    r"declaraci|formato|anexo|caratula|car%c3%a1tula",
+    re.IGNORECASE,
+)
 _MAX_BITSTREAMS = 6
 
 
@@ -160,6 +173,23 @@ class AliciaSearch:
             )
 
         return data
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def rank_file_urls(urls: list[str]) -> list[str]:
+    """
+    Quita licencias, textos extraídos y miniaturas, y deja al final los
+    archivos que parecen autorizaciones o reportes de similitud.
+    """
+    useful = [url for url in urls if not _SKIP_FILE_RE.search(urlsplit(url).path)]
+    return sorted(
+        useful,
+        key=lambda url: bool(_SIDE_FILE_RE.search(urlsplit(url).path.rsplit("/", 1)[-1])),
+    )
 
 
 def _first(value) -> str:
@@ -304,10 +334,13 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
 
     def __init__(self, client: PoliteClient | None = None, indexer=None) -> None:
         super().__init__(ALICIA_REPOSITORY, client=client, indexer=indexer)
+        self._dspace7_hosts: set[str] = set()
+        self._rest_bases: dict[str, str] = {}
+        self._last_was_html = False
 
     def _process(self, record: OaiRecord) -> FullTextOutcome:
         extra = record.extra_metadata or {}
-        urls = list(extra.get("bitstream_urls") or [])
+        urls = rank_file_urls(extra.get("bitstream_urls") or [])
         base = {
             "publication_year": extra.get("anio"),
             "rights": extra.get("licencia") or "",
@@ -334,16 +367,13 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
             if pdfs_tried >= self.MAX_PDFS_PER_RECORD:
                 break
 
-            try:
-                response = self.client.get(url, max_bytes=self.MAX_PDF_BYTES)
-            except ResponseTooLarge:
-                continue
+            response = self._fetch_file(url)
 
-            if response.status_code != 200 or not response.content.startswith(b"%PDF"):
+            if response is None:
                 continue
 
             pdfs_tried += 1
-            outcome = self._extract(response.content, {**base, "pdf_url": url})
+            outcome = self._extract(response.content, {**base, "pdf_url": response.url})
 
             if outcome.status == OaiFullTextStatus.OK:
                 return outcome
@@ -358,6 +388,100 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
             error_message="Ningún enlace de ALICIA entregó un PDF.",
             **base,
         )
+
+    def _fetch_file(self, url: str) -> FetchedResponse | None:
+        """
+        El PDF del enlace, o None. En DSpace 7 los enlaces de ALICIA
+        (`/bitstreams/<uuid>/download` y los antiguos `/bitstream/<handle>/
+        <n>/<nombre>`) devuelven la página de Angular, no el archivo: en ese
+        caso se pide el archivo a la API REST del repositorio.
+        """
+        host = _origin(url)
+
+        if host not in self._dspace7_hosts:
+            response = self._get_pdf(url)
+
+            if response is not None or not self._last_was_html:
+                return response
+
+            self._dspace7_hosts.add(host)
+
+        rest_url = self._rest_content_url(url)
+        return self._get_pdf(rest_url) if rest_url else None
+
+    def _get_pdf(self, url: str) -> FetchedResponse | None:
+        self._last_was_html = False
+
+        if not self.client.allowed(url):
+            return None
+
+        try:
+            response = self.client.get(url, max_bytes=self.MAX_PDF_BYTES)
+        except ResponseTooLarge:
+            return None
+
+        if response.status_code == 200 and response.content.startswith(b"%PDF"):
+            return response
+
+        self._last_was_html = response.status_code == 200 and (
+            "html" in response.content_type.lower()
+            or response.content.lstrip()[:15].lower().startswith(b"<!doctype html")
+        )
+        return None
+
+    def _rest_content_url(self, url: str) -> str:
+        host = _origin(url)
+        rest = self._rest_base(host)
+
+        if not rest:
+            return ""
+
+        path = urlsplit(url).path
+
+        if match := _DSPACE7_DOWNLOAD_RE.search(path):
+            return f"{rest}/core/bitstreams/{match.group(1)}/content"
+
+        if match := _LEGACY_BITSTREAM_RE.search(path):
+            handle, sequence = match.group(1), match.group(2)
+            response = self.client.get(
+                f"{rest}/core/bitstreams/search/byItemHandle",
+                max_bytes=self.MAX_PAGE_BYTES,
+                params={"handle": unquote(handle), "sequence": sequence},
+            )
+
+            if response.status_code != 200:
+                return ""
+
+            try:
+                data = json.loads(response.content)
+            except ValueError:
+                return ""
+
+            return str(((data.get("_links") or {}).get("content") or {}).get("href") or "")
+
+        return ""
+
+    def _rest_base(self, host: str) -> str:
+        """La API REST de DSpace 7 suele estar en /server o /backend."""
+        if host in self._rest_bases:
+            return self._rest_bases[host]
+
+        found = ""
+
+        for prefix in _DSPACE7_REST_PREFIXES:
+            candidate = f"{host}{prefix}"
+
+            if not self.client.allowed(candidate):
+                continue
+
+            response = self.client.get(candidate, max_bytes=self.MAX_PAGE_BYTES)
+
+            if response.status_code == 200 and "json" in response.content_type.lower():
+                found = candidate
+                break
+
+        self._rest_bases[host] = found
+        return found
 
     def _process_landing(self, record: OaiRecord, base: dict) -> FullTextOutcome:
         page = self.client.get(self._landing_url(record), max_bytes=self.MAX_PAGE_BYTES)

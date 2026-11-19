@@ -79,6 +79,14 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--reintentar-sin-pdf",
+            action="store_true",
+            help=(
+                "Vuelve a procesar los registros marcados sin_pdf (p. ej. tras "
+                "mejorar cómo se encuentran los archivos)."
+            ),
+        )
+        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Muestra qué se procesaría, sin red y sin escribir nada.",
@@ -113,9 +121,12 @@ class Command(BaseCommand):
             full_text__status=OaiFullTextStatus.EMBARGADO,
             full_text__embargo_end__lte=timezone.localdate(),
         )
-        pending = queryset.filter(
-            Q(full_text__isnull=True) | retryable | embargo_expired
-        )
+        pending_filter = Q(full_text__isnull=True) | retryable | embargo_expired
+
+        if options["reintentar_sin_pdf"]:
+            pending_filter |= Q(full_text__status=OaiFullTextStatus.SIN_PDF)
+
+        pending = queryset.filter(pending_filter)
         finished_count = queryset.count() - pending.count()
         quota = max(options["limite"] - finished_count, 0)
         records = list(pending.order_by("oai_identifier")[:quota])

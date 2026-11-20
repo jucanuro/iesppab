@@ -1,0 +1,9 @@
+{% extends "aniversario/base.html" %}{% load aniversario_tags %}
+{% block titulo %}¡Gracias por votar! · {{ concurso.nombre }}{% endblock %}
+{% block contenido %}
+<div class="vc ctr"><span class="bd">Voto registrado</span><h1 style="font-size:36px">¡Gracias por votar!</h1>
+<p style="margin:0;line-height:1.6;color:var(--mut)">Tu voto quedó registrado: <strong style="color:var(--ink)">{{ voto.miss.nombres }}</strong> como Miss y <strong style="color:var(--ink)">{{ voto.mister.nombres }}</strong> como Mister.</p>
+<div class="rc"><span>Comprobante<b>{{ voto.codigo }}</b></span><span>Fecha<b>{{ voto.creado|date:"j M · g:i a" }}</b></span></div>
+<p class="sm">Este equipo ya votó. Guarda tu comprobante.{% if concurso.mostrar_conteo %} Sigue el conteo en vivo en la página de inicio (se actualiza cada pocos segundos).{% endif %}</p>
+<a class="btn pri" href="{% url 'aniversario:inicio' %}" style="width:100%">Volver al inicio</a></div>
+{% endblock %}

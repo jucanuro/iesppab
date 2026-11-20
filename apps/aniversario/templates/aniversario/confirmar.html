@@ -1,0 +1,13 @@
+{% extends "aniversario/base.html" %}
+{% block titulo %}Confirma tu voto · {{ concurso.nombre }}{% endblock %}
+{% block contenido %}
+{% if estado != "abierto" %}{% include "aniversario/_estado.html" %}{% else %}
+<form class="vc ctr" style="max-width:560px" method="post" action="{% url 'aniversario:confirmar' %}" data-confirmar>{% csrf_token %}
+{% include "aniversario/_pasos.html" with n="3" %}<h1>Confirma tu voto</h1>
+{% if error %}<p class="er" role="alert">{{ error }}</p>{% endif %}
+{% if miss %}<input type="hidden" name="miss" value="{{ miss.pk }}">{% include "aniversario/_fila.html" with c=miss etiqueta="Tu miss" cambiar=url_cambiar_miss %}{% endif %}
+{% if mister %}<input type="hidden" name="mister" value="{{ mister.pk }}">{% include "aniversario/_fila.html" with c=mister etiqueta="Tu mister" cambiar=url_cambiar_mister %}{% endif %}
+{% if miss and mister %}<button type="submit" class="btn pri" style="width:100%;min-height:58px;font-size:16px">Confirmar mi voto</button>
+<p class="sm">Es un solo voto con tu miss y tu mister. No podrás cambiarlo después.</p>{% else %}<a class="btn pri" href="{% url 'aniversario:votar' %}" style="width:100%">Volver a elegir</a>{% endif %}
+</form>{% endif %}
+{% endblock %}

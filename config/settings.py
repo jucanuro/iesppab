@@ -147,7 +147,24 @@ ROOT_URLCONF = "config.urls"
 
 # --- Aniversario (votación Miss y Mister) -----------------------------------
 # Host público del concurso; vacío = app desactivada en cualquier host.
-ANIVERSARIO_HOST = os.getenv("ANIVERSARIO_HOST", "").strip().lower()
+ANIVERSARIO_HOST_PRODUCCION = "aniversario.iesp-alfonsobarranteslingan.edu.pe"
+# En producción el subdominio queda activo sin tocar el .env; ANIVERSARIO_HOST=
+# (vacío) en el .env lo apaga, y en local se usa p. ej. aniversario.localhost.
+ANIVERSARIO_HOST = os.getenv(
+    "ANIVERSARIO_HOST",
+    ANIVERSARIO_HOST_PRODUCCION if IS_PRODUCTION else "",
+).strip().lower()
+
+# Cada subdominio sirve su propia app (ver HostUrlconfMiddleware); el de
+# aniversario se agrega solo a ALLOWED_HOSTS y CSRF_TRUSTED_ORIGINS.
+if ANIVERSARIO_HOST:
+    if ANIVERSARIO_HOST not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(ANIVERSARIO_HOST)
+    _origen_aniversario = (
+        f"https://{ANIVERSARIO_HOST}" if IS_PRODUCTION else f"http://{ANIVERSARIO_HOST}:8000"
+    )
+    if _origen_aniversario not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_origen_aniversario)
 # Desde qué REMOTE_ADDR se creen X-Real-IP / X-Forwarded-For (Nginx local).
 ANIVERSARIO_PROXIES_CONFIANZA = env_list(
     "ANIVERSARIO_PROXIES_CONFIANZA",
@@ -158,6 +175,13 @@ ANIVERSARIO_RATE_POR_MINUTO = env_int("ANIVERSARIO_RATE_POR_MINUTO", 10)
 # Redis para conteo y rate limit compartidos entre workers. Usar un número de
 # BD distinto al de Celery (p. ej. redis://127.0.0.1:6379/3).
 ANIVERSARIO_CACHE_URL = os.getenv("ANIVERSARIO_CACHE_URL", "").strip()
+if not ANIVERSARIO_CACHE_URL and IS_PRODUCTION:
+    # Mismo Redis que Celery, pero en la BD 3 para no mezclar claves.
+    _broker = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0").strip()
+    if _broker.startswith(("redis://", "rediss://")):
+        from urllib.parse import urlsplit, urlunsplit
+
+        ANIVERSARIO_CACHE_URL = urlunsplit(urlsplit(_broker)._replace(path="/3"))
 
 # "default" es exactamente la caché implícita que Django ya usaba (LocMem):
 # originalidad no cambia. Solo se agrega el alias "aniversario".

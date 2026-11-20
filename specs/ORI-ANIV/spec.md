@@ -19,7 +19,7 @@ proyecto Django y servidor que originalidad. Es temporal: se retira al terminar 
 | `CACHES`: `default` idéntico al implícito actual (LocMem) + alias nuevo `aniversario` | Conteo y rate limit compartidos entre workers en Redis sin cambiar la caché de originalidad. |
 | Lectura de `ANIVERSARIO_*` del `.env` | Host, Redis, proxies de confianza, TTL del conteo y rate limit: nada hardcodeado. |
 | `CSRF_FAILURE_VIEW` → despachador `apps.aniversario.views.csrf_failure` | La vista actual de originalidad usa URLs de cuentas que no existen en el subdominio (daba 500). El despachador delega en ella para cualquier otro host: originalidad no cambia. |
-| `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` | Sin cambio de código: ya se leen del `.env`; solo se agrega el subdominio allí. |
+| `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS` | Se leen del `.env` como siempre; si `ANIVERSARIO_HOST` tiene valor (por defecto el subdominio oficial en producción) se le agrega al final. No se quita nada. |
 
 ## 2. Ruteo por host
 

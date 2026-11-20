@@ -253,7 +253,7 @@ class ContadorYEstadoTests(BaseAniversario):
 
     def test_video_vertical_con_diseno_de_reserva(self):
         r = self.client.get("/")
-        self.assertContains(r, "vd-vacio")
+        self.assertNotContains(r, "vd-vacio")  # el inicio ya no lleva video
         r = self.client.get(f"/candidato/{self.miss.pk}/")
         self.assertContains(r, "vd-vacio")
         self.assertContains(r, "Muy pronto")
@@ -403,7 +403,10 @@ class PaginasConFotosTests(MediaTestCase):
         self.assertEqual(r.content.decode().count("/media/aniversario/candidatos/"), 3)
         r = self.client.get(f"/candidato/{self.cand.pk}/")
         self.assertContains(r, "1 / 3")
-        self.assertContains(r, "data-ir=", count=3)
+        # Orden del perfil: fotos, video, ficha y botones al final
+        html = r.content.decode()
+        orden = [html.index(x) for x in ('class="pf-fotos', 'class="pf-video', 'class="pf-ficha', 'class="pf-acciones')]
+        self.assertEqual(orden, sorted(orden))
         self.assertContains(r, 'property="og:image"')
 
     def test_video_subido_se_muestra_con_reproductor(self):

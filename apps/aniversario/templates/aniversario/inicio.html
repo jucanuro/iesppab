@@ -1,12 +1,11 @@
 {% extends "aniversario/base.html" %}{% load aniversario_tags %}
 {% block contenido %}
-<section class="hero"><div class="w hg hg-v"><div class="h-txt">
+<section class="hero"><div class="w hg"><div>
 {% if mi_voto %}<span class="pl">Ya votaste · Comprobante {{ mi_voto.codigo }}</span>{% else %}<span class="pl">{% if estado == "abierto" %}Votación abierta{% elif estado == "pendiente" %}Votación próxima{% else %}Votación cerrada{% endif %} · {{ concurso.nombre }}</span>{% endif %}
 <h1 style="margin-top:22px">Elige a tu <em>miss</em> y a tu <em>mister</em></h1>
-<p class="lead">Conoce a los participantes de cada categoría, mira su video de presentación y vota por tus favoritos. Tu voto incluye a tu miss y a tu mister.</p>
+<p class="lead">Conoce a los participantes de cada categoría, mira sus fotos y su video, y vota por tus favoritos. Tu voto incluye a tu miss y a tu mister.</p>
 <div style="display:flex;flex-wrap:wrap;gap:12px">{% if mi_voto %}<a class="btn pri" href="{% url 'aniversario:votar' %}">Ver mi comprobante</a>{% elif estado == "abierto" %}<a class="btn pri" href="{% url 'aniversario:votar' %}">Votar ahora</a>{% endif %}<a class="btn sec" href="#miss">Ver participantes</a></div></div>
-<div class="h-vid">{% include "aniversario/_video.html" with obj=concurso titulo="Video de presentación del concurso" etiqueta="Presentación del concurso" pie="El video del concurso se publicará aquí." %}</div>
-<div class="bt h-bt"><div class="cdk"><div><span>{% if estado == "pendiente" %}La votación abre en{% elif estado == "abierto" %}La votación cierra en{% else %}La votación cerró{% endif %}</span><span>{% if estado == "pendiente" %}{{ concurso.fecha_inicio|date:"j M · g:i a" }}{% else %}{{ concurso.fecha_cierre|date:"j M · g:i a" }}{% endif %}</span></div>
+<div class="bt"><div class="cdk"><div><span>{% if estado == "pendiente" %}La votación abre en{% elif estado == "abierto" %}La votación cierra en{% else %}La votación cerró{% endif %}</span><span>{% if estado == "pendiente" %}{{ concurso.fecha_inicio|date:"j M · g:i a" }}{% else %}{{ concurso.fecha_cierre|date:"j M · g:i a" }}{% endif %}</span></div>
 <div class="un" id="cd" data-fin="{% if estado == 'pendiente' %}{{ concurso.fecha_inicio|date:'c' }}{% else %}{{ concurso.fecha_cierre|date:'c' }}{% endif %}"><div><b>00</b><span>días</span></div><div><b>00</b><span>horas</span></div><div><b>00</b><span>min</span></div><div><b>00</b><span>seg</span></div></div></div>
 <div class="bx g"><b>{{ misses|length }}+{{ misters|length }}</b><span>candidatas y candidatos</span></div>{% if concurso.mostrar_conteo %}<div class="bx sec"><b class="tot" data-total>{{ total_votos }}</b><span>votos emitidos · en vivo</span></div>{% else %}<div class="bx sec" style="justify-content:flex-end"><span>Un solo voto: tu miss y tu mister.</span></div>{% endif %}</div></div></section>
 

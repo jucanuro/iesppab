@@ -11,7 +11,7 @@ from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
 from . import services
-from .models import Candidato, Concurso, Voto
+from .models import MAX_FOTOS, VIDEO_MAX_MB, Candidato, Concurso, FotoCandidato, Voto
 
 HOST = "aniversario.testserver"
 AJUSTES = dict(
@@ -262,34 +262,138 @@ class IpTests(TestCase):
         self.assertEqual(services.obtener_ip(req), "127.0.0.1")
 
 
-class FotoTests(TestCase):
+def _png(w=3000, h=2000):
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGBA", (w, h), (200, 10, 10, 255)).save(buf, "PNG")
+    return SimpleUploadedFile("a.png", buf.getvalue(), content_type="image/png")
+
+
+class MediaTestCase(TestCase):
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, True)
+        ajuste = override_settings(MEDIA_ROOT=self.media)
+        ajuste.enable()
+        self.addCleanup(ajuste.disable)
+        self.concurso = crear_concurso()
+        self.cand = Candidato.objects.create(
+            concurso=self.concurso, categoria="miss", numero=1, nombres="Ana Ruiz", ciclo="I", carrera="X",
+        )
+
+
+class FotoTests(MediaTestCase):
     def test_foto_se_optimiza(self):
         from PIL import Image
 
-        buf = BytesIO()
-        Image.new("RGBA", (3000, 2000), (200, 10, 10, 255)).save(buf, "PNG")
-        concurso = crear_concurso()
-        c = Candidato(concurso=concurso, categoria="miss", numero=1, nombres="A", ciclo="I", carrera="X",
-                      foto_1=SimpleUploadedFile("a.png", buf.getvalue(), content_type="image/png"))
-        c.full_clean()
-        with self.settings(MEDIA_ROOT=self._tmp()):
-            c.save()
-            self.assertTrue(c.foto_1.name.startswith("aniversario/candidatos/"))
-            self.assertTrue(c.foto_1.name.endswith(".jpg"))
-            with Image.open(c.foto_1.path) as img:
-                self.assertEqual(img.format, "JPEG")
-                self.assertEqual(max(img.size), 1200)
+        f = FotoCandidato(candidato=self.cand, imagen=_png())
+        f.full_clean()
+        f.save()
+        self.assertTrue(f.imagen.name.startswith("aniversario/candidatos/"))
+        self.assertTrue(f.imagen.name.endswith(".jpg"))
+        with Image.open(f.imagen.path) as img:
+            self.assertEqual(img.format, "JPEG")
+            self.assertEqual(max(img.size), 1200)
 
     def test_archivo_falso_se_rechaza(self):
-        concurso = crear_concurso()
-        c = Candidato(concurso=concurso, categoria="miss", numero=1, nombres="A", ciclo="I", carrera="X",
-                      foto_1=SimpleUploadedFile("a.jpg", b"<?php echo 1; ?>", content_type="image/jpeg"))
+        f = FotoCandidato(candidato=self.cand,
+                          imagen=SimpleUploadedFile("a.jpg", b"<?php echo 1; ?>", content_type="image/jpeg"))
         with self.assertRaises(ValidationError):
-            c.full_clean()
+            f.full_clean()
 
-    def _tmp(self):
-        import tempfile
+    def test_maximo_cinco_fotos(self):
+        for i in range(MAX_FOTOS):
+            FotoCandidato.objects.create(candidato=self.cand, imagen=_png(40, 50), orden=i)
+        sexta = FotoCandidato(candidato=self.cand, imagen=_png(40, 50))
+        with self.assertRaises(ValidationError):
+            sexta.full_clean()
 
-        d = tempfile.mkdtemp()
-        self.addCleanup(__import__("shutil").rmtree, d, True)
-        return d
+    def test_orden_y_borrado_de_archivo(self):
+        import os
+
+        b = FotoCandidato.objects.create(candidato=self.cand, imagen=_png(40, 50), orden=2)
+        a = FotoCandidato.objects.create(candidato=self.cand, imagen=_png(40, 50), orden=1)
+        self.assertEqual([f.pk for f in self.cand.fotos], [a.pk, b.pk])
+        self.assertEqual(self.cand.foto_principal, a)
+        ruta = a.imagen.path
+        self.cand.delete()  # cascada
+        self.assertFalse(os.path.exists(ruta))
+
+
+class VideoTests(MediaTestCase):
+    def test_video_falso_se_rechaza(self):
+        self.cand.video_archivo = SimpleUploadedFile("v.mp4", b"esto no es video" * 100, content_type="video/mp4")
+        with self.assertRaises(ValidationError) as ctx:
+            self.cand.full_clean()
+        self.assertIn("video_archivo", ctx.exception.message_dict)
+
+    def test_video_demasiado_grande(self):
+        archivo = SimpleUploadedFile("v.mp4", b"\x00\x00\x00\x18ftypmp42" + b"0" * 100, content_type="video/mp4")
+        archivo.size = (VIDEO_MAX_MB + 1) * 1024 * 1024
+        self.cand.video_archivo = archivo
+        with self.assertRaises(ValidationError):
+            self.cand.full_clean()
+
+    def test_video_mp4_valido(self):
+        cabecera = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom" + b"\x00" * 200
+        self.cand.video_archivo = SimpleUploadedFile("v.mp4", cabecera, content_type="video/mp4")
+        self.cand.full_clean()
+
+
+@override_settings(**AJUSTES)
+class PaginasConFotosTests(MediaTestCase):
+    def setUp(self):
+        super().setUp()
+        caches["aniversario"].clear()
+        for i in range(3):
+            FotoCandidato.objects.create(candidato=self.cand, imagen=_png(40, 50), orden=i)
+        self.client.defaults["HTTP_HOST"] = HOST
+
+    def test_carrusel_en_tarjeta_y_perfil(self):
+        r = self.client.get("/")
+        self.assertContains(r, "data-car", count=1)
+        self.assertContains(r, 'class="puntos"')
+        self.assertEqual(r.content.decode().count("/media/aniversario/candidatos/"), 3)
+        r = self.client.get(f"/candidato/{self.cand.pk}/")
+        self.assertContains(r, "1 / 3")
+        self.assertContains(r, "data-ir=", count=3)
+        self.assertContains(r, 'property="og:image"')
+
+    def test_video_subido_se_muestra_con_reproductor(self):
+        Candidato.objects.filter(pk=self.cand.pk).update(video_archivo="aniversario/videos/x.mp4")
+        r = self.client.get(f"/candidato/{self.cand.pk}/")
+        self.assertContains(r, "<video controls")
+
+    def test_video_enlace_youtube(self):
+        Candidato.objects.filter(pk=self.cand.pk).update(video_url="https://youtu.be/abc123XYZ_-")
+        r = self.client.get(f"/candidato/{self.cand.pk}/")
+        self.assertContains(r, "youtube-nocookie.com/embed/abc123XYZ_-")
+
+
+class AdminTests(MediaTestCase):
+    def setUp(self):
+        super().setUp()
+        from django.contrib.auth import get_user_model
+
+        self.admin = get_user_model().objects.create_superuser(
+            username="root", email="root@example.com", password="x-Clave-123"
+        )
+        self.client.force_login(self.admin)
+
+    def test_admin_candidato_con_fotos_en_linea(self):
+        r = self.client.get(f"/admin/aniversario/candidato/{self.cand.pk}/change/")
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "fotos_rel-TOTAL_FORMS")
+        self.assertContains(r, 'name="fotos_rel-MAX_NUM_FORMS" value="5"')
+        self.assertEqual(self.client.get("/admin/aniversario/candidato/").status_code, 200)
+
+    def test_exportar_csv(self):
+        r = self.client.post("/admin/aniversario/concurso/", {
+            "action": "exportar_resultados", "_selected_action": [self.concurso.pk],
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("Ana Ruiz", r.content.decode("utf-8-sig"))

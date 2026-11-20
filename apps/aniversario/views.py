@@ -21,6 +21,7 @@ def _concurso_o_404() -> Concurso:
 def _candidatos(concurso, categoria):
     return list(
         Candidato.objects.filter(concurso=concurso, categoria=categoria, activo=True)
+        .prefetch_related("fotos_rel")
         .order_by("orden", "numero")
     )
 
@@ -78,7 +79,10 @@ def inicio(request):
 @require_GET
 def candidato(request, pk):
     concurso = _concurso_o_404()
-    cand = get_object_or_404(Candidato, pk=pk, concurso=concurso, activo=True)
+    cand = get_object_or_404(
+        Candidato.objects.prefetch_related("fotos_rel"), pk=pk, concurso=concurso, activo=True
+    )
+    principal = cand.foto_principal
     campo = "miss" if cand.es_miss else "mister"
     destino = reverse("aniversario:votar") if cand.es_miss else reverse("aniversario:votar_mister")
     return render(
@@ -89,7 +93,7 @@ def candidato(request, pk):
             c=cand,
             url_elegir=f"{destino}?{campo}={cand.pk}",
             url_absoluta=request.build_absolute_uri(),
-            og_imagen=request.build_absolute_uri(cand.foto_1.url) if cand.foto_1 else "",
+            og_imagen=request.build_absolute_uri(principal.imagen.url) if principal else "",
         ),
     )
 

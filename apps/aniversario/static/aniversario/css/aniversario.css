@@ -96,7 +96,6 @@ input[type=text]{width:100%;height:54px;border:1.5px solid var(--ln);border-radi
 .ph img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .ph span,.ph .ar{z-index:1}
 .gal .ph{aspect-ratio:4/5}
-.gal .ph img{display:none}.gal .ph img.on{display:block}
 .th button{overflow:hidden;padding:0;position:relative}.th button img{width:100%;height:100%;object-fit:cover;display:block}
 .vd iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .vd.vacio{display:grid;place-items:center;font-size:14px;color:#B8CCC6}
@@ -114,3 +113,18 @@ label.cd{cursor:pointer}
 .er{background:#FDECEA;border-radius:14px;padding:10px 12px}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]) .er{background:#3A1712}}
 @media(max-width:560px){.hd{flex-wrap:wrap}.hd nav{width:100%;margin:0 -6px}.lg b{font-size:14px}}
+/* Carrusel de fotos (scroll-snap: se desliza con el dedo aun sin JS) */
+.car .pista{position:absolute;inset:0;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.car .pista::-webkit-scrollbar{display:none}
+.car .pista img,.car .pista .sinfoto{position:static;flex:0 0 100%;width:100%;height:100%;object-fit:cover;scroll-snap-align:start;scroll-snap-stop:always}
+.car .pista .sinfoto svg{position:static}
+.ph .car-ar{position:absolute;top:50%;padding:0;color:var(--ink);transform:translateY(-50%);z-index:2;width:44px;height:44px;border-radius:50%;background:var(--bg);color:var(--ink);display:grid;place-items:center;font:700 24px/1 Inter,sans-serif;cursor:pointer;box-shadow:0 4px 16px rgba(12,31,27,.2);opacity:0;transition:opacity .15s;user-select:none}
+.ph .car-ar.prev{left:10px}.ph .car-ar.next{right:10px}
+.car:hover .car-ar,.car-ar:focus-visible,.car-g .car-ar{opacity:1}
+@media(hover:none){.cd .car-ar{display:none}}
+.car-g .car-ar{width:48px;height:48px}
+.ph .car-ar{right:auto}.ph .car-ar.next{left:auto}
+.ph .puntos{position:absolute;top:auto;bottom:10px;padding:0;background:none;border-radius:0;font-size:0;left:0;right:0;z-index:2;display:flex;justify-content:center;gap:6px;pointer-events:none}
+.puntos i{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 0 0 1px rgba(0,0,0,.15);transition:width .2s}
+.puntos i.on{width:18px;border-radius:4px;background:#fff}
+.vd-arch video{position:absolute;inset:0;width:100%;height:100%;background:#000}

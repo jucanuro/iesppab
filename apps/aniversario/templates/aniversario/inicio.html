@@ -1,6 +1,6 @@
 {% extends "aniversario/base.html" %}{% load aniversario_tags %}
 {% block contenido %}
-{% if concurso.video_url %}<div class="hv">{% include "aniversario/_video.html" with url=concurso.video_url titulo="Video de presentación del concurso" %}</div>{% endif %}
+{% if concurso.video_archivo or concurso.video_url %}<div class="hv">{% include "aniversario/_video.html" with obj=concurso titulo="Video de presentación del concurso" %}</div>{% endif %}
 <section class="hero"><div class="w hg"><div>
 <span class="pl">{% if estado == "abierto" %}Votación abierta{% elif estado == "pendiente" %}Votación próxima{% else %}Votación cerrada{% endif %} · {{ concurso.nombre }}</span>
 <h1 style="margin-top:22px">Elige a tu <em>miss</em> y a tu <em>mister</em></h1>
@@ -24,7 +24,7 @@
 <details><summary>Un voto por equipo</summary><p>Cada equipo (celular o computadora) puede votar una sola vez. Un voto incluye a tu Miss y a tu Mister, y ambos son obligatorios.</p></details>
 <details><summary>Voto definitivo</summary><p>Una vez confirmado, el voto no puede modificarse ni anularse. Recibes un comprobante con un código.</p></details>
 {% if concurso.mostrar_conteo %}<details><summary>Resultados en vivo</summary><p>El conteo de votos de cada participante se actualiza durante toda la votación y es visible para todos.</p></details>{% endif %}
-<details><summary>Videos y fotos</summary><p>Cada participante presenta dos fotos y un video corto de presentación.</p></details>
+<details><summary>Videos y fotos</summary><p>Cada participante presenta hasta cinco fotos y un video corto de presentación.</p></details>
 <details><summary>Datos personales (Ley 29733)</summary><p>Para garantizar un voto por equipo guardamos la dirección IP de la conexión, un identificador aleatorio del equipo (cookie) y una huella cifrada del navegador. No pedimos DNI, nombre ni correo. Estos datos se usan solo para controlar el voto único y se eliminan al cerrar el concurso.</p></details>
 </div></div></section>
 {% endblock %}

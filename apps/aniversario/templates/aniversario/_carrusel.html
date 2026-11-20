@@ -1,0 +1,6 @@
+{% load aniversario_tags %}{% with fotos=c.fotos %}<div class="ph car{% if grande %} car-g{% endif %}" data-car>
+<div class="pista" data-pista tabindex="-1">{% for f in fotos %}<img src="{{ f.imagen.url }}" alt="Foto {{ forloop.counter }} de {{ c.nombres }}" {% if not forloop.first or not grande %}loading="lazy"{% endif %} decoding="async">{% empty %}<div class="sinfoto">{% include "aniversario/_avatar.html" %}</div>{% endfor %}</div>
+<span class="l">Ciclo {{ c.ciclo }}</span>{% if grande and fotos|length > 1 %}<span class="r" data-pos>1 / {{ fotos|length }}</span>{% elif not grande %}<span class="r">{{ c.numero|dos_digitos }}</span>{% endif %}
+{% if fotos|length > 1 %}<span class="car-ar prev" role="button" tabindex="0" data-mover="-1" aria-label="Foto anterior">‹</span><span class="car-ar next" role="button" tabindex="0" data-mover="1" aria-label="Foto siguiente">›</span>
+<span class="puntos" aria-hidden="true">{% for f in fotos %}<i class="{% if forloop.first %}on{% endif %}"></i>{% endfor %}</span>{% endif %}
+</div>{% endwith %}

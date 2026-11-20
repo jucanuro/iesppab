@@ -7,7 +7,7 @@ from django.http import HttpResponse
 from django.utils.html import format_html
 
 from . import services
-from .models import Candidato, Concurso, Voto
+from .models import MAX_FOTOS, VIDEO_MAX_MB, Candidato, Concurso, FotoCandidato, Voto
 
 
 @admin.action(description="Exportar resultados a CSV")
@@ -43,38 +43,63 @@ class ConcursoAdmin(admin.ModelAdmin):
         return obj.votos.count()
 
 
+class FotoInline(admin.TabularInline):
+    model = FotoCandidato
+    extra = 1
+    max_num = MAX_FOTOS
+    validate_max = True
+    fields = ("vista", "imagen", "orden")
+    readonly_fields = ("vista",)
+    verbose_name_plural = f"Fotos (máximo {MAX_FOTOS}; la de menor orden es la principal)"
+
+    @admin.display(description="vista previa")
+    def vista(self, obj):
+        if obj and obj.pk and obj.imagen:
+            return format_html('<img src="{}" style="height:110px;border-radius:8px">', obj.imagen.url)
+        return "—"
+
+    def get_formset(self, request, obj=None, **kwargs):
+        kwargs["validate_max"] = True
+        return super().get_formset(request, obj, **kwargs)
+
+
 @admin.register(Candidato)
 class CandidatoAdmin(admin.ModelAdmin):
-    list_display = ("miniatura", "numero", "nombres", "categoria", "ciclo", "carrera", "orden", "activo")
+    list_display = ("miniatura", "numero", "nombres", "categoria", "ciclo", "carrera", "num_fotos", "tiene_video", "orden", "activo")
     list_display_links = ("miniatura", "nombres")
     list_editable = ("orden", "activo")
     list_filter = ("concurso", "categoria", "ciclo", "activo")
     search_fields = ("nombres", "carrera")
-    readonly_fields = ("vista_previa",)
+    inlines = [FotoInline]
     fieldsets = (
         (None, {"fields": ("concurso", "categoria", "numero", "nombres", "orden", "activo")}),
         ("Datos", {"fields": ("ciclo", "carrera", "edad", "procedencia", "biografia", "frase")}),
-        ("Fotos y video", {
-            "fields": ("foto_1", "foto_2", "vista_previa", "video_url"),
-            "description": "Fotos JPG, PNG o WebP. Se reducen a 1200 px y se guardan como JPEG.",
+        ("Video de presentación", {
+            "fields": ("video_archivo", "video_url"),
+            "description": (
+                f"Sube un MP4/WebM de hasta {VIDEO_MAX_MB} MB o pega un enlace de YouTube/Facebook. "
+                "Las fotos (JPG, PNG o WebP) van abajo; se reducen a 1200 px y se guardan como JPEG."
+            ),
         }),
     )
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("fotos_rel")
+
     @admin.display(description="foto")
     def miniatura(self, obj):
-        if obj.foto_1:
-            return format_html('<img src="{}" style="height:56px;width:45px;object-fit:cover;border-radius:6px">', obj.foto_1.url)
+        foto = obj.foto_principal
+        if foto:
+            return format_html('<img src="{}" style="height:56px;width:45px;object-fit:cover;border-radius:6px">', foto.imagen.url)
         return "—"
 
-    @admin.display(description="vista previa")
-    def vista_previa(self, obj):
-        fotos = [f for f in (obj.foto_1, obj.foto_2) if f]
-        if not fotos:
-            return "Sin fotos"
-        return format_html(
-            "".join('<img src="{}" style="height:200px;margin-right:8px;border-radius:8px">' for _ in fotos),
-            *[f.url for f in fotos],
-        )
+    @admin.display(description="fotos")
+    def num_fotos(self, obj):
+        return f"{len(obj.fotos)}/{MAX_FOTOS}"
+
+    @admin.display(description="video", boolean=True)
+    def tiene_video(self, obj):
+        return bool(obj.video_archivo or obj.video_url)
 
 
 @admin.register(Voto)

@@ -1,6 +1,6 @@
 # ORI-ANIV — Votación Miss y Mister del aniversario
 
-Estado: Borrador para aprobación del Gerente TI · 2026-11-20
+Estado: v2 · 2026-11-20 (v1 en PR #8; v2: hasta 5 fotos en carrusel y video subido o enlazado)
 Referencia visual: `docs/aniversario/maqueta.html`
 
 ## 1. Objetivo y límites
@@ -34,11 +34,14 @@ proyecto Django y servidor que originalidad. Es temporal: se retira al terminar 
 
 ## 3. Modelos
 
-- `Concurso`: `nombre`, `fecha_inicio`, `fecha_cierre`, `video_url`, `mostrar_conteo` (bool),
+- `Concurso`: `nombre`, `fecha_inicio`, `fecha_cierre`, `video_archivo` (opcional), `video_url`, `mostrar_conteo` (bool),
   `max_votos_por_ip` (int, default 1), `activo`, `bases_pdf` (opcional). Se usa el más reciente con `activo=True`.
 - `Candidato`: FK `concurso`, `categoria` (`miss`/`mister`), `numero`, `nombres`, `ciclo`, `carrera`, `edad`,
-  `procedencia`, `biografia`, `frase`, `foto_1`, `foto_2`, `video_url` (opcional), `orden`, `activo`.
+  `procedencia`, `biografia`, `frase`, `video_archivo` (opcional), `video_url` (opcional), `orden`, `activo`.
   Único (`concurso`, `categoria`, `numero`).
+- `FotoCandidato`: FK `candidato`, `imagen`, `orden`. Máximo 5 por candidato (validado en el modelo y en el
+  formulario en línea del admin). La de menor `orden` es la principal (tarjeta de voto, Open Graph). Al borrar
+  una foto o un candidato se borra el archivo.
 - `Voto`: FK `concurso`, `miss` y `mister` (FK `Candidato`, PROTECT), `codigo` único (`AN-XXXX-XXXX`),
   `ip`, `token_dispositivo` único, `user_agent_hash` (SHA-256), `creado`. Índices en `ip` y `creado`.
   `clean()` valida que `miss` sea categoría miss, `mister` sea mister, ambos activos y del mismo concurso.
@@ -78,7 +81,12 @@ Un voto = 1 Miss + 1 Mister, ambos obligatorios.
 - CSS de la maqueta en `static/aniversario/css/aniversario.css`; JS en `static/aniversario/js/aniversario.js`
   solo para cuenta regresiva, galería, resaltado de selección y refresco del conteo (25 s, `/api/conteo/`).
 - Mobile-first, breakpoints 860/560 px, áreas táctiles ≥44 px, `safe-area-inset`, modo oscuro de la maqueta.
-- Videos embebidos de YouTube (`youtube-nocookie`) o Facebook; nunca servidos por nuestro servidor.
+- Video: los encargados lo **suben** (MP4/WebM, máx. 60 MB, tipo real verificado con python-magic) y se
+  reproduce con `<video>` nativo servido por Nginx desde `media/aniversario/videos/`; o pegan un enlace de
+  YouTube/Facebook (`youtube-nocookie`). Si hay archivo, tiene prioridad. Recomendado subir a YouTube cuando el
+  tráfico sea alto: no consume ancho de banda ni disco del EC2.
+- Fotos en **carrusel** (scroll-snap: se desliza con el dedo incluso sin JS) en las tarjetas de inicio, en la
+  grilla de voto y en el perfil (con miniaturas, flechas y puntos). Las flechas de la tarjeta no abren el perfil.
 - Fotos: JPEG/PNG/WebP validados con Pillow; al guardar se reescalan a 1200 px de lado largo y se guardan como
   JPEG calidad 80 en `media/aniversario/candidatos/`. `loading="lazy"`. Avatar SVG solo si falta la foto.
 - Open Graph por candidato (nombre + foto_1) para WhatsApp/Facebook.
@@ -88,7 +96,8 @@ Un voto = 1 Miss + 1 Mister, ambos obligatorios.
 
 ## 7. Admin
 
-- `ConcursoAdmin`, `CandidatoAdmin` (filtros categoría/ciclo, `orden` editable en lista, vista previa de fotos).
+- `ConcursoAdmin`, `CandidatoAdmin` (filtros categoría/ciclo, `orden` editable en lista, columnas fotos n/5 y
+  video, fotos en línea con vista previa y orden, máximo 5).
 - `VotoAdmin` solo lectura (sin agregar/editar; borrar solo superusuario para el voto de prueba), búsqueda por código.
 - Acción "Exportar resultados a CSV" en `ConcursoAdmin` (categoría, puesto, número, nombre, votos, %).
 

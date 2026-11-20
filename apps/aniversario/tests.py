@@ -196,9 +196,9 @@ class FlujoYConteoTests(BaseAniversario):
         self.votar(client=self.nuevo_cliente(), ip="1.1.1.2")
         self.votar(client=self.nuevo_cliente(), miss=self.miss2, ip="1.1.1.3")
         datos = services.calcular_conteo(self.concurso)
-        self.assertEqual(datos[self.miss.pk], {"votos": 2, "pct": 67, "puesto": 1})
-        self.assertEqual(datos[self.miss2.pk], {"votos": 1, "pct": 33, "puesto": 2})
-        self.assertEqual(datos[self.mister.pk], {"votos": 3, "pct": 100, "puesto": 1})
+        self.assertLessEqual({"votos": 2, "pct": 67, "puesto": 1}.items(), datos[self.miss.pk].items())
+        self.assertLessEqual({"votos": 1, "pct": 33, "puesto": 2}.items(), datos[self.miss2.pk].items())
+        self.assertLessEqual({"votos": 3, "pct": 100, "puesto": 1}.items(), datos[self.mister.pk].items())
         caches["aniversario"].clear()
         api = self.client.get("/api/conteo/").json()
         self.assertEqual(api["candidatos"][str(self.miss.pk)]["votos"], 2)
@@ -214,6 +214,49 @@ class FlujoYConteoTests(BaseAniversario):
         r = self.client.get("/")
         self.assertEqual(r.status_code, 404)
         self.assertContains(r, "Página no encontrada", status_code=404)
+
+
+@override_settings(**AJUSTES)
+class ContadorYEstadoTests(BaseAniversario):
+    def test_mi_voto_se_ve_al_instante_aunque_el_conteo_este_cacheado(self):
+        api = self.client.get("/api/conteo/").json()  # deja el conteo en caché con 0 votos
+        self.assertEqual(api["total"], 0)
+        self.votar()
+        api = self.client.get("/api/conteo/").json()
+        self.assertEqual(api["total"], 1)
+        self.assertEqual(api["candidatos"][str(self.miss.pk)], {"votos": 1, "pct": 100, "puesto": 1})
+        self.assertEqual(api["candidatos"][str(self.miss2.pk)]["puesto"], 2)
+        self.assertNotIn("cat", api["candidatos"][str(self.miss.pk)])
+
+    def test_total_en_el_inicio(self):
+        self.votar()
+        r = self.client.get("/")
+        self.assertContains(r, "data-total>1<")
+        self.assertContains(r, "votos emitidos")
+
+    def test_estado_ya_votaste_fijo_en_todo_el_sitio(self):
+        r = self.client.get("/")
+        self.assertNotContains(r, "Ya votaste")
+        self.votar()
+        codigo = Voto.objects.get().codigo
+        r = self.client.get("/")
+        self.assertContains(r, "Ver mi comprobante")
+        self.assertContains(r, codigo)
+        self.assertContains(r, "Tu voto ✓", count=2)
+        r = self.client.get(f"/candidato/{self.miss.pk}/")
+        self.assertContains(r, "tiene tu voto")
+        self.assertNotContains(r, "Elegir a ")
+        r = self.client.get(f"/candidato/{self.miss2.pk}/")
+        self.assertContains(r, "Ya votaste")
+        # Otro equipo no ve el estado
+        self.assertNotContains(self.nuevo_cliente().get("/"), codigo)
+
+    def test_video_vertical_con_diseno_de_reserva(self):
+        r = self.client.get("/")
+        self.assertContains(r, "vd-vacio")
+        r = self.client.get(f"/candidato/{self.miss.pk}/")
+        self.assertContains(r, "vd-vacio")
+        self.assertContains(r, "Muy pronto")
 
 
 @override_settings(**AJUSTES)
@@ -372,6 +415,13 @@ class PaginasConFotosTests(MediaTestCase):
         Candidato.objects.filter(pk=self.cand.pk).update(video_url="https://youtu.be/abc123XYZ_-")
         r = self.client.get(f"/candidato/{self.cand.pk}/")
         self.assertContains(r, "youtube-nocookie.com/embed/abc123XYZ_-")
+
+
+    def test_encuadre_de_foto(self):
+        FotoCandidato.objects.filter(candidato=self.cand, orden=0).update(ajuste="contain", posicion="center top")
+        r = self.client.get(f"/candidato/{self.cand.pk}/")
+        self.assertContains(r, "object-fit:contain;object-position:center top")
+        self.assertContains(r, 'class="fondo"')
 
 
 class AdminTests(MediaTestCase):

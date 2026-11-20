@@ -26,9 +26,14 @@ def _candidatos(concurso, categoria):
     )
 
 
-def _contexto_base(concurso, **extra):
+def _contexto_base(concurso, request=None, **extra):
     datos = {"concurso": concurso, "estado": concurso.estado()}
-    datos["conteo"] = services.conteo(concurso) if concurso.mostrar_conteo else {}
+    res = services.resumen(concurso) if concurso.mostrar_conteo else {"candidatos": {}, "total": 0}
+    datos["conteo"] = res["candidatos"]
+    datos["total_votos"] = res["total"]
+    if request is not None and "mi_voto" not in extra:
+        # Estado "ya votaste" fijo en todo el sitio para este equipo.
+        datos["mi_voto"] = services.voto_del_dispositivo(services.leer_token(request))
     datos.update(extra)
     return datos
 
@@ -56,7 +61,7 @@ def _gracias(request, concurso, voto, token, status=200):
     response = render(
         request,
         "aniversario/gracias.html",
-        _contexto_base(concurso, voto=voto),
+        _contexto_base(concurso, voto=voto, mi_voto=voto),
         status=status,
     )
     return _con_token(request, response, concurso, token)
@@ -70,6 +75,7 @@ def inicio(request):
         "aniversario/inicio.html",
         _contexto_base(
             concurso,
+            request,
             misses=_candidatos(concurso, Candidato.MISS),
             misters=_candidatos(concurso, Candidato.MISTER),
         ),
@@ -90,6 +96,7 @@ def candidato(request, pk):
         "aniversario/candidato.html",
         _contexto_base(
             concurso,
+            request,
             c=cand,
             url_elegir=f"{destino}?{campo}={cand.pk}",
             url_absoluta=request.build_absolute_uri(),
@@ -202,11 +209,16 @@ def api_conteo(request):
     concurso = _concurso_o_404()
     if not concurso.mostrar_conteo:
         return JsonResponse({"visible": False, "candidatos": {}})
-    datos = services.conteo(concurso)
-    response = JsonResponse(
-        {"visible": True, "candidatos": {str(k): v for k, v in datos.items()}}
-    )
-    response["Cache-Control"] = "public, max-age=15"
+    datos = services.resumen(concurso)
+    response = JsonResponse({
+        "visible": True,
+        "total": datos["total"],
+        "candidatos": {
+            str(k): {"votos": v["votos"], "pct": v["pct"], "puesto": v["puesto"]}
+            for k, v in datos["candidatos"].items()
+        },
+    })
+    response["Cache-Control"] = "no-cache"
     return response
 
 

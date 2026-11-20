@@ -1,1 +1,1 @@
-{% with foto=c.foto_principal %}{% if foto %}<img src="{{ foto.imagen.url }}" alt="Foto de {{ c.nombres }}" loading="lazy" decoding="async">{% else %}{% include "aniversario/_avatar.html" with c=c %}{% endif %}{% endwith %}
+{% with foto=c.foto_principal %}{% if foto %}<img src="{{ foto.imagen.url }}" alt="Foto de {{ c.nombres }}" style="object-fit:cover;object-position:{{ foto.posicion }}" loading="lazy" decoding="async">{% else %}{% include "aniversario/_avatar.html" with c=c %}{% endif %}{% endwith %}

@@ -145,42 +145,66 @@ def _clave_conteo(concurso_id) -> str:
     return f"aniv:conteo:{concurso_id}"
 
 
-def calcular_conteo(concurso: Concurso) -> dict[int, dict]:
-    """{candidato_id: {votos, pct, puesto}} por agregación, sin contadores mutables."""
-    miss = dict(
-        Voto.objects.filter(concurso=concurso)
-        .values_list("miss_id").annotate(n=Count("id")).values_list("miss_id", "n")
-    )
-    mister = dict(
-        Voto.objects.filter(concurso=concurso)
-        .values_list("mister_id").annotate(n=Count("id")).values_list("mister_id", "n")
-    )
+def _rankear(votos_por_candidato: dict[int, tuple[str, int]]) -> dict[int, dict]:
+    """{id: (categoria, votos)} → {id: {votos, pct, puesto, cat}} con % y puesto por categoría."""
     resultado: dict[int, dict] = {}
-    candidatos = Candidato.objects.filter(concurso=concurso, activo=True).values_list(
-        "id", "categoria"
-    )
-    por_categoria: dict[str, list[tuple[int, int]]] = {Candidato.MISS: [], Candidato.MISTER: []}
-    for cid, cat in candidatos:
-        votos = (miss if cat == Candidato.MISS else mister).get(cid, 0)
-        por_categoria[cat].append((cid, votos))
-    for filas in por_categoria.values():
+    for cat in (Candidato.MISS, Candidato.MISTER):
+        filas = [(cid, v) for cid, (c, v) in votos_por_candidato.items() if c == cat]
         total = sum(v for _, v in filas)
         for cid, votos in filas:
             resultado[cid] = {
                 "votos": votos,
                 "pct": round(votos * 100 / total) if total else 0,
                 "puesto": 1 + sum(1 for _, otro in filas if otro > votos),
+                "cat": cat,
             }
     return resultado
 
 
-def conteo(concurso: Concurso) -> dict[int, dict]:
+def calcular_resumen(concurso: Concurso) -> dict:
+    """Conteo por agregación (sin contadores mutables): {"candidatos": {...}, "total": n}."""
+    votos = Voto.objects.filter(concurso=concurso)
+    miss = dict(votos.values_list("miss_id").annotate(n=Count("id")).values_list("miss_id", "n"))
+    mister = dict(votos.values_list("mister_id").annotate(n=Count("id")).values_list("mister_id", "n"))
+    base = {
+        cid: (cat, (miss if cat == Candidato.MISS else mister).get(cid, 0))
+        for cid, cat in Candidato.objects.filter(concurso=concurso, activo=True).values_list("id", "categoria")
+    }
+    return {"candidatos": _rankear(base), "total": votos.count()}
+
+
+def calcular_conteo(concurso: Concurso) -> dict[int, dict]:
+    return calcular_resumen(concurso)["candidatos"]
+
+
+def resumen(concurso: Concurso) -> dict:
     clave = _clave_conteo(concurso.pk)
     datos = _cache().get(clave)
     if datos is None:
-        datos = calcular_conteo(concurso)
+        datos = calcular_resumen(concurso)
         _cache().set(clave, datos, getattr(settings, "ANIVERSARIO_CONTEO_TTL", 20))
     return datos
+
+
+def conteo(concurso: Concurso) -> dict[int, dict]:
+    return resumen(concurso)["candidatos"]
+
+
+def sumar_voto_en_cache(voto: Voto) -> None:
+    """Refleja el voto recién emitido en el conteo cacheado sin volver a agregar
+    en la BD: quien vota ve su voto contado al instante. El TTL sigue corrigiendo
+    cualquier desfase entre workers."""
+    clave = _clave_conteo(voto.concurso_id)
+    datos = _cache().get(clave)
+    if datos is None:
+        return
+    base = {cid: (d["cat"], d["votos"]) for cid, d in datos["candidatos"].items()}
+    for cid in (voto.miss_id, voto.mister_id):
+        if cid in base:
+            cat, v = base[cid]
+            base[cid] = (cat, v + 1)
+    nuevo = {"candidatos": _rankear(base), "total": datos["total"] + 1}
+    _cache().set(clave, nuevo, getattr(settings, "ANIVERSARIO_CONTEO_TTL", 20))
 
 
 def invalidar_conteo(concurso: Concurso) -> None:
@@ -285,6 +309,7 @@ class VotoService:
             raise VotoError("No se pudo registrar el voto. Inténtalo de nuevo.")
         except ValidationError as exc:
             raise SeleccionInvalidaError(" ".join(exc.messages))
+        sumar_voto_en_cache(voto)
         # El conteo no se invalida aquí: se refresca solo con su TTL (15–30 s)
         # para que la carga de la votación no recalcule el agregado en cada voto.
         logger.info("Voto de aniversario registrado: %s", voto.codigo)

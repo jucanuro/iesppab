@@ -48,14 +48,18 @@ class FotoInline(admin.TabularInline):
     extra = 1
     max_num = MAX_FOTOS
     validate_max = True
-    fields = ("vista", "imagen", "orden")
+    fields = ("vista", "imagen", "ajuste", "posicion", "orden")
     readonly_fields = ("vista",)
     verbose_name_plural = f"Fotos (máximo {MAX_FOTOS}; la de menor orden es la principal)"
 
     @admin.display(description="vista previa")
     def vista(self, obj):
         if obj and obj.pk and obj.imagen:
-            return format_html('<img src="{}" style="height:110px;border-radius:8px">', obj.imagen.url)
+            return format_html(
+                '<div style="width:88px;height:110px;border-radius:8px;overflow:hidden;background:#E6EEEA">'
+                '<img src="{}" style="width:100%;height:100%;object-fit:{};object-position:{}"></div>',
+                obj.imagen.url, obj.ajuste, obj.posicion,
+            )
         return "—"
 
     def get_formset(self, request, obj=None, **kwargs):

@@ -73,13 +73,15 @@
   }
 
   // Conteo en vivo
-  if ($("[data-vt]")) {
+  if ($("[data-vt]") || $("[data-total]")) {
     var refrescar = function () {
       if (document.hidden) return;
       fetch("/api/conteo/", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
           if (!d || !d.visible) return;
+          var tot = $("[data-total]");
+          if (tot && typeof d.total === "number") tot.textContent = d.total.toLocaleString("es-PE");
           $$("[data-vt]").forEach(function (el) {
             var x = d.candidatos[el.dataset.vt];
             if (!x) return;
@@ -90,6 +92,6 @@
         })
         .catch(function () {});
     };
-    setInterval(refrescar, 25000);
+    setInterval(refrescar, 20000);
   }
 })();

@@ -229,6 +229,23 @@ class FotoCandidato(models.Model):
         upload_to=ruta_foto,
         validators=[FileExtensionValidator(FOTO_EXTENSIONES)],
     )
+    AJUSTE_CUBRIR = "cover"
+    AJUSTE_COMPLETA = "contain"
+    AJUSTES = [
+        (AJUSTE_CUBRIR, "Rellenar el marco (recorta los bordes)"),
+        (AJUSTE_COMPLETA, "Foto completa (sin recortar, con fondo difuminado)"),
+    ]
+    POSICIONES = [
+        ("center top", "Arriba (rostro arriba)"),
+        ("center 30%", "Medio-alto"),
+        ("center center", "Centro"),
+        ("center bottom", "Abajo"),
+    ]
+    ajuste = models.CharField("ajuste", max_length=8, choices=AJUSTES, default=AJUSTE_CUBRIR)
+    posicion = models.CharField(
+        "encuadre", max_length=16, choices=POSICIONES, default="center 30%",
+        help_text="Qué parte de la foto se prioriza cuando se recorta.",
+    )
     orden = models.PositiveSmallIntegerField("orden", default=0)
 
     class Meta:

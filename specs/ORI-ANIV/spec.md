@@ -94,6 +94,19 @@ Un voto = 1 Miss + 1 Mister, ambos obligatorios.
   solo para controlar el voto único, y que se eliminan al cerrar el concurso.
 - Se elimina de la maqueta: datos de ejemplo, `BASE` de votos falsos, `setInterval` aleatorio, textos y botón de demostración.
 
+## 6b. Cambios v3 (2026-11-20)
+
+- **Contador:** total de votos emitidos en vivo en el inicio, además del conteo por candidato. El voto recién
+  emitido se suma al conteo cacheado en el acto (sin recalcular en la BD), así quien vota lo ve reflejado;
+  el TTL corrige cualquier desfase entre workers. Refresco por JS cada 20 s.
+- **Estado "ya votaste" fijo:** con la cookie del equipo, todas las páginas muestran la franja con el
+  comprobante, las tarjetas marcan "Tu voto ✓", el inicio cambia a "Ver mi comprobante" y el perfil reemplaza
+  "Elegir" por "Ya votaste" / "tiene tu voto".
+- **Fotos ajustables:** por foto, `ajuste` (rellenar recortando o foto completa con fondo difuminado) y
+  `encuadre` (arriba, medio-alto, centro, abajo), editables en el admin con vista previa.
+- **Video vertical 9:16** (formato reel) en el inicio (columna derecha del héroe) y en el perfil. Si no hay
+  video se muestra un diseño de reserva vertical ("Muy pronto"), nunca el 16:9 de la maqueta.
+
 ## 7. Admin
 
 - `ConcursoAdmin`, `CandidatoAdmin` (filtros categoría/ciclo, `orden` editable en lista, columnas fotos n/5 y

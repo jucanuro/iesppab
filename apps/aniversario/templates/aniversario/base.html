@@ -16,6 +16,7 @@
 </head><body>
 <header><div class="hd"><a class="lg" href="{% url 'aniversario:inicio' %}"><i><img src="{% static 'img/logo-iesppabl.png' %}" alt="" style="width:30px;height:30px;object-fit:contain"></i><span><b>IESP Alfonso Barrantes Lingán</b><small>{{ concurso.nombre|default:"Aniversario" }}</small></span></a>
 <nav aria-label="Principal"><a href="{% url 'aniversario:inicio' %}#miss">Miss</a><a href="{% url 'aniversario:inicio' %}#mister">Mister</a><a href="{% url 'aniversario:inicio' %}#como-votar">Cómo votar</a><a href="{% url 'aniversario:inicio' %}#bases">Bases</a><a class="pri" href="{% url 'aniversario:votar' %}">Votar</a></nav></div></header>
+{% if mi_voto and not voto %}<div class="ya"><div class="w">✓ Ya votaste desde este equipo · Comprobante <b>{{ mi_voto.codigo }}</b> · <a href="{% url 'aniversario:votar' %}">ver</a></div></div>{% endif %}
 <main id="app">{% block contenido %}{% endblock %}</main>
 <footer><div class="w"><div><b class="t" style="font-size:17px;letter-spacing:-.01em;color:var(--ink)">IESP Alfonso Barrantes Lingán</b><br>San Miguel, Cajamarca · Formando docentes</div><div>{{ concurso.nombre|default:"" }}</div></div></footer>
 <script src="{% static 'aniversario/js/aniversario.js' %}" defer></script>

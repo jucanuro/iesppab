@@ -81,6 +81,10 @@ escribir_sitio() {
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;"
   {
     echo "# Generado por deploy/aniversario/instalar_nginx.sh — no editar a mano."
+    # Nombre largo: el tamaño por defecto (64) no alcanza. Solo si nginx.conf no lo define ya.
+    if ! grep -qsE '^\s*server_names_hash_bucket_size' /etc/nginx/nginx.conf /etc/nginx/conf.d/*.conf; then
+      echo "server_names_hash_bucket_size 128;"
+    fi
     echo "limit_req_zone \$binary_remote_addr zone=aniv_voto:10m rate=6r/m;"
     echo
     if [[ -f "$CERT" ]]; then

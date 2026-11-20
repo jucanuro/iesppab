@@ -1,0 +1,3 @@
+{% extends "aniversario/base.html" %}
+{% block titulo %}Vuelve a intentarlo · Aniversario{% endblock %}
+{% block contenido %}<div class="aviso"><h1>El formulario caducó</h1><p>Por seguridad necesitamos que vuelvas a elegir y confirmar tu voto. Aún no se registró ningún voto.</p><a class="btn pri" href="{% url 'aniversario:votar' %}">Volver a votar</a></div>{% endblock %}

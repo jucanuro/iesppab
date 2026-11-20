@@ -117,6 +117,8 @@ INSTALLED_APPS = [
     "apps.reports",
     "apps.certificates",
     "apps.manual",
+    # Votación Miss y Mister del aniversario (temporal, subdominio propio).
+    "apps.aniversario",
 ]
 
 
@@ -125,6 +127,9 @@ AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Solo actúa si el host es ANIVERSARIO_HOST: le asigna su propio urlconf.
+    # Para cualquier otro host (originalidad) no hace nada.
+    "apps.aniversario.middleware.HostUrlconfMiddleware",
     # Sirve los estáticos ya recogidos por collectstatic sin depender de
     # DEBUG ni de un servidor web aparte (útil detrás del túnel Cloudflare).
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -138,6 +143,41 @@ MIDDLEWARE = [
 
 
 ROOT_URLCONF = "config.urls"
+
+
+# --- Aniversario (votación Miss y Mister) -----------------------------------
+# Host público del concurso; vacío = app desactivada en cualquier host.
+ANIVERSARIO_HOST = os.getenv("ANIVERSARIO_HOST", "").strip().lower()
+# Desde qué REMOTE_ADDR se creen X-Real-IP / X-Forwarded-For (Nginx local).
+ANIVERSARIO_PROXIES_CONFIANZA = env_list(
+    "ANIVERSARIO_PROXIES_CONFIANZA",
+    "127.0.0.1,::1",
+)
+ANIVERSARIO_CONTEO_TTL = env_int("ANIVERSARIO_CONTEO_TTL", 20)
+ANIVERSARIO_RATE_POR_MINUTO = env_int("ANIVERSARIO_RATE_POR_MINUTO", 10)
+# Redis para conteo y rate limit compartidos entre workers. Usar un número de
+# BD distinto al de Celery (p. ej. redis://127.0.0.1:6379/3).
+ANIVERSARIO_CACHE_URL = os.getenv("ANIVERSARIO_CACHE_URL", "").strip()
+
+# "default" es exactamente la caché implícita que Django ya usaba (LocMem):
+# originalidad no cambia. Solo se agrega el alias "aniversario".
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    },
+    "aniversario": (
+        {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": ANIVERSARIO_CACHE_URL,
+            "KEY_PREFIX": "aniv",
+        }
+        if ANIVERSARIO_CACHE_URL
+        else {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "aniversario",
+        }
+    ),
+}
 
 
 TEMPLATES = [
@@ -368,7 +408,9 @@ CSRF_COOKIE_SAMESITE = "Lax"
 
 # Página amable de "sesión expirada" en vez del 403 crudo de Django cuando
 # falla la verificación CSRF (formulario enviado con la sesión ya caducada).
-CSRF_FAILURE_VIEW = "apps.core.views.csrf_failure"
+# El despachador del aniversario delega en apps.core.views.csrf_failure para
+# cualquier host que no sea ANIVERSARIO_HOST (originalidad no cambia).
+CSRF_FAILURE_VIEW = "apps.aniversario.views.csrf_failure"
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
 

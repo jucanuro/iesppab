@@ -1,0 +1,13 @@
+{% extends "aniversario/base.html" %}{% load aniversario_tags %}
+{% block titulo %}Elige a tu {{ categoria }} · {{ concurso.nombre }}{% endblock %}
+{% block contenido %}
+{% if estado != "abierto" %}{% include "aniversario/_estado.html" %}{% else %}
+<form class="w" style="padding-top:36px;padding-bottom:72px" method="get" action="{% if es_miss %}{% url 'aniversario:votar_mister' %}{% else %}{% url 'aniversario:confirmar' %}{% endif %}" data-paso>
+{% include "aniversario/_pasos.html" with n=es_miss|yesno:"1,2" %}
+<h1 class="t" style="font-size:clamp(34px,5vw,56px);margin:20px 0 8px">Elige a tu {{ categoria }}</h1>
+<p class="lead" style="margin:0 0 28px">{% if es_miss %}Marca a la candidata que más te gustó. Después elegirás a tu mister.{% else %}Ahora marca al candidato que más te gustó.{% endif %}</p>
+{% if es_miss %}{% if mister_id %}<input type="hidden" name="mister" value="{{ mister_id }}">{% endif %}{% else %}<input type="hidden" name="miss" value="{{ miss_id }}">{% endif %}
+<div class="grid">{% for c in candidatos %}<label class="cd"><input type="radio" name="{{ categoria }}" value="{{ c.pk }}" required {% if c.pk == seleccion %}checked{% endif %}><div class="ph">{% include "aniversario/_foto.html" %}<span class="l">Ciclo {{ c.ciclo }}</span><span class="r">{{ c.numero|dos_digitos }}</span></div><div class="in"><h3>{{ c.nombres }}</h3><small>{{ c.carrera }}</small><span class="btn dk marca"><span class="no">{% if es_miss %}Elegir candidata{% else %}Elegir candidato{% endif %}</span><span class="si">{% if es_miss %}Elegida ✓{% else %}Elegido ✓{% endif %}</span></span><a class="vp" href="{% url 'aniversario:candidato' c.pk %}">Ver perfil y video</a></div></label>{% endfor %}</div>
+<div class="act">{% if not es_miss %}<a class="btn sec" href="{% url 'aniversario:votar' %}?miss={{ miss_id }}">← Volver a Miss</a>{% endif %}<button type="submit" class="btn pri" data-siguiente>{% if es_miss %}Siguiente: elegir Mister →{% else %}Revisar mi voto →{% endif %}</button></div>
+</form>{% endif %}
+{% endblock %}

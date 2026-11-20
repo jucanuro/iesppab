@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aniversario IESP Alfonso Barrantes Lingán — Votación Miss y Mister</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600..800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+*{box-sizing:border-box}
+:root{--bg:#fff;--err:#B42318;--s:#F3F7F5;--s2:#E6EEEA;--ink:#0F1B1A;--mut:#44544F;--ln:#DDE8E4;--ac:#0B5D4B;--acf:#fff;--tint:#E3F1EC;--gold:#F2A93B;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0B1512;--err:#FF9B8A;--s:#12201C;--s2:#1B2D27;--ink:#EAF3F0;--mut:#A9BDB6;--ln:#24382F;--ac:#35B091;--acf:#06130F;--tint:#17302A}}
+:root[data-theme=dark]{--bg:#0B1512;--err:#FF9B8A;--s:#12201C;--s2:#1B2D27;--ink:#EAF3F0;--mut:#A9BDB6;--ln:#24382F;--ac:#35B091;--acf:#06130F;--tint:#17302A}
+html{scroll-behavior:smooth;scroll-padding-top:calc(84px + env(safe-area-inset-top,0px))}
+body{margin:0;font-family:Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-text-size-adjust:100%}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+a{color:inherit}
+h1,h2,h3,.t{font-family:Sora,system-ui,sans-serif;font-weight:800;letter-spacing:-.035em;line-height:1;margin:0}
+.w{max-width:1200px;margin:0 auto;padding:0 24px}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:11;background:var(--bg);border-bottom:1px solid var(--ln)}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;padding:12px 24px;max-width:1200px;margin:0 auto}
+.lg{display:flex;align-items:center;gap:12px;text-decoration:none;min-width:0}
+.lg i{width:42px;height:42px;flex:none;border-radius:12px;background:var(--tint);color:var(--ac);display:grid;place-items:center;font:700 9px Inter,sans-serif}
+.lg b{display:block;font:700 15px Sora,sans-serif;letter-spacing:-.01em}.lg small{font-size:12px;color:var(--mut)}
+nav{display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+nav a{padding:10px 14px;border-radius:999px;font-size:14px;font-weight:600;color:var(--mut);text-decoration:none}
+nav a:hover{background:var(--s2);color:var(--ink)}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:50px;padding:0 24px;border-radius:999px;border:0;font:700 15px Inter,sans-serif;text-decoration:none;cursor:pointer}
+.pri,nav a.pri{background:var(--ac);color:var(--acf)}.sec{background:var(--s2);color:var(--ink)}.dk{background:#0C1F1B;color:#fff}
+.btn:disabled{background:var(--s2);color:var(--mut);cursor:not-allowed}
+.eb{font-size:13px;font-weight:700;color:var(--ac)}
+.sc{padding:80px 0}.alt{background:var(--s)}
+.sc h2{font-size:clamp(32px,5vw,52px);margin:10px 0 28px;max-width:640px}
+.hero{padding:72px 0 80px}.hg{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:center}
+.hero h1{font-size:clamp(44px,7vw,84px);line-height:.95}.hero h1 em{font-style:normal;color:var(--ac)}
+.pl{display:inline-flex;align-items:center;gap:8px;background:var(--tint);color:var(--ac);font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px}
+.pl::before{content:"";width:8px;height:8px;border-radius:50%;background:#17A34A}
+.lead{font-size:18px;line-height:1.6;color:var(--mut);max-width:520px;margin:22px 0}
+.bt{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.cdk{grid-column:span 2;background:#0C1F1B;color:#fff;border-radius:28px;padding:24px}
+.cdk>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#B8CCC6;margin-bottom:14px}
+.un{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.un div{background:#16332D;border-radius:16px;padding:14px 4px;text-align:center}.un b{display:block;font:700 clamp(26px,4vw,40px) Sora,sans-serif;font-variant-numeric:tabular-nums}.un span{font-size:11px;font-weight:600;color:#B8CCC6}
+.bx{border-radius:28px;padding:22px;min-height:130px;display:flex;flex-direction:column;justify-content:space-between;font-size:14px;font-weight:700}
+.g{background:var(--gold);color:#0F1B1A}.g b{font:800 54px Sora,sans-serif;line-height:.9}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:-12px 0 24px;padding:2px}
+.chips button{flex:none;min-height:42px;padding:0 16px;border-radius:999px;border:1px solid var(--ln);background:var(--bg);color:var(--ink);font:700 13px Inter,sans-serif;cursor:pointer}
+.chips button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:18px}
+.cd{background:var(--bg);border:1px solid var(--ln);border-radius:24px;padding:8px;text-decoration:none;display:flex;flex-direction:column;transition:transform .15s,box-shadow .15s}
+.cd:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(12,31,27,.12)}
+.ph{position:relative;aspect-ratio:4/5;border-radius:18px;overflow:hidden;display:flex;align-items:flex-end;justify-content:center}
+.ph svg{position:absolute;inset:0;width:100%;height:100%}
+.ph span{position:absolute;top:10px;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;background:var(--bg);color:var(--ink)}
+.ph .l{left:10px}.ph .r{right:10px;background:#0C1F1B;color:#fff}
+.cd div.in{padding:14px 8px 8px;display:flex;flex-direction:column;gap:4px}.cd h3{font-size:19px;line-height:1.15;letter-spacing:-.01em}.cd small{font-size:13px;color:var(--mut)}
+.cd .btn{min-height:44px;margin-top:12px;font-size:14px}
+.st{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.st div{background:var(--s);border-radius:28px;padding:28px}.st b{font:800 44px Sora,sans-serif;color:var(--s2);filter:brightness(.92)}.st h3{font-size:22px;margin:10px 0}.st p{margin:0;font-size:15px;line-height:1.6;color:var(--mut)}
+.bs{display:grid;grid-template-columns:1fr 1.6fr;gap:48px;align-items:start}
+details{background:var(--s);border-radius:20px;padding:0 22px;margin-bottom:10px}summary{min-height:60px;display:flex;align-items:center;font-weight:700;cursor:pointer}details p{margin:0 0 20px;font-size:15px;line-height:1.6;color:var(--mut)}
+footer{border-top:1px solid var(--ln);padding:36px 0;font-size:14px;color:var(--mut)}footer .w{display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px}
+.dt{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:start;margin-top:24px}
+.gal .ph{max-height:700px;border-radius:32px;align-items:flex-end}
+.ar{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:0;background:var(--bg);color:var(--ink);font-size:20px;cursor:pointer;box-shadow:0 4px 16px rgba(12,31,27,.2)}
+.th{display:flex;gap:10px;margin-top:12px}.th button{width:72px;aspect-ratio:4/5;border-radius:14px;border:2px solid transparent;background:var(--tint);color:var(--ac);font:700 12px Inter,sans-serif;cursor:pointer;opacity:.75}.th button[aria-pressed=true]{border-color:var(--ac);opacity:1}
+.tg{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}.tg span{background:var(--tint);color:var(--ac);font-size:13px;font-weight:700;padding:8px 14px;border-radius:999px}
+.dt h1{font-size:clamp(40px,6vw,72px);line-height:.95}
+.sx{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:24px 0}.sx div{background:var(--s);border-radius:18px;padding:14px}.sx small{display:block;font-size:12px;color:var(--mut);margin-bottom:4px}.sx b{font-size:15px}
+.dt p{font-size:17px;line-height:1.7;color:var(--mut);margin:8px 0 22px}
+blockquote{margin:0 0 24px;background:#0C1F1B;color:#fff;border-radius:24px;padding:24px 26px;font:600 22px/1.3 Sora,sans-serif;letter-spacing:-.01em}
+.vc{max-width:500px;margin:48px auto;background:var(--bg);border:1px solid var(--ln);border-radius:32px;padding:32px;display:flex;flex-direction:column;gap:18px;box-shadow:0 24px 64px rgba(12,31,27,.12)}
+.vc h1{font-size:30px}.who{display:flex;gap:14px;align-items:center;background:var(--s);border-radius:20px;padding:10px}.who i{width:56px;height:70px;border-radius:14px;background:var(--tint);flex:none}
+.who small{display:block;font-size:12px;color:var(--mut)}.who b{font:700 19px Sora,sans-serif}
+.fr{display:grid;grid-template-columns:1fr 92px;gap:10px}label.lb{display:block;font-size:13px;font-weight:700;margin-bottom:6px}
+input[type=text]{width:100%;height:54px;border:1.5px solid var(--ln);border-radius:16px;padding:0 16px;font:17px Inter,sans-serif;background:var(--bg);color:var(--ink)}
+.vf{min-height:58px;border-radius:18px;border:1.5px solid var(--ln);background:var(--bg);color:var(--ink);font:700 14px Inter,sans-serif;text-align:left;padding:0 16px;cursor:pointer}.vf.ok{background:var(--tint);border-color:var(--ac)}
+.cs{display:flex;gap:12px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--mut)}.cs input{width:20px;height:20px;margin:0;accent-color:var(--ac);flex:none}
+.sm{font-size:12px;color:var(--mut);text-align:center;margin:0}.ctr{text-align:center;align-items:center}
+.bd{background:var(--tint);color:var(--ac);font-size:12px;font-weight:700;padding:6px 12px;border-radius:999px}
+.rc{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;text-align:left;background:var(--s);border-radius:20px;padding:16px;font-size:12px;color:var(--mut)}.rc b{display:block;font-size:15px;color:var(--ink);letter-spacing:.05em}
+.vd{position:relative;aspect-ratio:16/9;border-radius:24px;background:#0C1F1B;color:#fff;overflow:hidden;margin:8px 0 24px;display:flex;flex-direction:column;justify-content:flex-end}
+.vd .tt{position:absolute;top:14px;left:16px;font-size:12px;font-weight:700;background:#16332D;padding:6px 10px;border-radius:999px}
+.vd .pl2{position:absolute;inset:0;display:grid;place-items:center;background:none;border:0;cursor:pointer}
+.vd .pl2 span{width:68px;height:68px;border-radius:50%;background:var(--gold);color:#0F1B1A;display:grid;place-items:center;font-size:24px;transition:opacity .2s}
+.vd.on .pl2 span{opacity:0}
+.vd .bar{position:relative;z-index:1;display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;pointer-events:none}
+.vd .pg{flex:1;height:4px;border-radius:4px;background:#2A4A42}.vd .pg i{display:block;height:100%;width:0;border-radius:4px;background:var(--gold)}
+.ph9{display:flex;align-items:center;border:1.5px solid var(--ln);border-radius:16px;overflow:hidden;background:var(--bg)}
+.ph9 span{height:54px;padding:0 14px;display:grid;place-items:center;font-weight:700;color:var(--mut);background:var(--s);border-right:1px solid var(--ln)}
+.ph9 input[type=text]{border:0;border-radius:0;flex:1;min-width:0}
+.er{margin:0;width:100%;text-align:left;font-size:13px;font-weight:600;color:var(--err)}
+.demo{margin:0;width:100%;text-align:left;font-size:12px;line-height:1.5;color:var(--mut);background:var(--s);border-radius:14px;padding:10px 12px}.demo b{color:var(--ink);letter-spacing:.1em}
+.stp{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;font-size:13px;font-weight:700}.stp span{padding:8px 14px;border-radius:999px;background:var(--s2);color:var(--mut)}.stp span.on{background:var(--ac);color:var(--acf)}
+.w>.stp{justify-content:flex-start}
+.cd.sel{border-color:var(--ac);box-shadow:0 0 0 3px var(--ac)}
+.vp{font-size:13px;font-weight:600;color:var(--ac);text-align:center;padding:12px 0 4px}
+.act{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap;margin-top:28px}
+.vt{margin-top:10px}.vl{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;color:var(--mut)}.vl b{font:800 20px Sora,sans-serif;color:var(--ink)}.vl .pc{font-weight:700;color:var(--ac)}
+.vbar{height:6px;border-radius:6px;background:var(--s2);margin-top:6px;overflow:hidden}.vbar i{display:block;height:100%;background:var(--ac);border-radius:6px}
+.dt .vt{margin:18px 0 0;background:var(--s);border-radius:18px;padding:16px}.dt .vl b{font-size:28px}
+@media(max-width:860px){.hg,.dt,.bs{grid-template-columns:1fr;gap:32px}.sc{padding:56px 0}.hero{padding:40px 0 56px}}
+@media(max-width:560px){.w{padding:0 18px}.hd{padding:10px 18px}.lg small{display:none}.vc{padding:24px;margin:24px 16px}}
+</style></head><body>
+<header><div class="hd"><a class="lg" href="#inicio"><i>LOGO</i><span><b>IESP Alfonso Barrantes Lingán</b><small>Aniversario 2026</small></span></a>
+<nav aria-label="Principal"><a href="#miss">Miss</a><a href="#mister">Mister</a><a href="#como-votar">Cómo votar</a><a href="#bases">Bases</a><a class="pri" href="#votar">Votar</a></nav></div></header>
+<main id="app"></main>
+<footer><div class="w"><div><b class="t" style="font-size:17px;letter-spacing:-.01em;color:var(--ink)">IESP Alfonso Barrantes Lingán</b><br>San Miguel, Cajamarca · Formando docentes</div><div>[correo@institucional] · [Teléfono]<br>Versión de demostración con datos de ejemplo</div></div></footer>
+<script>
+const MS=[
+{n:'Sofía Delgado Cerna',c:'I',k:'Educación Secundaria',e:18,d:'Cajamarca',b:'Llegué al instituto con ganas de aprender y de contagiar mi alegría. Quiero ser la maestra que escucha a cada estudiante.',m:'“Una sonrisa también enseña.”'},
+{n:'Valeria Quispe Rojas',c:'II',k:'Educación Primaria',e:18,d:'San Miguel',b:'Desde niña juego a “la profesora” con mis primos. Hoy estudio para hacerlo realidad y llevar la lectura a las zonas rurales.',m:'“Una maestra deja huellas que duran toda la vida.”'},
+{n:'Camila Torres Vargas',c:'IV',k:'Educación Inicial',e:19,d:'Bambamarca',b:'Amo el arte y la música. Creo que los primeros años de un niño merecen una escuela alegre, creativa y llena de cariño.',m:'“Cada niño es una semilla de futuro.”'},
+{n:'Luciana Salazar Díaz',c:'VI',k:'Educación Física',e:20,d:'Chota',b:'Juego vóley desde los doce años. Quiero que el deporte enseñe a mis alumnos a superarse y a trabajar en equipo.',m:'“Con esfuerzo, todo salto es posible.”'},
+{n:'Mariana Cabrera Huamán',c:'VIII',k:'Comunicación',e:21,d:'Cajamarca',b:'Escribo poesía y cuentos. Sueño con formar jóvenes que se expresen con confianza y amen su lengua y su cultura.',m:'“Las palabras también construyen puentes.”'},
+{n:'Andrea Chuquiruna León',c:'IX',k:'Ciencias Sociales',e:22,d:'Hualgayoc',b:'Me interesa la historia de mi región y cómo contarla a los jóvenes. Quiero que aprendan a sentirse orgullosos de sus raíces.',m:'“Conocer nuestra historia nos hace libres.”'},
+{n:'Daniela Rojas Mego',c:'X',k:'Matemática',e:22,d:'Celendín',b:'Me encantan los retos lógicos. Quiero demostrar que las matemáticas se disfrutan cuando se enseñan con paciencia.',m:'“Aprender es más fácil cuando se aprende juntos.”'}];
+const MR=[
+{n:'Bruno Silva Paredes',c:'I',k:'Educación Secundaria',e:18,d:'Jaén',b:'Soy curioso y me gusta aprender de todo. Quiero ser un docente cercano, que motive a sus alumnos a no rendirse.',m:'“Nadie aprende solo; aprendemos acompañados.”'},
+{n:'Diego Alarcón Vásquez',c:'II',k:'Educación Primaria',e:19,d:'San Miguel',b:'Soy el mayor de tres hermanos y el primero de mi familia en estudiar para ser docente. Quiero enseñar en mi comunidad.',m:'“Enseñar es devolverle a mi tierra lo que me dio.”'},
+{n:'Marco Tello Cieza',c:'IV',k:'Educación Inicial',e:20,d:'Bambamarca',b:'Me motivan los niños y el juego como forma de aprender. Sueño con una escuela rural donde cada niño se sienta escuchado.',m:'“Un buen maestro siembra curiosidad.”'},
+{n:'Julio Mendoza Rojas',c:'VI',k:'Educación Física',e:21,d:'Chota',b:'Practico atletismo desde la secundaria. Quiero que el deporte sea una herramienta de disciplina y confianza para mis futuros alumnos.',m:'“Cada paso en equipo nos lleva más lejos.”'},
+{n:'Franco Díaz Huamán',c:'VIII',k:'Comunicación',e:22,d:'Cajamarca',b:'Me apasiona leer y escribir. Creo que la palabra bien enseñada cambia vidas, y quiero formar lectores críticos.',m:'“Leer abre puertas que nadie puede cerrar.”'},
+{n:'Kevin Huamán Cotrina',c:'IX',k:'Ciencia y Tecnología',e:22,d:'Cutervo',b:'Me encantan los experimentos y la tecnología. Quiero que mis alumnos pierdan el miedo a preguntar y a probar.',m:'“La curiosidad es el mejor laboratorio.”'},
+{n:'Renzo Chávez Sánchez',c:'X',k:'Matemática',e:23,d:'Celendín',b:'Quiero demostrar que la matemática puede ser clara y cercana. Estoy por terminar mi carrera y listo para ejercer.',m:'“Todo problema tiene solución si lo piensas juntos.”'}];
+const C=[...MS.map(x=>({...x,g:'f'})),...MR.map(x=>({...x,g:'m'}))];
+const $=s=>document.querySelector(s),app=$('#app'),end=new Date('2026-12-05T18:00:00-05:00');
+let P=1,T=0,VT=null,SEL={f:null,m:null};
+const store={get(){try{return JSON.parse(localStorage.getItem('iesp_votos'))||{}}catch(e){return window._v||{}}},set(v){window._v=v;try{localStorage.setItem('iesp_votos',JSON.stringify(v))}catch(e){}}};
+const fmt=s=>'0:'+String(s).padStart(2,'0'),num=i=>i%7+1,cat=g=>g=='f'?'Miss':'Mister';
+const BASE=[143,212,187,164,131,98,76,139,205,176,149,122,87,64],VC=BASE.slice();
+{const d=store.get().done;if(d){VC[d.f]++;VC[d.m]++}}
+const tot=g=>C.reduce((a,c,i)=>c.g==g?a+VC[i]:a,0),pc=i=>Math.round(VC[i]/tot(C[i].g)*100),rk=i=>1+C.filter((c,j)=>c.g==C[i].g&&VC[j]>VC[i]).length;
+const vb=i=>`<div class="vt" data-vt="${i}"><div class="vl"><span><b>${VC[i].toLocaleString('es-PE')}</b> votos</span><span class="pc">${pc(i)}% · ${rk(i)}.º lugar</span></div><div class="vbar"><i style="width:${pc(i)}%"></i></div></div>`;
+const refresh=()=>document.querySelectorAll('[data-vt]').forEach(el=>{el.outerHTML=vb(+el.dataset.vt)});
+const SK=['#F1C9A5','#E0A97C','#C98E5F','#A86E45','#8A5A3C','#F6D3B3','#D9A273'],HR=['#2B1B12','#4A2C1A','#1B1B1F','#6B3F22','#0F0F12','#3A2418','#5A3A24'],CL=['#0B5D4B','#B45309','#1F3A8A','#7A1F3D','#6D28D9','#0E7490','#9F1239'],B1=['#E3F1EC','#F9E8CF','#E4EAF8','#F6E1E8','#EDE4F7','#DCF0F3','#FBE4E4'],B2=['#BFDCD2','#F0CE9C','#C7D3F0','#EDC3D1','#D6C6EE','#B9E0E7','#F2C6C6'];
+const av=(i,p)=>{const f=C[i].g=='f',k=C.slice(0,i).filter(c=>c.g==C[i].g).length,o=f?0:3,sk=SK[(k*3+o)%7],hr=HR[(k*5+o)%7],cl=CL[(k+o)%7],bg=(p==2?B2:B1)[(k+o)%7],t=p==2?'translate(-4 -2) scale(1.08)':'';
+return `<svg viewBox="0 0 100 125" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Foto de referencia"><rect width="100" height="125" fill="${bg}"/><g transform="${t}">${f?`<path d="M26 64C21 30 34 13 50 13s29 17 24 51c-1 14 2 30 7 42H19c5-12 8-28 7-42z" fill="${hr}"/>`:''}<path d="M8 125c0-25 17-39 42-39s42 14 42 39z" fill="${cl}"/><rect x="43" y="68" width="14" height="22" rx="6" fill="${sk}"/><ellipse cx="50" cy="52" rx="19" ry="23" fill="${sk}"/>${f?`<path d="M30 52c-3-22 8-33 20-33s23 11 20 33c-5-10-11-15-20-15s-15 5-20 15z" fill="${hr}"/><path d="M38 88q12 15 24 0" fill="${sk}"/>`:`<path d="M31 48c-2-22 8-32 19-32s21 10 19 32c-3-9-9-14-19-14s-16 5-19 14z" fill="${hr}"/><path d="M39 88l11 13 11-13z" fill="#fff"/><path d="M47 98h6l2 22h-10z" fill="#F2A93B"/>`}<circle cx="43" cy="53" r="1.8" fill="#2B1B12"/><circle cx="57" cy="53" r="1.8" fill="#2B1B12"/><path d="M44 62q6 5 12 0" stroke="#7A3B2E" stroke-width="1.6" fill="none" stroke-linecap="round"/>${f&&p==2?'<path d="M36 22l3-9 5 6 6-9 6 9 5-6 3 9z" fill="#F2A93B"/>':''}</g></svg>`};
+const ph=(p,i,x)=>`<div class="ph">${av(i,p)}${x||''}</div>`;
+const cards=g=>C.map((c,i)=>({c,i})).filter(o=>o.c.g==g).map(({c,i})=>`<a class="cd" href="#candidato-${i}">${ph(1,i,`<span class="l">Ciclo ${c.c}</span><span class="r">0${num(i)}</span>`)}<div class="in"><h3>${c.n}</h3><small>${c.k}</small>${vb(i)}<span class="btn dk">Ver perfil</span></div></a>`).join('');
+const sec=(g,alt)=>{const f=g=='f';return `<section class="sc${alt?' alt':''}" id="${f?'miss':'mister'}"><div class="w"><span class="eb">${f?'Candidatas a Miss':'Candidatos a Mister'}</span><h2>${f?'Siete candidatas':'Siete candidatos'}</h2><p style="margin:-12px 0 20px"><span class="bd">Votos en vivo · datos de demostración</span></p><div class="grid">${cards(g)}</div></div></section>`};
+function home(){return `<section class="hero"><div class="w hg"><div><span class="pl">Votación abierta · Aniversario 2026</span><h1 style="margin-top:22px">Elige a tu <em>miss</em> y a tu <em>mister</em></h1><p class="lead">Conoce a los participantes de cada categoría, mira su video de presentación y vota por tus favoritos. Tu voto incluye a tu miss y a tu mister.</p><div style="display:flex;flex-wrap:wrap;gap:12px"><a class="btn pri" href="#votar">Votar ahora</a><a class="btn sec" href="#miss">Ver participantes</a></div></div>
+<div class="bt"><div class="cdk"><div><span>La votación cierra en</span><span>5 dic · 6:00 p. m.</span></div><div class="un" id="cd"></div></div><div class="bx g"><b>7+7</b><span>candidatas y candidatos</span></div><div class="bx sec" style="justify-content:flex-end"><span>Un solo voto: tu miss y tu mister.</span></div></div></div></section>
+${sec('f',1)}${sec('m',0)}
+<section class="sc alt" id="como-votar"><div class="w"><span class="eb">Cómo votar</span><h2>Votar toma menos de un minuto</h2><div class="st"><div><b>01</b><h3>Conoce a los participantes</h3><p>Mira sus fotos, su video de presentación de 30 segundos y su perfil.</p></div><div><b>02</b><h3>Elige a tu miss y a tu mister</h3><p>Marca a tu candidata favorita y luego a tu candidato favorito, en dos pasos.</p></div><div><b>03</b><h3>Confirma tu voto</h3><p>Revisas tus dos elecciones y confirmas. Es un solo voto y recibes un comprobante. Luego sigues el conteo en vivo.</p></div></div></div></section>
+<section class="sc" id="bases"><div class="w bs"><div><span class="eb">Bases del concurso</span><h2 style="margin-bottom:20px">Reglas claras, elección justa</h2><a class="btn sec" href="#bases" style="border:1px solid var(--ln)">Descargar bases (PDF)</a></div><div><details open><summary>Periodo de votación</summary><p>Del [fecha de inicio] al 5 de diciembre de 2026, 6:00 p. m., hora de Lima.</p></details><details><summary>Quiénes pueden votar</summary><p>[Público en general / solo comunidad del instituto]. Un solo voto por persona, que incluye a tu Miss y a tu Mister.</p></details><details><summary>Voto definitivo</summary><p>Una vez confirmado, el voto no puede modificarse ni anularse.</p></details><details><summary>Resultados en vivo</summary><p>El conteo de votos de cada participante se actualiza durante toda la votación y es visible para todos.</p></details><details><summary>Videos y fotos</summary><p>Cada participante presenta dos fotos y un video de hasta 30 segundos.</p></details></div></div></section>`}
+const gal=i=>`${ph(P,i,`<span class="l">Ciclo ${C[i].c}</span><span class="r">${P} / 2</span><button class="ar" data-g="t" style="left:16px" aria-label="Foto anterior">←</button><button class="ar" data-g="t" style="right:16px" aria-label="Foto siguiente">→</button>`)}<div class="th">${[1,2].map(n=>`<button type="button" data-g="${n}" aria-pressed="${n==P}" aria-label="Ver foto ${n}">${n}</button>`).join('')}</div>`;
+const vid=()=>`<div class="vd" id="vd"><span class="tt">Video de presentación · 0:30</span><button class="pl2" type="button" data-v="1" aria-label="Reproducir o pausar el video"><span>▶</span></button><div class="bar"><span id="vt">0:00</span><div class="pg"><i id="vg"></i></div><span>0:30</span></div></div>`;
+function pv(){const d=$('#vd');if(!d)return;if(VT){clearInterval(VT);VT=null;d.classList.remove('on');return}d.classList.add('on');VT=setInterval(()=>{T++;if(T>=30){clearInterval(VT);VT=null;T=0;d.classList.remove('on')}$('#vt').textContent=fmt(T);$('#vg').style.width=T/30*100+'%'},1000)}
+function det(i){const c=C[i],f=c.g=='f';P=1;return `<div class="w" style="padding-top:28px;padding-bottom:72px"><a class="btn sec" href="#${f?'miss':'mister'}" style="min-height:44px">← ${f?'Candidatas':'Candidatos'}</a><div class="dt"><div class="gal" id="gal">${gal(i)}</div><div><div class="tg"><span>${f?'Candidata':'Candidato'} N.º 0${num(i)}</span><span>Ciclo ${c.c}</span><span>${cat(c.g)}</span></div><h1>${c.n}</h1>${vb(i)}<div class="sx"><div><small>Edad</small><b>${c.e} años</b></div><div><small>Carrera</small><b>${c.k}</b></div><div><small>Procedencia</small><b>${c.d}</b></div></div><span class="eb">Sobre ${f?'ella':'él'}</span><p>${c.b}</p><span class="eb">Video de presentación</span>${vid()}<blockquote>${c.m}</blockquote><button type="button" class="btn pri" data-pick="${i}" style="width:100%;min-height:58px;font-size:17px">Elegir a ${c.n.split(' ')[0]}</button><p class="sm" style="margin-top:10px">Eliges a tu ${f?'miss':'mister'} y luego a tu ${f?'mister':'miss'}; ambos van en un solo voto.</p><a class="btn sec" style="margin-top:16px;min-height:44px" href="https://wa.me/?text=${encodeURIComponent('Vota por '+c.n+' en el Aniversario del IESP')}">Compartir por WhatsApp</a></div></div></div>`}
+const grid=g=>{const f=g=='f';return C.map((c,i)=>({c,i})).filter(o=>o.c.g==g).map(({c,i})=>{const on=SEL[g]==i;return `<div class="cd${on?' sel':''}">${ph(1,i,`<span class="l">Ciclo ${c.c}</span><span class="r">0${num(i)}</span>`)}<div class="in"><h3>${c.n}</h3><small>${c.k}</small><button type="button" class="btn ${on?'pri':'dk'}" data-sel="${i}" aria-pressed="${on}">${on?(f?'Elegida ✓':'Elegido ✓'):(f?'Elegir candidata':'Elegir candidato')}</button><a class="vp" href="#candidato-${i}">Ver perfil y video</a></div></div>`}).join('')};
+const stp=n=>`<div class="stp">${['1 · Miss','2 · Mister','3 · Confirmar'].map((t,j)=>`<span class="${j+1==n?'on':''}">${t}</span>`).join('')}</div>`;
+function pick(g){const f=g=='f';return `<div class="w" style="padding-top:36px;padding-bottom:72px">${stp(f?1:2)}<h1 class="t" style="font-size:clamp(34px,5vw,56px);margin:20px 0 8px">${f?'Elige a tu miss':'Elige a tu mister'}</h1><p class="lead" style="margin:0 0 28px">${f?'Marca a la candidata que más te gustó. Después elegirás a tu mister.':'Ahora marca al candidato que más te gustó.'}</p><div class="grid" id="pk">${grid(g)}</div><div class="act">${f?'':'<a class="btn sec" href="#votar">← Volver a Miss</a>'}<button type="button" class="btn pri" id="nx" data-to="${f?'votar-mister':'votar-confirmar'}" ${SEL[g]==null?'disabled':''}>${f?'Siguiente: elegir Mister →':'Revisar mi voto →'}</button></div></div>`}
+const row=(i,l,to)=>{const c=C[i];return `<div class="who" style="width:100%;text-align:left"><i></i><span><small>${l}</small><b>${c.n}</b><small style="color:var(--ac);font-weight:700">N.º 0${num(i)} · Ciclo ${c.c}</small></span><a class="btn sec" href="#${to}" style="min-height:40px;margin-left:auto;font-size:13px;padding:0 16px">Cambiar</a></div>`};
+const conf=()=>`<div class="vc ctr" id="vc" style="max-width:560px">${stp(3)}<h1>Confirma tu voto</h1>${row(SEL.f,'Tu miss','votar')}${row(SEL.m,'Tu mister','votar-mister')}<button type="button" class="btn pri" id="cf" style="width:100%;min-height:58px;font-size:16px">Confirmar mi voto</button><p class="sm">Es un solo voto con tu miss y tu mister. No podrás cambiarlo después.</p><p class="demo">Demostración: el voto no se guarda en ningún servidor.</p></div>`;
+const fin=d=>`<div class="vc ctr" id="vc"><span class="bd">Voto registrado</span><h1 style="font-size:36px">¡Gracias por votar!</h1><p style="margin:0;line-height:1.6;color:var(--mut)">Tu voto quedó registrado: <strong style="color:var(--ink)">${C[d.f].n}</strong> como Miss y <strong style="color:var(--ink)">${C[d.m].n}</strong> como Mister.</p><div class="rc"><span>Comprobante<b>${d.code}</b></span><span>Voto<b>Miss + Mister</b></span></div><p class="sm">Ahora ${C[d.f].n.split(' ')[0]} lleva ${VC[d.f]} votos y ${C[d.m].n.split(' ')[0]}, ${VC[d.m]}. Sigue el conteo en vivo en la página de inicio.</p><a class="btn pri" href="#inicio" style="width:100%">Volver al inicio</a><button type="button" class="btn sec" id="rs" style="width:100%;min-height:44px;font-size:13px">Reiniciar demostración</button></div>`;
+function tick(){const el=$('#cd');if(!el)return;let m=Math.max(0,end-Date.now());const u=[864e5,36e5,6e4,1e3].map(k=>{const v=Math.floor(m/k);m-=v*k;return String(v).padStart(2,'0')});el.innerHTML=['días','horas','min','seg'].map((l,j)=>`<div><b>${u[j]}</b><span>${l}</span></div>`).join('')}
+function route(){clearInterval(VT);VT=null;T=0;let h=location.hash.slice(1)||'inicio';const m=h.match(/^candidato-(\d+)$/);
+if(h=='votar-mister'&&SEL.f==null)h='votar';if(h=='votar-confirmar'&&SEL.f==null)h='votar';if(h=='votar-confirmar'&&SEL.m==null)h='votar-mister';
+if(m&&C[m[1]]){app.innerHTML=det(+m[1]);scrollTo(0,0)}
+else if(/^votar/.test(h)){const d=store.get().done;app.innerHTML=d?fin(d):h=='votar'?pick('f'):h=='votar-mister'?pick('m'):conf();scrollTo(0,0)}
+else{if(!$('.hero'))app.innerHTML=home();tick();const t=document.getElementById(h);t&&h!='inicio'?t.scrollIntoView():scrollTo(0,0)}}
+addEventListener('hashchange',route);setInterval(tick,1000);
+app.addEventListener('click',e=>{const v=e.target.closest('[data-v]'),g=e.target.closest('[data-g]'),s=e.target.closest('[data-sel]'),k=e.target.closest('[data-pick]'),n=e.target.closest('#nx'),f=e.target.closest('#cf'),r=e.target.closest('#rs');
+if(v)pv();
+if(g){const i=+location.hash.split('-')[1];P=g.dataset.g=='t'?(P==1?2:1):+g.dataset.g;$('#gal').innerHTML=gal(i)}
+if(s){const i=+s.dataset.sel,q=C[i].g;SEL[q]=i;$('#pk').innerHTML=grid(q);$('#nx').disabled=false}
+if(k){const i=+k.dataset.pick,q=C[i].g;SEL[q]=i;location.hash=q=='f'?'votar-mister':SEL.f!=null?'votar-confirmar':'votar'}
+if(n)location.hash=n.dataset.to;
+if(f){const x=()=>Math.random().toString(36).slice(2,6).toUpperCase(),d={f:SEL.f,m:SEL.m,code:'AN-'+x()+'-'+x()};store.set({done:d});VC[d.f]++;VC[d.m]++;app.innerHTML=fin(d);scrollTo(0,0)}
+if(r){store.set({});VC.splice(0,14,...BASE);SEL={f:null,m:null};location.hash='inicio'}});
+setInterval(()=>{VC[Math.floor(Math.random()*14)]++;refresh()},5000);
+route();
+</script></body></html>

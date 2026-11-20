@@ -1,0 +1,22 @@
+{% load static %}<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block titulo %}{{ concurso.nombre|default:"Aniversario IESP Alfonso Barrantes Lingán" }} · Votación Miss y Mister{% endblock %}</title>
+<meta name="description" content="{% block descripcion %}Vota por tu Miss y tu Mister del aniversario del IESP Alfonso Barrantes Lingán.{% endblock %}">
+{% block og %}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ concurso.nombre|default:'Aniversario IESP Alfonso Barrantes Lingán' }} · Miss y Mister">
+<meta property="og:description" content="Conoce a los participantes y vota por tu Miss y tu Mister.">
+<meta property="og:image" content="{{ request.scheme }}://{{ request.get_host }}{% static 'img/logo-iesppabl.png' %}">
+{% endblock %}
+<link rel="icon" href="{% static 'img/logo-iesppabl.png' %}">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600..800&family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="{% static 'aniversario/css/aniversario.css' %}">
+</head><body>
+<header><div class="hd"><a class="lg" href="{% url 'aniversario:inicio' %}"><i><img src="{% static 'img/logo-iesppabl.png' %}" alt="" style="width:30px;height:30px;object-fit:contain"></i><span><b>IESP Alfonso Barrantes Lingán</b><small>{{ concurso.nombre|default:"Aniversario" }}</small></span></a>
+<nav aria-label="Principal"><a href="{% url 'aniversario:inicio' %}#miss">Miss</a><a href="{% url 'aniversario:inicio' %}#mister">Mister</a><a href="{% url 'aniversario:inicio' %}#como-votar">Cómo votar</a><a href="{% url 'aniversario:inicio' %}#bases">Bases</a><a class="pri" href="{% url 'aniversario:votar' %}">Votar</a></nav></div></header>
+<main id="app">{% block contenido %}{% endblock %}</main>
+<footer><div class="w"><div><b class="t" style="font-size:17px;letter-spacing:-.01em;color:var(--ink)">IESP Alfonso Barrantes Lingán</b><br>San Miguel, Cajamarca · Formando docentes</div><div>{{ concurso.nombre|default:"" }}</div></div></footer>
+<script src="{% static 'aniversario/js/aniversario.js' %}" defer></script>
+</body></html>

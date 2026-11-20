@@ -1,0 +1,30 @@
+{% extends "aniversario/base.html" %}{% load aniversario_tags %}
+{% block contenido %}
+{% if concurso.video_url %}<div class="hv">{% include "aniversario/_video.html" with url=concurso.video_url titulo="Video de presentación del concurso" %}</div>{% endif %}
+<section class="hero"><div class="w hg"><div>
+<span class="pl">{% if estado == "abierto" %}Votación abierta{% elif estado == "pendiente" %}Votación próxima{% else %}Votación cerrada{% endif %} · {{ concurso.nombre }}</span>
+<h1 style="margin-top:22px">Elige a tu <em>miss</em> y a tu <em>mister</em></h1>
+<p class="lead">Conoce a los participantes de cada categoría, mira su video de presentación y vota por tus favoritos. Tu voto incluye a tu miss y a tu mister.</p>
+<div style="display:flex;flex-wrap:wrap;gap:12px">{% if estado == "abierto" %}<a class="btn pri" href="{% url 'aniversario:votar' %}">Votar ahora</a>{% endif %}<a class="btn sec" href="#miss">Ver participantes</a></div></div>
+<div class="bt"><div class="cdk"><div><span>{% if estado == "pendiente" %}La votación abre en{% elif estado == "abierto" %}La votación cierra en{% else %}La votación cerró{% endif %}</span><span>{% if estado == "pendiente" %}{{ concurso.fecha_inicio|date:"j M · g:i a" }}{% else %}{{ concurso.fecha_cierre|date:"j M · g:i a" }}{% endif %}</span></div>
+<div class="un" id="cd" data-fin="{% if estado == 'pendiente' %}{{ concurso.fecha_inicio|date:'c' }}{% else %}{{ concurso.fecha_cierre|date:'c' }}{% endif %}"><div><b>00</b><span>días</span></div><div><b>00</b><span>horas</span></div><div><b>00</b><span>min</span></div><div><b>00</b><span>seg</span></div></div></div>
+<div class="bx g"><b>{{ misses|length }}+{{ misters|length }}</b><span>candidatas y candidatos</span></div><div class="bx sec" style="justify-content:flex-end"><span>Un solo voto: tu miss y tu mister.</span></div></div></div></section>
+
+{% include "aniversario/_seccion.html" with lista=misses ancla="miss" eb="Candidatas a Miss" titulo="candidatas" alt=True %}
+{% include "aniversario/_seccion.html" with lista=misters ancla="mister" eb="Candidatos a Mister" titulo="candidatos" alt=False %}
+
+<section class="sc alt" id="como-votar"><div class="w"><span class="eb">Cómo votar</span><h2>Votar toma menos de un minuto</h2><div class="st">
+<div><b>01</b><h3>Conoce a los participantes</h3><p>Mira sus fotos, su video de presentación y su perfil.</p></div>
+<div><b>02</b><h3>Elige a tu miss y a tu mister</h3><p>Marca a tu candidata favorita y luego a tu candidato favorito, en dos pasos.</p></div>
+<div><b>03</b><h3>Confirma tu voto</h3><p>Revisas tus dos elecciones y confirmas. Es un solo voto y recibes un comprobante. Luego sigues el conteo en vivo.</p></div>
+</div></div></section>
+
+<section class="sc" id="bases"><div class="w bs"><div><span class="eb">Bases del concurso</span><h2 style="margin-bottom:20px">Reglas claras, elección justa</h2>{% if concurso.bases_pdf %}<a class="btn sec" href="{{ concurso.bases_pdf.url }}" style="border:1px solid var(--ln)" target="_blank" rel="noopener">Descargar bases (PDF)</a>{% endif %}</div><div>
+<details open><summary>Periodo de votación</summary><p>Del {{ concurso.fecha_inicio|date:"j \d\e F" }} al {{ concurso.fecha_cierre|date:"j \d\e F \d\e Y, g:i a" }}, hora de Lima.</p></details>
+<details><summary>Un voto por equipo</summary><p>Cada equipo (celular o computadora) puede votar una sola vez. Un voto incluye a tu Miss y a tu Mister, y ambos son obligatorios.</p></details>
+<details><summary>Voto definitivo</summary><p>Una vez confirmado, el voto no puede modificarse ni anularse. Recibes un comprobante con un código.</p></details>
+{% if concurso.mostrar_conteo %}<details><summary>Resultados en vivo</summary><p>El conteo de votos de cada participante se actualiza durante toda la votación y es visible para todos.</p></details>{% endif %}
+<details><summary>Videos y fotos</summary><p>Cada participante presenta dos fotos y un video corto de presentación.</p></details>
+<details><summary>Datos personales (Ley 29733)</summary><p>Para garantizar un voto por equipo guardamos la dirección IP de la conexión, un identificador aleatorio del equipo (cookie) y una huella cifrada del navegador. No pedimos DNI, nombre ni correo. Estos datos se usan solo para controlar el voto único y se eliminan al cerrar el concurso.</p></details>
+</div></div></section>
+{% endblock %}

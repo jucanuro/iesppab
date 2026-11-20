@@ -20,24 +20,40 @@
     tick(); setInterval(tick, 1000);
   }
 
-  // Galería del perfil
-  var gal = $("[data-galeria]");
-  if (gal) {
-    var imgs = $$(".ph img", gal), pos = $("[data-pos]", gal), thumbs = $$(".th button", gal), i = 0;
-    var ver = function (n) {
-      if (!imgs.length) return;
-      i = (n + imgs.length) % imgs.length;
-      imgs.forEach(function (im, j) { im.classList.toggle("on", j === i); });
-      thumbs.forEach(function (b, j) { b.setAttribute("aria-pressed", j === i ? "true" : "false"); });
-      if (pos) pos.textContent = (i + 1) + " / " + imgs.length;
+  // Carruseles de fotos (tarjetas y perfil)
+  $$("[data-car]").forEach(function (car) {
+    var pista = $("[data-pista]", car);
+    var n = pista ? pista.children.length : 0;
+    if (n < 2) return;
+    var puntos = $$(".puntos i", car), pos = $("[data-pos]", car);
+    var gal = car.closest(".gal"), thumbs = gal ? $$(".th button", gal) : [];
+    var actual = function () { return Math.round(pista.scrollLeft / pista.clientWidth); };
+    var ir = function (k) {
+      k = (k + n) % n;
+      pista.scrollTo({ left: k * pista.clientWidth });
     };
-    gal.addEventListener("click", function (e) {
-      var b = e.target.closest("[data-g]");
+    var marcar = function () {
+      var k = actual();
+      puntos.forEach(function (p, j) { p.classList.toggle("on", j === k); });
+      thumbs.forEach(function (b, j) { b.setAttribute("aria-pressed", j === k ? "true" : "false"); });
+      if (pos) pos.textContent = (k + 1) + " / " + n;
+    };
+    var t;
+    pista.addEventListener("scroll", function () { clearTimeout(t); t = setTimeout(marcar, 60); }, { passive: true });
+    var mover = function (e) {
+      var b = e.target.closest("[data-mover]");
       if (!b) return;
-      var g = b.dataset.g;
-      ver(g === "prev" ? i - 1 : g === "next" ? i + 1 : +g);
+      e.preventDefault(); e.stopPropagation();  // no abrir el perfil ni marcar el voto
+      ir(actual() + (+b.dataset.mover));
+    };
+    car.addEventListener("click", mover);
+    car.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") mover(e);
     });
-  }
+    thumbs.forEach(function (b) {
+      b.addEventListener("click", function () { ir(+b.dataset.ir); });
+    });
+  });
 
   // Pasos: el botón "Siguiente" se habilita al elegir
   var paso = $("[data-paso]");

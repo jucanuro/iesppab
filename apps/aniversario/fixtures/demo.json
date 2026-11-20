@@ -11,7 +11,8 @@
    "mostrar_conteo": true,
    "max_votos_por_ip": 1,
    "activo": true,
-   "creado": "2026-11-20T00:00:00-05:00"
+   "creado": "2026-11-20T00:00:00-05:00",
+   "video_archivo": ""
   }
  },
  {
@@ -28,11 +29,10 @@
    "procedencia": "Cajamarca",
    "biografia": "Llegué al instituto con ganas de aprender y de contagiar mi alegría. Quiero ser la maestra que escucha a cada estudiante.",
    "frase": "“Una sonrisa también enseña.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 1,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -49,11 +49,10 @@
    "procedencia": "San Miguel",
    "biografia": "Desde niña juego a “la profesora” con mis primos. Hoy estudio para hacerlo realidad y llevar la lectura a las zonas rurales.",
    "frase": "“Una maestra deja huellas que duran toda la vida.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 2,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -70,11 +69,10 @@
    "procedencia": "Bambamarca",
    "biografia": "Amo el arte y la música. Creo que los primeros años de un niño merecen una escuela alegre, creativa y llena de cariño.",
    "frase": "“Cada niño es una semilla de futuro.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 3,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -91,11 +89,10 @@
    "procedencia": "Chota",
    "biografia": "Juego vóley desde los doce años. Quiero que el deporte enseñe a mis alumnos a superarse y a trabajar en equipo.",
    "frase": "“Con esfuerzo, todo salto es posible.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 4,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -112,11 +109,10 @@
    "procedencia": "Cajamarca",
    "biografia": "Escribo poesía y cuentos. Sueño con formar jóvenes que se expresen con confianza y amen su lengua y su cultura.",
    "frase": "“Las palabras también construyen puentes.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 5,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -133,11 +129,10 @@
    "procedencia": "Hualgayoc",
    "biografia": "Me interesa la historia de mi región y cómo contarla a los jóvenes. Quiero que aprendan a sentirse orgullosos de sus raíces.",
    "frase": "“Conocer nuestra historia nos hace libres.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 6,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -154,11 +149,10 @@
    "procedencia": "Celendín",
    "biografia": "Me encantan los retos lógicos. Quiero demostrar que las matemáticas se disfrutan cuando se enseñan con paciencia.",
    "frase": "“Aprender es más fácil cuando se aprende juntos.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 7,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -175,11 +169,10 @@
    "procedencia": "Jaén",
    "biografia": "Soy curioso y me gusta aprender de todo. Quiero ser un docente cercano, que motive a sus alumnos a no rendirse.",
    "frase": "“Nadie aprende solo; aprendemos acompañados.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 1,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -196,11 +189,10 @@
    "procedencia": "San Miguel",
    "biografia": "Soy el mayor de tres hermanos y el primero de mi familia en estudiar para ser docente. Quiero enseñar en mi comunidad.",
    "frase": "“Enseñar es devolverle a mi tierra lo que me dio.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 2,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -217,11 +209,10 @@
    "procedencia": "Bambamarca",
    "biografia": "Me motivan los niños y el juego como forma de aprender. Sueño con una escuela rural donde cada niño se sienta escuchado.",
    "frase": "“Un buen maestro siembra curiosidad.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 3,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -238,11 +229,10 @@
    "procedencia": "Chota",
    "biografia": "Practico atletismo desde la secundaria. Quiero que el deporte sea una herramienta de disciplina y confianza para mis futuros alumnos.",
    "frase": "“Cada paso en equipo nos lleva más lejos.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 4,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -259,11 +249,10 @@
    "procedencia": "Cajamarca",
    "biografia": "Me apasiona leer y escribir. Creo que la palabra bien enseñada cambia vidas, y quiero formar lectores críticos.",
    "frase": "“Leer abre puertas que nadie puede cerrar.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 5,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -280,11 +269,10 @@
    "procedencia": "Cutervo",
    "biografia": "Me encantan los experimentos y la tecnología. Quiero que mis alumnos pierdan el miedo a preguntar y a probar.",
    "frase": "“La curiosidad es el mejor laboratorio.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 6,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  },
  {
@@ -301,11 +289,10 @@
    "procedencia": "Celendín",
    "biografia": "Quiero demostrar que la matemática puede ser clara y cercana. Estoy por terminar mi carrera y listo para ejercer.",
    "frase": "“Todo problema tiene solución si lo piensas juntos.”",
-   "foto_1": "",
-   "foto_2": "",
    "video_url": "",
    "orden": 7,
-   "activo": true
+   "activo": true,
+   "video_archivo": ""
   }
  }
 ]

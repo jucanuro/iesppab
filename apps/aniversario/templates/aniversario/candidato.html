@@ -10,15 +10,15 @@
 {% endblock %}
 {% block contenido %}
 <div class="w" style="padding-top:28px;padding-bottom:72px"><a class="btn sec" href="{% url 'aniversario:inicio' %}#{{ c.categoria }}" style="min-height:44px">← {% if c.es_miss %}Candidatas{% else %}Candidatos{% endif %}</a>
-<div class="dt"><div class="gal" id="gal" data-galeria>
-<div class="ph">{% for f in c.fotos %}<img src="{{ f.url }}" alt="Foto {{ forloop.counter }} de {{ c.nombres }}" class="{% if forloop.first %}on{% endif %}" {% if not forloop.first %}loading="lazy"{% endif %} decoding="async">{% empty %}{% include "aniversario/_avatar.html" %}{% endfor %}<span class="l">Ciclo {{ c.ciclo }}</span>{% if c.fotos|length > 1 %}<span class="r" data-pos>1 / {{ c.fotos|length }}</span><button class="ar" type="button" data-g="prev" style="left:16px" aria-label="Foto anterior">←</button><button class="ar" type="button" data-g="next" style="right:16px" aria-label="Foto siguiente">→</button>{% endif %}</div>
-{% if c.fotos|length > 1 %}<div class="th">{% for f in c.fotos %}<button type="button" data-g="{{ forloop.counter0 }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="Ver foto {{ forloop.counter }}"><img src="{{ f.url }}" alt="" loading="lazy"></button>{% endfor %}</div>{% endif %}
+<div class="dt"><div class="gal" id="gal">
+{% include "aniversario/_carrusel.html" with grande=True %}
+{% if c.fotos|length > 1 %}<div class="th">{% for f in c.fotos %}<button type="button" data-ir="{{ forloop.counter0 }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="Ver foto {{ forloop.counter }}"><img src="{{ f.imagen.url }}" alt="" loading="lazy"></button>{% endfor %}</div>{% endif %}
 </div><div>
 <div class="tg"><span>{% if c.es_miss %}Candidata{% else %}Candidato{% endif %} N.º {{ c.numero|dos_digitos }}</span><span>Ciclo {{ c.ciclo }}</span><span>{{ c.get_categoria_display }}</span></div>
 <h1>{{ c.nombres }}</h1>{% include "aniversario/_conteo.html" %}
 <div class="sx"><div><small>Edad</small><b>{% if c.edad %}{{ c.edad }} años{% else %}—{% endif %}</b></div><div><small>Carrera</small><b>{{ c.carrera }}</b></div><div><small>Procedencia</small><b>{{ c.procedencia|default:"—" }}</b></div></div>
 {% if c.biografia %}<span class="eb">Sobre {% if c.es_miss %}ella{% else %}él{% endif %}</span><p>{{ c.biografia|linebreaksbr }}</p>{% endif %}
-{% if c.video_url %}<span class="eb">Video de presentación</span>{% include "aniversario/_video.html" with url=c.video_url titulo="Video de presentación de "|add:c.nombres %}{% endif %}
+{% if c.video_archivo or c.video_url %}<span class="eb">Video de presentación</span>{% include "aniversario/_video.html" with obj=c titulo="Video de presentación de "|add:c.nombres %}{% endif %}
 {% if c.frase %}<blockquote>{{ c.frase }}</blockquote>{% endif %}
 {% if estado == "abierto" %}<a class="btn pri" href="{{ url_elegir }}" style="width:100%;min-height:58px;font-size:17px">Elegir a {{ c.primer_nombre }}</a>
 <p class="sm" style="margin-top:10px">Eliges a tu {% if c.es_miss %}miss y luego a tu mister{% else %}mister y a tu miss{% endif %}; ambos van en un solo voto.</p>{% endif %}

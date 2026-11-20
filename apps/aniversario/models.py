@@ -8,15 +8,26 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.validators import FileExtensionValidator, MinValueValidator
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 FOTO_MAX_LADO = 1200
 FOTO_CALIDAD = 80
 FOTO_EXTENSIONES = ["jpg", "jpeg", "png", "webp"]
+MAX_FOTOS = 5
+VIDEO_EXTENSIONES = ["mp4", "webm"]
+VIDEO_MAX_MB = 60
+VIDEO_MIME = {"video/mp4", "video/webm", "video/quicktime"}
 
 
 def ruta_foto(instance, filename: str) -> str:
     return f"aniversario/candidatos/{uuid.uuid4().hex}.jpg"
+
+
+def ruta_video(instance, filename: str) -> str:
+    extension = Path(filename).suffix.lower().lstrip(".") or "mp4"
+    return f"aniversario/videos/{uuid.uuid4().hex}.{extension}"
 
 
 def ruta_bases(instance, filename: str) -> str:
@@ -41,6 +52,24 @@ def validar_imagen(archivo) -> None:
             pass
     if formato not in {"JPEG", "PNG", "WEBP"}:
         raise ValidationError("Solo se admiten fotos JPG, PNG o WebP.")
+
+
+def validar_video(archivo) -> None:
+    """Tamaño máximo y tipo real del archivo (python-magic), no solo la extensión."""
+    if getattr(archivo, "_committed", False):
+        return
+    if archivo.size and archivo.size > VIDEO_MAX_MB * 1024 * 1024:
+        raise ValidationError(f"El video no puede pesar más de {VIDEO_MAX_MB} MB.")
+    try:
+        import magic
+
+        archivo.seek(0)
+        mime = magic.from_buffer(archivo.read(4096), mime=True)
+        archivo.seek(0)
+    except ImportError:  # pragma: no cover - python-magic está en requirements
+        return
+    if mime not in VIDEO_MIME:
+        raise ValidationError("El archivo no es un video MP4 o WebM válido.")
 
 
 def optimizar_imagen(archivo) -> ContentFile:
@@ -70,8 +99,15 @@ class Concurso(models.Model):
     nombre = models.CharField("nombre", max_length=160)
     fecha_inicio = models.DateTimeField("inicio de la votación")
     fecha_cierre = models.DateTimeField("cierre de la votación")
+    video_archivo = models.FileField(
+        "video de presentación (archivo MP4/WebM)",
+        upload_to=ruta_video,
+        blank=True,
+        validators=[FileExtensionValidator(VIDEO_EXTENSIONES), validar_video],
+        help_text="Opcional. Hasta %(mb)s MB. Si se sube archivo, tiene prioridad sobre el enlace." % {"mb": VIDEO_MAX_MB},
+    )
     video_url = models.URLField(
-        "video de presentación (YouTube o Facebook)", blank=True
+        "o enlace de YouTube/Facebook", blank=True
     )
     bases_pdf = models.FileField(
         "bases (PDF)",
@@ -138,20 +174,15 @@ class Candidato(models.Model):
     procedencia = models.CharField("procedencia", max_length=120, blank=True)
     biografia = models.TextField("biografía", blank=True)
     frase = models.CharField("frase", max_length=200, blank=True)
-    foto_1 = models.ImageField(
-        "foto 1",
-        upload_to=ruta_foto,
+    video_archivo = models.FileField(
+        "video (archivo MP4/WebM)",
+        upload_to=ruta_video,
         blank=True,
-        validators=[FileExtensionValidator(FOTO_EXTENSIONES)],
-    )
-    foto_2 = models.ImageField(
-        "foto 2",
-        upload_to=ruta_foto,
-        blank=True,
-        validators=[FileExtensionValidator(FOTO_EXTENSIONES)],
+        validators=[FileExtensionValidator(VIDEO_EXTENSIONES), validar_video],
+        help_text="Opcional. Hasta %(mb)s MB. Si se sube archivo, tiene prioridad sobre el enlace." % {"mb": VIDEO_MAX_MB},
     )
     video_url = models.URLField(
-        "video de presentación (opcional)", blank=True
+        "o enlace de YouTube/Facebook", blank=True
     )
     orden = models.PositiveSmallIntegerField("orden", default=0)
     activo = models.BooleanField("activo", default=True)
@@ -180,21 +211,54 @@ class Candidato(models.Model):
 
     @property
     def fotos(self) -> list:
-        return [f for f in (self.foto_1, self.foto_2) if f]
+        """Fotos en orden; usa la caché de prefetch_related si existe."""
+        return sorted(self.fotos_rel.all(), key=lambda f: (f.orden, f.pk or 0))
+
+    @property
+    def foto_principal(self):
+        fotos = self.fotos
+        return fotos[0] if fotos else None
+
+
+class FotoCandidato(models.Model):
+    candidato = models.ForeignKey(
+        Candidato, on_delete=models.CASCADE, related_name="fotos_rel"
+    )
+    imagen = models.ImageField(
+        "foto",
+        upload_to=ruta_foto,
+        validators=[FileExtensionValidator(FOTO_EXTENSIONES)],
+    )
+    orden = models.PositiveSmallIntegerField("orden", default=0)
+
+    class Meta:
+        verbose_name = "foto"
+        verbose_name_plural = "fotos (máximo %d)" % MAX_FOTOS
+        ordering = ["orden", "id"]
+
+    def __str__(self) -> str:
+        return f"Foto {self.orden} de {self.candidato_id}"
 
     def clean(self):
-        for campo in ("foto_1", "foto_2"):
-            archivo = getattr(self, campo)
-            if archivo and not getattr(archivo, "_committed", True):
-                validar_imagen(archivo)
+        if self.imagen and not getattr(self.imagen, "_committed", True):
+            validar_imagen(self.imagen)
+        if self.candidato_id:
+            otras = FotoCandidato.objects.filter(candidato_id=self.candidato_id).exclude(pk=self.pk)
+            if otras.count() >= MAX_FOTOS:
+                raise ValidationError(f"Cada candidato puede tener como máximo {MAX_FOTOS} fotos.")
 
     def save(self, *args, **kwargs):
-        for campo in ("foto_1", "foto_2"):
-            archivo = getattr(self, campo)
-            if archivo and not getattr(archivo, "_committed", True):
-                optimizada = optimizar_imagen(archivo)
-                archivo.save(Path(archivo.name).name, optimizada, save=False)
+        if self.imagen and not getattr(self.imagen, "_committed", True):
+            optimizada = optimizar_imagen(self.imagen)
+            self.imagen.save(Path(self.imagen.name).name, optimizada, save=False)
         super().save(*args, **kwargs)
+
+
+@receiver(post_delete, sender=FotoCandidato)
+def _borrar_archivo_foto(sender, instance, **kwargs):
+    """También cubre el borrado en cascada al eliminar un candidato."""
+    if instance.imagen:
+        instance.imagen.delete(save=False)
 
 
 class Voto(models.Model):

@@ -42,7 +42,14 @@ python manage.py check --deploy
 
 Sin dependencias nuevas (Pillow y redis ya están en `requirements.txt`).
 
-## 4. Nginx (bloque nuevo, no se toca el de originalidad)
+## 4. Nginx
+
+**4a. Bloque de originalidad (único cambio ahí):** los videos se suben desde el admin, que está en el dominio
+de originalidad. Subir `client_max_body_size` de ese bloque a `70m` (videos de hasta 60 MB). Ver primero el valor
+actual con `sudo grep -rn client_max_body_size /etc/nginx/`. Antes de subir 14 videos, revisar `df -h /`
+(14 × 60 MB ≈ 0,8 GB).
+
+**4b. Bloque nuevo del subdominio:**
 
 `/etc/nginx/sites-available/aniversario` — primero solo HTTP (certbot agrega el 443):
 
@@ -64,6 +71,7 @@ server {
     location /media/aniversario/ {
         alias /var/www/projects/iesppab/media/aniversario/;
         expires 1d;
+        # Los videos se sirven con soporte de rangos (Nginx lo hace solo): el navegador puede adelantar.
     }
     location /media/ { return 404; }
 
@@ -123,7 +131,7 @@ sudo systemctl restart iesppab && systemctl status iesppab --no-pager | head -5
 2. `curl -sI https://aniversario.iesp-alfonsobarranteslingan.edu.pe/admin/` → 404.
 3. `curl -sI https://aniversario.iesp-alfonsobarranteslingan.edu.pe/media/private/` → 404.
 4. Originalidad: login, subir un documento, ver un reporte.
-5. Admin de originalidad → Concurso (fechas reales) y Candidatos (fotos). Votar desde un celular,
+5. Admin de originalidad → Concurso (fechas reales) y Candidatos (hasta 5 fotos y el video). Votar desde un celular,
    anotar el comprobante y borrar ese voto en Admin → Votos (solo superusuario).
 
 ## Retiro al terminar el concurso (no ejecutar hasta que dirección lo pida)

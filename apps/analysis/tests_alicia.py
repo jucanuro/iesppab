@@ -15,6 +15,7 @@ from apps.analysis.engines.alicia import (
     AliciaRecord,
     AliciaSearch,
     parse_record,
+    rank_file_urls,
 )
 from apps.analysis.engines.oai_fulltext import (
     FetchedResponse,
@@ -207,8 +208,9 @@ class _FakeClient:
 
     def get(self, url, *, max_bytes, params=None):
         self.calls.append(url)
-        status, body = self.responses[url]
-        return FetchedResponse(status, url, body)
+        status, body, *content_type = self.responses[url]
+        self.last_params = params
+        return FetchedResponse(status, url, body, content_type[0] if content_type else "")
 
 
 class AliciaFullTextHarvesterTests(TestCase):
@@ -359,3 +361,138 @@ class AliciaRecordDataclassTests(SimpleTestCase):
     def test_defaults(self) -> None:
         record = AliciaRecord("i", "oai:x:1", "t", "", "", "", "x", "x", None, "")
         self.assertEqual(record.bitstream_urls, [])
+
+
+HTML = (200, b"<!doctype html><html></html>", "text/html")
+JSON = "application/hal+json"
+UMCH = "https://repositorio.umch.edu.pe"
+
+
+class RankFileUrlsTests(SimpleTestCase):
+    def test_drops_derivatives_and_moves_side_files_last(self) -> None:
+        urls = [
+            f"{UMCH}/bitstream/1/5/2/license.txt",
+            f"{UMCH}/bitstream/1/5/3/Ficha%20de%20autorizaci%c3%b3n.pdf",
+            f"{UMCH}/bitstream/1/5/4/tesis.pdf.txt",
+            f"{UMCH}/bitstream/1/5/5/tesis.pdf.jpg",
+            f"{UMCH}/bitstream/1/5/1/TESIS%20COMPLETA.pdf",
+            f"{UMCH}/bitstreams/{'a' * 8}-aaaa-aaaa-aaaa-{'a' * 12}/download",
+        ]
+
+        ranked = rank_file_urls(urls)
+
+        self.assertEqual(len(ranked), 3)
+        self.assertTrue(ranked[0].endswith("TESIS%20COMPLETA.pdf"))
+        self.assertIn("autorizaci", ranked[-1])
+
+
+class AliciaDspace7Tests(TestCase):
+    UUID = "745bbe30-9689-48c3-a005-5989e8b45981"
+
+    def _harvest(self, client, record):
+        harvester = AliciaFullTextHarvester(client=client)
+        ok = FullTextOutcome(status=OaiFullTextStatus.OK, content="palabra " * 2000)
+
+        with mock.patch.object(
+            harvester,
+            "_extract",
+            side_effect=lambda pdf, base: FullTextOutcome(
+                status=ok.status, content=ok.content, **base
+            ),
+        ):
+            return harvester, harvester.harvest(record)
+
+    def test_legacy_link_is_resolved_through_the_rest_api(self) -> None:
+        legacy = f"{UMCH}/bitstream/20.500.14231/457/1/tesis.pdf"
+        record = _alicia_oai_record(1, domain="repositorio.umch.edu.pe", urls=[legacy])
+        content = f"{UMCH}/backend/api/core/bitstreams/{self.UUID}/content"
+        client = _FakeClient(
+            {
+                legacy: HTML,
+                f"{UMCH}/server/api": HTML,
+                f"{UMCH}/backend/api": (200, b"{}", JSON),
+                f"{UMCH}/backend/api/core/bitstreams/search/byItemHandle": (
+                    200,
+                    ('{"_links": {"content": {"href": "%s"}}}' % content).encode(),
+                    JSON,
+                ),
+                content: (200, b"%PDF-tesis", "application/pdf"),
+            }
+        )
+
+        _, full_text = self._harvest(client, record)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.OK)
+        self.assertEqual(full_text.pdf_url, content)
+        self.assertEqual(
+            client.calls[-2], f"{UMCH}/backend/api/core/bitstreams/search/byItemHandle"
+        )
+
+    def test_uuid_download_link_goes_to_rest_content_and_host_is_remembered(self) -> None:
+        first = f"{UMCH}/bitstreams/{self.UUID}/download"
+        other_uuid = "11111111-2222-3333-4444-555555555555"
+        second = f"{UMCH}/bitstreams/{other_uuid}/download"
+        records = [
+            _alicia_oai_record(1, domain="repositorio.umch.edu.pe", urls=[first]),
+            _alicia_oai_record(2, domain="repositorio.umch.edu.pe", urls=[second]),
+        ]
+        client = _FakeClient(
+            {
+                first: HTML,
+                f"{UMCH}/server/api": (200, b"{}", JSON),
+                f"{UMCH}/server/api/core/bitstreams/{self.UUID}/content": (200, b"%PDF-1"),
+                f"{UMCH}/server/api/core/bitstreams/{other_uuid}/content": (200, b"%PDF-2"),
+            }
+        )
+        harvester, full_text = self._harvest(client, records[0])
+
+        with mock.patch.object(
+            harvester,
+            "_extract",
+            side_effect=lambda pdf, base: FullTextOutcome(
+                status=OaiFullTextStatus.OK, content="palabra " * 2000, **base
+            ),
+        ):
+            second_text = harvester.harvest(records[1])
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.OK)
+        self.assertEqual(second_text.status, OaiFullTextStatus.OK)
+        self.assertNotIn(second, client.calls)
+        self.assertEqual(client.calls.count(f"{UMCH}/server/api"), 1)
+
+    def test_broken_rest_api_ends_as_sin_pdf(self) -> None:
+        link = f"{UMCH}/bitstreams/{self.UUID}/download"
+        record = _alicia_oai_record(1, domain="repositorio.umch.edu.pe", urls=[link])
+        client = _FakeClient(
+            {
+                link: HTML,
+                f"{UMCH}/server/api": (200, b"{}", JSON),
+                f"{UMCH}/server/api/core/bitstreams/{self.UUID}/content": (500, b"{}", JSON),
+            }
+        )
+
+        _, full_text = self._harvest(client, record)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.SIN_PDF)
+
+
+class ReintentarSinPdfTests(TestCase):
+    def test_sin_pdf_records_are_retried_only_with_the_flag(self) -> None:
+        record = _alicia_oai_record(1)
+        OaiFullText.objects.create(record=record, status=OaiFullTextStatus.SIN_PDF)
+        output = StringIO()
+
+        call_command(
+            "harvest_oai_fulltext", repositorio="ALICIA", limite=5, dry_run=True, stdout=output
+        )
+        call_command(
+            "harvest_oai_fulltext",
+            repositorio="ALICIA",
+            limite=5,
+            dry_run=True,
+            reintentar_sin_pdf=True,
+            stdout=output,
+        )
+
+        self.assertIn("0 por procesar", output.getvalue())
+        self.assertIn("1 por procesar", output.getvalue())

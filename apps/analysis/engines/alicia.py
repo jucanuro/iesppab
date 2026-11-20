@@ -65,6 +65,7 @@ DEFAULT_EXCLUDED_DOMAINS = (
 _FIELDS = ("id", "title", "rawData", "dcDateEmbargoEnd")
 _DSPACE7_DOWNLOAD_RE = re.compile(r"/bitstreams/([0-9a-fA-F-]{36})/download")
 _LEGACY_BITSTREAM_RE = re.compile(r"/bitstream/(?:handle/)?(\d[\d.]*/[^/]+)/(\d+)/")
+_HANDLE_IN_TEXT_RE = re.compile(r"(?:handle(?:\.net)?/|:)(\d+(?:\.\d+)*/\d+)\b")
 _DSPACE7_REST_PREFIXES = ("/server/api", "/backend/api")
 # Derivados de DSpace (texto extraído, miniaturas) y licencia: no son la tesis.
 _SKIP_FILE_RE = re.compile(r"(license\.txt|\.txt|\.jpe?g|\.png|\.gif)$", re.IGNORECASE)
@@ -178,6 +179,17 @@ class AliciaSearch:
 def _origin(url: str) -> str:
     parts = urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
+
+
+def _handle(record: OaiRecord) -> str:
+    """El handle (prefijo/número) del registro, desde la URL o el id OAI."""
+    for value in (record.source_url, record.oai_identifier):
+        match = _HANDLE_IN_TEXT_RE.search(value or "")
+
+        if match:
+            return match.group(1)
+
+    return ""
 
 
 def rank_file_urls(urls: list[str]) -> list[str]:
@@ -337,6 +349,7 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
         self._dspace7_hosts: set[str] = set()
         self._rest_bases: dict[str, str] = {}
         self._last_was_html = False
+        self._notes: list[str] = []
 
     def _process(self, record: OaiRecord) -> FullTextOutcome:
         extra = record.extra_metadata or {}
@@ -360,14 +373,15 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
                 **base,
             )
 
+        self._notes = []
         best: FullTextOutcome | None = None
         pdfs_tried = 0
 
-        for url in allowed:
+        for url in self._candidates(record, allowed):
             if pdfs_tried >= self.MAX_PDFS_PER_RECORD:
                 break
 
-            response = self._fetch_file(url)
+            response = self._fetch_file(url) if url in allowed else self._get_pdf(url)
 
             if response is None:
                 continue
@@ -383,11 +397,79 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
         if best is not None:
             return best
 
+        detail = "; ".join(self._notes[:4])
         return FullTextOutcome(
             status=OaiFullTextStatus.SIN_PDF,
-            error_message="Ningún enlace de ALICIA entregó un PDF.",
+            error_message=f"Ningún enlace entregó un PDF. {detail}"[:500],
             **base,
         )
+
+    def _candidates(self, record: OaiRecord, links: list[str]) -> Iterator[str]:
+        """
+        Primero los enlaces de ALICIA; si ninguno sirvió, los PDF que el
+        repositorio lista hoy para el ítem en su API REST (ALICIA puede
+        tener enlaces viejos: el archivo se reemplazó o cambió de número).
+        """
+        yield from links
+
+        for url in self._rest_item_files(record, links):
+            if url not in links:
+                yield url
+
+    def _rest_item_files(self, record: OaiRecord, links: list[str]) -> list[str]:
+        handle = _handle(record)
+
+        if not handle:
+            return []
+
+        host = _origin(links[0]) if links else f"https://{record.repository_domain}"
+        rest = self._rest_base(host)
+
+        if not rest:
+            return []
+
+        item = self._get_json(f"{rest}/pid/find", params={"id": handle})
+        item_id = (item or {}).get("uuid")
+
+        if not item_id:
+            self._notes.append(f"API REST no encontró el ítem {handle}")
+            return []
+
+        bundles = self._get_json(
+            f"{rest}/core/items/{item_id}/bundles",
+            params={"embed": "bitstreams"},
+        )
+        files = []
+
+        for bundle in ((bundles or {}).get("_embedded") or {}).get("bundles") or []:
+            if bundle.get("name") != "ORIGINAL":
+                continue
+
+            embedded = ((bundle.get("_embedded") or {}).get("bitstreams") or {})
+
+            for bitstream in (embedded.get("_embedded") or {}).get("bitstreams") or []:
+                name = str(bitstream.get("name") or "")
+                href = ((bitstream.get("_links") or {}).get("content") or {}).get("href")
+
+                if href and name.lower().endswith(".pdf"):
+                    files.append((bool(_SIDE_FILE_RE.search(name)), href))
+
+        return [href for _, href in sorted(files, key=lambda pair: pair[0])]
+
+    def _get_json(self, url: str, params: dict | None = None) -> dict | None:
+        if not self.client.allowed(url):
+            return None
+
+        response = self.client.get(url, max_bytes=self.MAX_PAGE_BYTES, params=params)
+
+        if response.status_code != 200:
+            self._notes.append(f"{urlsplit(url).path[-40:]} respondió {response.status_code}")
+            return None
+
+        try:
+            return json.loads(response.content)
+        except ValueError:
+            return None
 
     def _fetch_file(self, url: str) -> FetchedResponse | None:
         """
@@ -423,6 +505,10 @@ class AliciaFullTextHarvester(OaiFullTextHarvester):
         if response.status_code == 200 and response.content.startswith(b"%PDF"):
             return response
 
+        self._notes.append(
+            f"{unquote(urlsplit(url).path)[-40:]} → HTTP {response.status_code}"
+            f" {response.content_type.split(';')[0]}"
+        )
         self._last_was_html = response.status_code == 200 and (
             "html" in response.content_type.lower()
             or response.content.lstrip()[:15].lower().startswith(b"<!doctype html")

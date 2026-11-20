@@ -496,3 +496,71 @@ class ReintentarSinPdfTests(TestCase):
 
         self.assertIn("0 por procesar", output.getvalue())
         self.assertIn("1 por procesar", output.getvalue())
+
+
+class AliciaRestListingTests(TestCase):
+    UARM = "https://repositorio.uarm.edu.pe"
+
+    def test_stale_link_falls_back_to_the_files_the_repository_lists_today(self) -> None:
+        stale = f"{self.UARM}/bitstream/20.500.12833/2212/2/tesis_2020.pdf"
+        record = _alicia_oai_record(1, domain="repositorio.uarm.edu.pe", urls=[stale])
+        record.source_url = "https://hdl.handle.net/20.500.12833/2212"
+        record.save()
+        rest = f"{self.UARM}/server/api"
+        thesis = f"{rest}/core/bitstreams/t/content"
+        bundles = {
+            "_embedded": {
+                "bundles": [
+                    {"name": "TEXT", "_embedded": {"bitstreams": {"_embedded": {"bitstreams": [
+                        {"name": "tesis.pdf.txt", "_links": {"content": {"href": f"{rest}/x"}}}
+                    ]}}}},
+                    {"name": "ORIGINAL", "_embedded": {"bitstreams": {"_embedded": {"bitstreams": [
+                        {"name": "Autorizacion.pdf", "_links": {"content": {"href": f"{rest}/core/bitstreams/a/content"}}},
+                        {"name": "tesis_2021.pdf", "_links": {"content": {"href": thesis}}},
+                    ]}}}},
+                ]
+            }
+        }
+        import json as json_module
+
+        client = _FakeClient(
+            {
+                stale: (404, b"<!DOCTYPE html>", "text/html"),
+                rest: (200, b"{}", JSON),
+                f"{rest}/pid/find": (200, b'{"uuid": "item-1"}', JSON),
+                f"{rest}/core/items/item-1/bundles": (
+                    200, json_module.dumps(bundles).encode(), JSON
+                ),
+                thesis: (200, b"%PDF-tesis", "application/pdf"),
+            }
+        )
+        harvester = AliciaFullTextHarvester(client=client)
+
+        with mock.patch.object(
+            harvester,
+            "_extract",
+            side_effect=lambda pdf, base: FullTextOutcome(
+                status=OaiFullTextStatus.OK, content="palabra " * 2000, **base
+            ),
+        ):
+            full_text = harvester.harvest(record)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.OK)
+        self.assertEqual(full_text.pdf_url, thesis)
+        self.assertNotIn(f"{rest}/core/bitstreams/a/content", client.calls)
+
+    def test_sin_pdf_message_says_what_each_link_answered(self) -> None:
+        link = f"{self.UARM}/bitstream/1/2/3/tesis.pdf"
+        record = _alicia_oai_record(2, domain="repositorio.uarm.edu.pe", urls=[link])
+        client = _FakeClient(
+            {
+                link: (404, b"<!DOCTYPE html>", "text/html"),
+                f"{self.UARM}/server/api": (404, b"", "text/html"),
+                f"{self.UARM}/backend/api": (404, b"", "text/html"),
+            }
+        )
+
+        full_text = AliciaFullTextHarvester(client=client).harvest(record)
+
+        self.assertEqual(full_text.status, OaiFullTextStatus.SIN_PDF)
+        self.assertIn("HTTP 404", full_text.error_message)

@@ -9,19 +9,38 @@
 {% if og_imagen %}<meta property="og:image" content="{{ og_imagen }}"><meta name="twitter:card" content="summary_large_image">{% endif %}
 {% endblock %}
 {% block contenido %}
-<div class="w" style="padding-top:28px;padding-bottom:72px"><a class="btn sec" href="{% url 'aniversario:inicio' %}#{{ c.categoria }}" style="min-height:44px">← {% if c.es_miss %}Candidatas{% else %}Candidatos{% endif %}</a>
-<div class="dt"><div class="gal" id="gal">
-{% include "aniversario/_carrusel.html" with grande=True %}
-{% if c.fotos|length > 1 %}<div class="th">{% for f in c.fotos %}<button type="button" data-ir="{{ forloop.counter0 }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="Ver foto {{ forloop.counter }}"><img src="{{ f.imagen.url }}" alt="" loading="lazy"></button>{% endfor %}</div>{% endif %}
-</div><div>
-<div class="tg"><span>{% if c.es_miss %}Candidata{% else %}Candidato{% endif %} N.º {{ c.numero|dos_digitos }}</span><span>Ciclo {{ c.ciclo }}</span><span>{{ c.get_categoria_display }}</span></div>
-<h1>{{ c.nombres }}</h1>{% include "aniversario/_conteo.html" %}
-<div class="sx"><div><small>Edad</small><b>{% if c.edad %}{{ c.edad }} años{% else %}—{% endif %}</b></div><div><small>Carrera</small><b>{{ c.carrera }}</b></div><div><small>Procedencia</small><b>{{ c.procedencia|default:"—" }}</b></div></div>
-{% if c.biografia %}<span class="eb">Sobre {% if c.es_miss %}ella{% else %}él{% endif %}</span><p>{{ c.biografia|linebreaksbr }}</p>{% endif %}
-<span class="eb">Video de presentación</span><div class="vd-perfil">{% include "aniversario/_video.html" with obj=c titulo="Video de presentación de "|add:c.nombres %}</div>
-{% if c.frase %}<blockquote>{{ c.frase }}</blockquote>{% endif %}
-{% if mi_voto %}<div class="yavoto">{% if c.pk == mi_voto.miss_id or c.pk == mi_voto.mister_id %}<b>{% if c.es_miss %}Ella{% else %}Él{% endif %} tiene tu voto ✓</b>{% else %}<b>Ya votaste</b>{% endif %}<span>Comprobante {{ mi_voto.codigo }}</span></div>{% elif estado == "abierto" %}<a class="btn pri" href="{{ url_elegir }}" style="width:100%;min-height:58px;font-size:17px">Elegir a {{ c.primer_nombre }}</a>
-<p class="sm" style="margin-top:10px">Eliges a tu {% if c.es_miss %}miss y luego a tu mister{% else %}mister y a tu miss{% endif %}; ambos van en un solo voto.</p>{% endif %}
-<a class="btn sec" style="margin-top:16px;min-height:44px;width:100%" href="https://wa.me/?text={{ 'Vota por '|add:c.nombres|add:' en el '|add:concurso.nombre|add:': '|add:url_absoluta|urlencode:'' }}" target="_blank" rel="noopener">Compartir por WhatsApp</a>
-</div></div></div>
+<div class="pf">
+<a class="btn sec pf-back" href="{% url 'aniversario:inicio' %}#{{ c.categoria }}">← {% if c.es_miss %}Candidatas{% else %}Candidatos{% endif %}</a>
+
+<section class="pf-media" aria-label="Fotos y video de {{ c.nombres }}">
+  <div class="pf-fotos gal">{% include "aniversario/_carrusel.html" with grande=True %}</div>
+  <div class="pf-video">{% include "aniversario/_video.html" with obj=c titulo="Video de presentación de "|add:c.nombres %}</div>
+</section>
+
+<section class="pf-ficha">
+  <div class="pf-cab">
+    <div>
+      <div class="tg"><span>{% if c.es_miss %}Candidata{% else %}Candidato{% endif %} N.º {{ c.numero|dos_digitos }}</span><span>{{ c.get_categoria_display }}</span><span>Ciclo {{ c.ciclo }}</span></div>
+      <h1>{{ c.nombres }}</h1>
+    </div>
+    {% if concurso.mostrar_conteo %}<div class="pf-cont">{% include "aniversario/_conteo.html" %}</div>{% endif %}
+  </div>
+  <dl class="pf-datos">
+    <div><dt>Edad</dt><dd>{% if c.edad %}{{ c.edad }} años{% else %}—{% endif %}</dd></div>
+    <div><dt>Carrera</dt><dd>{{ c.carrera }}</dd></div>
+    <div><dt>Procedencia</dt><dd>{{ c.procedencia|default:"—" }}</dd></div>
+  </dl>
+  {% if c.biografia or c.frase %}<div class="pf-texto">
+    {% if c.biografia %}<div><span class="eb">Sobre {% if c.es_miss %}ella{% else %}él{% endif %}</span><p>{{ c.biografia|linebreaksbr }}</p></div>{% endif %}
+    {% if c.frase %}<blockquote>{{ c.frase }}</blockquote>{% endif %}
+  </div>{% endif %}
+</section>
+
+<section class="pf-acciones">
+  {% if mi_voto %}<div class="yavoto">{% if c.pk == mi_voto.miss_id or c.pk == mi_voto.mister_id %}<b>{% if c.es_miss %}Ella{% else %}Él{% endif %} tiene tu voto ✓</b>{% else %}<b>Ya votaste</b>{% endif %}<span>Comprobante {{ mi_voto.codigo }}</span></div>
+  {% elif estado == "abierto" %}<a class="btn pri" href="{{ url_elegir }}">Elegir a {{ c.primer_nombre }} como mi {{ c.get_categoria_display }}</a>{% endif %}
+  <a class="btn wa" href="https://wa.me/?text={{ 'Vota por '|add:c.nombres|add:' en el '|add:concurso.nombre|add:': '|add:url_absoluta|urlencode:'' }}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="#25D366" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/><path fill="#fff" d="M8.6 7.4c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .6.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3 0 .5.5.9 1.3 1.7 2.3 2.3.2.1.4.1.5 0l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4 0 .5-.2 1.3-.8 1.7-.6.4-1.5.6-2.6.2-1.4-.5-2.9-1.5-4-2.9-1-1.2-1.6-2.4-1.6-3.3 0-.9.4-1.6.8-2z"/></svg>Compartir por WhatsApp</a>
+  {% if not mi_voto and estado == "abierto" %}<p class="sm">Eliges a tu {% if c.es_miss %}miss y luego a tu mister{% else %}mister y a tu miss{% endif %}; ambos van en un solo voto.</p>{% endif %}
+</section>
+</div>
 {% endblock %}

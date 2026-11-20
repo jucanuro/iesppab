@@ -37,6 +37,8 @@ class ConcursoAdmin(admin.ModelAdmin):
     list_display = ("nombre", "fecha_inicio", "fecha_cierre", "activo", "mostrar_conteo", "max_votos_por_ip", "total_votos")
     list_filter = ("activo",)
     actions = [exportar_resultados]
+    # El inicio no lleva video: los campos quedan en la BD pero no se editan.
+    exclude = ("video_archivo", "video_url")
 
     @admin.display(description="votos")
     def total_votos(self, obj):

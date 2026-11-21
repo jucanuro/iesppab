@@ -1,4 +1,4 @@
-{% load static %}<!doctype html>
+{% load static aniversario_tags %}<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block titulo %}{{ concurso.nombre|default:"Aniversario IESP Alfonso Barrantes Lingán" }} · Votación Miss y Mister{% endblock %}</title>
@@ -19,5 +19,6 @@
 {% if mi_voto and not voto %}<div class="ya"><div class="w">✓ Ya votaste desde este equipo · Comprobante <b>{{ mi_voto.codigo }}</b> · <a href="{% url 'aniversario:votar' %}">ver</a></div></div>{% endif %}
 <main id="app">{% block contenido %}{% endblock %}</main>
 <footer><div class="w"><div><b class="t" style="font-size:17px;letter-spacing:-.01em;color:var(--ink)">IESP Alfonso Barrantes Lingán</b><br>San Miguel, Cajamarca · Formando docentes</div><div>{{ concurso.nombre|default:"" }}</div></div></footer>
+{% whatsapp_consultas as wa_num %}{% if wa_num %}<a class="wa-flot" href="https://wa.me/{{ wa_num }}?text={{ 'Hola, tengo una consulta sobre la votación Miss y Mister del aniversario.'|urlencode:'' }}" target="_blank" rel="noopener" aria-label="Consultas por WhatsApp"><svg viewBox="0 0 24 24" width="30" height="30" aria-hidden="true"><path fill="#fff" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 1.8a8.2 8.2 0 1 1-4.2 15.3l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 0 1 12 3.8z"/><path fill="#fff" d="M8.6 7.4c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .6.4l.8 1.9c.1.2 0 .4-.1.6l-.5.6c-.1.1-.2.3 0 .5.5.9 1.3 1.7 2.3 2.3.2.1.4.1.5 0l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.4 0 .5-.2 1.3-.8 1.7-.6.4-1.5.6-2.6.2-1.4-.5-2.9-1.5-4-2.9-1-1.2-1.6-2.4-1.6-3.3 0-.9.4-1.6.8-2z"/></svg><span class="wa-flot-txt">Consultas</span></a>{% endif %}
 <script src="{% static 'aniversario/js/aniversario.js' %}" defer></script>
 </body></html>

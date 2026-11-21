@@ -450,3 +450,15 @@ class AdminTests(MediaTestCase):
         })
         self.assertEqual(r.status_code, 200)
         self.assertIn("Ana Ruiz", r.content.decode("utf-8-sig"))
+
+
+@override_settings(**AJUSTES)
+class WhatsappFlotanteTests(TestCase):
+    def test_boton_en_todas_las_paginas(self):
+        r = self.client.get("/no-existe/", HTTP_HOST=HOST)
+        self.assertContains(r, "https://wa.me/51952416604", status_code=404)
+
+    @override_settings(ANIVERSARIO_WHATSAPP="")
+    def test_sin_numero_no_hay_boton(self):
+        r = self.client.get("/no-existe/", HTTP_HOST=HOST)
+        self.assertNotContains(r, "wa-flot", status_code=404)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import parse_qs, quote, urlparse
 
 from django import template
+from django.conf import settings
 
 register = template.Library()
 
@@ -52,3 +53,9 @@ def get_item(diccionario, clave):
     if not diccionario:
         return None
     return diccionario.get(clave)
+
+
+@register.simple_tag
+def whatsapp_consultas() -> str:
+    """Número para el botón flotante de consultas (solo dígitos)."""
+    return getattr(settings, "ANIVERSARIO_WHATSAPP", "")

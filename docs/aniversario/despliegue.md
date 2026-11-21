@@ -63,8 +63,8 @@ El script (idempotente, se puede repetir):
    redirección 80→443, y deja `renew_hook = systemctl reload nginx` para la renovación.
 6. Comprueba `/` 200, `/admin/` 404 y `/media/private/` 404.
 
-Opcional en el bloque de originalidad (videos desde el admin): `client_max_body_size 70m`. Ver el valor actual con
-`sudo grep -rn client_max_body_size /etc/nginx/`. Antes de subir 14 videos, revisar `df -h /` (≈ 0,8 GB).
+Opcional en el bloque de originalidad (videos desde el admin): `client_max_body_size 110m` (videos de hasta 100 MB). Ver el valor actual con
+`sudo grep -rn client_max_body_size /etc/nginx/`. Antes de subir 14 videos, revisar `df -h /` (14 × 100 MB ≈ 1,4 GB).
 
 ## 5. Variables de entorno
 

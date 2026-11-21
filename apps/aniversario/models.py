@@ -17,7 +17,7 @@ FOTO_CALIDAD = 80
 FOTO_EXTENSIONES = ["jpg", "jpeg", "png", "webp"]
 MAX_FOTOS = 5
 VIDEO_EXTENSIONES = ["mp4", "webm"]
-VIDEO_MAX_MB = 60
+VIDEO_MAX_MB = 100
 VIDEO_MIME = {"video/mp4", "video/webm", "video/quicktime"}
 
 

@@ -81,7 +81,7 @@ Un voto = 1 Miss + 1 Mister, ambos obligatorios.
 - CSS de la maqueta en `static/aniversario/css/aniversario.css`; JS en `static/aniversario/js/aniversario.js`
   solo para cuenta regresiva, galería, resaltado de selección y refresco del conteo (25 s, `/api/conteo/`).
 - Mobile-first, breakpoints 860/560 px, áreas táctiles ≥44 px, `safe-area-inset`, modo oscuro de la maqueta.
-- Video: los encargados lo **suben** (MP4/WebM, máx. 60 MB, tipo real verificado con python-magic) y se
+- Video: los encargados lo **suben** (MP4/WebM, máx. 100 MB, tipo real verificado con python-magic) y se
   reproduce con `<video>` nativo servido por Nginx desde `media/aniversario/videos/`; o pegan un enlace de
   YouTube/Facebook (`youtube-nocookie`). Si hay archivo, tiene prioridad. Recomendado subir a YouTube cuando el
   tráfico sea alto: no consume ancho de banda ni disco del EC2.

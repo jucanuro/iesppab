@@ -56,7 +56,7 @@ El script (idempotente, se puede repetir):
 1. Detecta el `proxy_pass` que ya usa originalidad en `/etc/nginx/sites-enabled/` (si no, `ANIV_UPSTREAM=...`).
 2. Respalda en `/root/nginx_backups/` y escribe `/etc/nginx/sites-available/aniversario` +
    `/etc/nginx/aniversario_proxy.conf`: `/static/`, **solo** `/media/aniversario/` (el resto de `/media/` → 404,
-   ahí están las tesis privadas) y `limit_req` 6/min en `/votar/confirmar/`.
+   ahí están las tesis privadas) y `limit_req` 30/min por IP (ráfaga 30) en `/votar/confirmar/`, holgado por el CGNAT de datos móviles.
 3. Crea `media/aniversario/` con el dueño de `media/`.
 4. `nginx -t`; si falla, restaura y no recarga.
 5. Pide el certificado con `certbot certonly --webroot` (no edita el archivo), regenera el bloque con 443 y

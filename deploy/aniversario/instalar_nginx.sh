@@ -64,7 +64,7 @@ cat <<CONF
     location /media/ { return 404; }
 
     location = /votar/confirmar/ {
-        limit_req zone=aniv_voto burst=5 nodelay;
+        limit_req zone=aniv_voto burst=30 nodelay;
         limit_req_status 429;
         include $PROXY_INC;
     }
@@ -85,7 +85,7 @@ escribir_sitio() {
     if ! grep -qsE '^\s*server_names_hash_bucket_size' /etc/nginx/nginx.conf /etc/nginx/conf.d/*.conf; then
       echo "server_names_hash_bucket_size 128;"
     fi
-    echo "limit_req_zone \$binary_remote_addr zone=aniv_voto:10m rate=6r/m;"
+    echo "limit_req_zone \$binary_remote_addr zone=aniv_voto:10m rate=30r/m;"
     echo
     if [[ -f "$CERT" ]]; then
       cat <<CONF

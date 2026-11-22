@@ -118,11 +118,12 @@ class Concurso(models.Model):
     mostrar_conteo = models.BooleanField("mostrar conteo en vivo", default=True)
     max_votos_por_ip = models.PositiveIntegerField(
         "máximo de votos por IP",
-        default=1,
+        default=30,
         validators=[MinValueValidator(1)],
         help_text=(
-            "En el WiFi del campus o con datos móviles (CGNAT) muchos equipos "
-            "comparten IP: súbelo si hay rechazos legítimos."
+            "Con datos móviles (CGNAT) o el WiFi del campus muchos celulares comparten "
+            "la misma IP pública; el control principal es un voto por equipo. "
+            "Súbelo si hay rechazos legítimos."
         ),
     )
     activo = models.BooleanField("activo", default=True)

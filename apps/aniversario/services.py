@@ -60,6 +60,18 @@ def _cache():
 
 # ---------------------------------------------------------------- IP real
 
+def ip_para_limite(ip: str | None) -> str | None:
+    """Solo una IP pública sirve para limitar. Si llega una privada o de loopback,
+    el proxy no pasó la IP real y todos los votantes compartirían esa IP."""
+    if not ip:
+        return None
+    try:
+        dir_ip = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    return ip if dir_ip.is_global else None
+
+
 def _ip_valida(valor: str | None) -> str | None:
     valor = (valor or "").strip()
     if not valor:
@@ -221,7 +233,8 @@ def invalidar_conteo(concurso: Concurso) -> None:
 # --------------------------------------------------------------- rate limit
 
 def verificar_rate_limit(ip: str | None) -> None:
-    limite = getattr(settings, "ANIVERSARIO_RATE_POR_MINUTO", 10)
+    limite = getattr(settings, "ANIVERSARIO_RATE_POR_MINUTO", 30)
+    ip = ip_para_limite(ip)
     if not ip or limite <= 0:
         return
     clave = f"aniv:rate:{ip}"
@@ -286,8 +299,9 @@ class VotoService:
                 existente = voto_del_dispositivo(datos.token)
                 if existente:
                     raise VotoDuplicadoError("Este equipo ya votó.", existente)
-                if datos.ip and (
-                    Voto.objects.filter(concurso=concurso, ip=datos.ip).count()
+                ip_limite = ip_para_limite(datos.ip)
+                if ip_limite and (
+                    Voto.objects.filter(concurso=concurso, ip=ip_limite).count()
                     >= concurso.max_votos_por_ip
                 ):
                     raise LimiteIpError(

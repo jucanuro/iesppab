@@ -171,7 +171,7 @@ ANIVERSARIO_PROXIES_CONFIANZA = env_list(
     "127.0.0.1,::1",
 )
 ANIVERSARIO_CONTEO_TTL = env_int("ANIVERSARIO_CONTEO_TTL", 20)
-ANIVERSARIO_RATE_POR_MINUTO = env_int("ANIVERSARIO_RATE_POR_MINUTO", 10)
+ANIVERSARIO_RATE_POR_MINUTO = env_int("ANIVERSARIO_RATE_POR_MINUTO", 30)
 # Botón flotante de consultas por WhatsApp (solo dígitos, con código de país). Vacío = sin botón.
 ANIVERSARIO_WHATSAPP = "".join(ch for ch in os.getenv("ANIVERSARIO_WHATSAPP", "51952416604") if ch.isdigit())
 # Redis para conteo y rate limit compartidos entre workers. Usar un número de

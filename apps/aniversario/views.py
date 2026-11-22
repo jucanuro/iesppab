@@ -31,6 +31,7 @@ def _contexto_base(concurso, request=None, **extra):
     res = services.resumen(concurso) if concurso.mostrar_conteo else {"candidatos": {}, "total": 0}
     datos["conteo"] = res["candidatos"]
     datos["total_votos"] = res["total"]
+    datos["totales"] = services.totales(res)
     if request is not None and "mi_voto" not in extra:
         # Estado "ya votaste" fijo en todo el sitio para este equipo.
         datos["mi_voto"] = services.voto_del_dispositivo(services.leer_token(request))
@@ -213,6 +214,7 @@ def api_conteo(request):
     response = JsonResponse({
         "visible": True,
         "total": datos["total"],
+        "totales": services.totales(datos),
         "candidatos": {
             str(k): {"votos": v["votos"], "pct": v["pct"], "puesto": v["puesto"]}
             for k, v in datos["candidatos"].items()

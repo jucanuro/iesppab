@@ -173,6 +173,13 @@ def calcular_resumen(concurso: Concurso) -> dict:
     return {"candidatos": _rankear(base), "total": votos.count()}
 
 
+def totales(datos: dict) -> dict:
+    """Votos sumados por categoría y total general (miss + mister) a partir del resumen."""
+    miss = sum(d["votos"] for d in datos["candidatos"].values() if d["cat"] == Candidato.MISS)
+    mister = sum(d["votos"] for d in datos["candidatos"].values() if d["cat"] == Candidato.MISTER)
+    return {"miss": miss, "mister": mister, "general": miss + mister, "votantes": datos["total"]}
+
+
 def calcular_conteo(concurso: Concurso) -> dict[int, dict]:
     return calcular_resumen(concurso)["candidatos"]
 

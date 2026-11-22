@@ -231,8 +231,16 @@ class ContadorYEstadoTests(BaseAniversario):
     def test_total_en_el_inicio(self):
         self.votar()
         r = self.client.get("/")
-        self.assertContains(r, "data-total>1<")
-        self.assertContains(r, "votos emitidos")
+        self.assertContains(r, 'data-tot="miss">1<')
+        self.assertContains(r, 'data-tot="mister">1<')
+        self.assertContains(r, 'data-tot="general">2<')
+        self.assertContains(r, "Total general")
+
+    def test_totales_por_categoria_en_la_api(self):
+        self.client.get("/api/conteo/")  # conteo cacheado antes del voto
+        self.votar()
+        api = self.client.get("/api/conteo/").json()
+        self.assertEqual(api["totales"], {"miss": 1, "mister": 1, "general": 2, "votantes": 1})
 
     def test_estado_ya_votaste_fijo_en_todo_el_sitio(self):
         r = self.client.get("/")

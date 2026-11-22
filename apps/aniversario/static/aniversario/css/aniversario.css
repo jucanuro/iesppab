@@ -184,3 +184,12 @@ label.cd{cursor:pointer}
 .wa-flot:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
 @media(max-width:560px){.wa-flot{width:56px;padding:0;justify-content:center}.wa-flot-txt{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 footer{padding-bottom:88px}
+/* Votos por categoría + total general */
+.vts{gap:12px}
+.vts-cat{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vts-cat span,.vts-gen span{display:block;font-size:13px;color:var(--mut);font-weight:700}
+.vts-cat b{display:block;font:800 30px Sora,sans-serif;line-height:1.05;font-variant-numeric:tabular-nums}
+.vts-gen{border-top:1px solid var(--ln);padding-top:10px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.vts-gen b{font:800 26px Sora,sans-serif;font-variant-numeric:tabular-nums;color:var(--ink)}
+.vts-vivo{font-style:normal}
+@media(max-width:560px){.vts-vivo{display:none}.vts-cat b{font-size:26px}}

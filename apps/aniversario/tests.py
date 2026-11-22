@@ -98,8 +98,8 @@ class VotoTests(BaseAniversario):
             self.assertContains(self.client.get(ruta), voto.codigo)
 
     def test_limite_por_ip(self):
-        self.votar(ip="10.0.0.5")
-        r = self.votar(client=self.nuevo_cliente(), ip="10.0.0.5")
+        self.votar(ip="181.65.9.5")
+        r = self.votar(client=self.nuevo_cliente(), ip="181.65.9.5")
         self.assertEqual(r.status_code, 400)
         self.assertContains(r, "máximo de votos", status_code=400)
         self.assertEqual(Voto.objects.count(), 1)
@@ -107,9 +107,9 @@ class VotoTests(BaseAniversario):
     def test_limite_por_ip_configurable(self):
         self.concurso.max_votos_por_ip = 2
         self.concurso.save()
-        self.votar(ip="10.0.0.5")
-        self.votar(client=self.nuevo_cliente(), ip="10.0.0.5")
-        self.votar(client=self.nuevo_cliente(), ip="10.0.0.5")
+        self.votar(ip="181.65.9.5")
+        self.votar(client=self.nuevo_cliente(), ip="181.65.9.5")
+        self.votar(client=self.nuevo_cliente(), ip="181.65.9.5")
         self.assertEqual(Voto.objects.count(), 2)
 
     def test_fuera_de_fecha(self):
@@ -265,6 +265,26 @@ class ContadorYEstadoTests(BaseAniversario):
         r = self.client.get(f"/candidato/{self.miss.pk}/")
         self.assertContains(r, "vd-vacio")
         self.assertContains(r, "Muy pronto")
+
+
+@override_settings(**AJUSTES)
+class IpNoPublicaTests(BaseAniversario):
+    def test_ip_privada_o_loopback_no_limita(self):
+        # Si el proxy no pasa la IP real, todos llegarían como 127.0.0.1 o 10.x:
+        # no debe bloquearse a nadie por IP (sigue valiendo un voto por equipo).
+        for ip in ("127.0.0.1", "10.0.0.5"):
+            self.votar(client=self.nuevo_cliente(), ip=ip)
+            r = self.votar(client=self.nuevo_cliente(), ip=ip)
+            self.assertNotContains(r, "máximo de votos", status_code=r.status_code)
+        self.assertEqual(Voto.objects.count(), 4)
+
+    def test_ip_para_limite(self):
+        self.assertEqual(services.ip_para_limite("181.65.1.2"), "181.65.1.2")
+        for ip in ("127.0.0.1", "10.1.2.3", "192.168.1.5", "100.64.0.1", "::1", "", None, "x"):
+            self.assertIsNone(services.ip_para_limite(ip))
+
+    def test_por_defecto_30_votos_por_ip(self):
+        self.assertEqual(Concurso._meta.get_field("max_votos_por_ip").default, 30)
 
 
 @override_settings(**AJUSTES)

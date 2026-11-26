@@ -42,6 +42,22 @@ class DocumentStatus(models.TextChoices):
     FAILED = "FAILED", _("Fallido")
 
 
+class AuthorizationStatus(models.TextChoices):
+    """
+    Autorización del asesor para analizar un documento.
+
+    Los documentos de alumnos en formación (y de exalumnos aún no validados)
+    nacen PENDING y no se analizan hasta que su asesor los autoriza. El resto,
+    incluidos todos los documentos anteriores a esta regla, quedan
+    NOT_REQUIRED y se analizan como siempre.
+    """
+
+    NOT_REQUIRED = "NOT_REQUIRED", _("No requiere autorización")
+    PENDING = "PENDING", _("Pendiente de autorización")
+    APPROVED = "APPROVED", _("Autorizado")
+    REJECTED = "REJECTED", _("Rechazado")
+
+
 class DocumentKind(models.TextChoices):
     THESIS = "THESIS", _("Tesis")
     MONOGRAPH = "MONOGRAPH", _("Monografía")
@@ -148,6 +164,30 @@ class Document(TimeStampedModel):
     error_message = models.TextField(
         blank=True,
         verbose_name=_("Mensaje de error"),
+    )
+    authorization_status = models.CharField(
+        max_length=20,
+        choices=AuthorizationStatus.choices,
+        default=AuthorizationStatus.NOT_REQUIRED,
+        db_index=True,
+        verbose_name=_("Autorización del asesor"),
+    )
+    authorized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="authorization_decisions",
+        verbose_name=_("Autorizado / rechazado por"),
+    )
+    authorized_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Fecha de la decisión"),
+    )
+    authorization_note = models.TextField(
+        blank=True,
+        verbose_name=_("Observación del asesor"),
     )
 
     class Meta:

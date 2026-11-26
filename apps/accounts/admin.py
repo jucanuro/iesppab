@@ -17,10 +17,12 @@ class UserAdmin(DjangoUserAdmin):
         "institution",
         "is_active",
         "is_enabled",
+        "student_status",
         "is_staff",
     )
     list_filter = (
         "role",
+        "student_status",
         "institution",
         "is_active",
         "is_enabled",
@@ -50,6 +52,22 @@ class UserAdmin(DjangoUserAdmin):
                 )
             },
         ),
+        (
+            "Envíos y autorización",
+            {
+                "description": (
+                    "Un exalumno validado sube y analiza sin autorización del "
+                    "asesor. Los envíos adicionales se suman al tope del rol "
+                    "(docente 5, exalumno 3)."
+                ),
+                "fields": (
+                    "student_status",
+                    "alumni_validated_at",
+                    "alumni_validated_by",
+                    "extra_submissions",
+                ),
+            },
+        ),
     )
 
     add_fieldsets = DjangoUserAdmin.add_fieldsets + (
@@ -68,4 +86,18 @@ class UserAdmin(DjangoUserAdmin):
         ),
     )
 
-    readonly_fields = ("last_login", "date_joined")
+    readonly_fields = ("last_login", "date_joined", "alumni_validated_by")
+    actions = ("mark_as_validated_alumni",)
+
+    @admin.action(description="Marcar como egresado validado")
+    def mark_as_validated_alumni(self, request, queryset):
+        from apps.documents.services import SubmissionAuthorizationService
+
+        service = SubmissionAuthorizationService(request.user)
+        marked = 0
+
+        for student in queryset.filter(role="STUDENT"):
+            service.mark_alumni(student.pk)
+            marked += 1
+
+        self.message_user(request, f"{marked} alumno(s) marcados como egresados.")

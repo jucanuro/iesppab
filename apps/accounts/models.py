@@ -15,6 +15,21 @@ class UserRole(models.TextChoices):
     STUDENT = "STUDENT", _("Alumno")
 
 
+class StudentStatus(models.TextChoices):
+    """
+    Condición de un usuario STUDENT. Solo tiene efecto en ese rol.
+
+    - ENROLLED: alumno en formación; cada envío requiere que su asesor lo
+      autorice.
+    - ALUMNI: exalumno / egresado que valida su tesis. Mientras un asesor o
+      el admin no lo valide, sus envíos también requieren autorización; ya
+      validado, sube y analiza sin autorización (con tope de envíos).
+    """
+
+    ENROLLED = "ENROLLED", _("Alumno en formación")
+    ALUMNI = "ALUMNI", _("Exalumno / egresado")
+
+
 class User(AbstractUser):
     """
     Usuario personalizado del sistema.
@@ -69,6 +84,37 @@ class User(AbstractUser):
         help_text=_(
             "Alumnos auto-registrados inician deshabilitados hasta que un "
             "docente los habilite."
+        ),
+    )
+    student_status = models.CharField(
+        max_length=20,
+        choices=StudentStatus.choices,
+        default=StudentStatus.ENROLLED,
+        verbose_name=_("Condición del alumno"),
+        help_text=_(
+            "Solo aplica a alumnos. Un exalumno validado sube y analiza sin "
+            "autorización del asesor."
+        ),
+    )
+    alumni_validated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("Egresado validado el"),
+    )
+    alumni_validated_by = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        verbose_name=_("Egresado validado por"),
+    )
+    extra_submissions = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("Envíos adicionales"),
+        help_text=_(
+            "Envíos que se suman al tope del rol (docente 5, exalumno 3). "
+            "No afecta a administradores ni directores, que no tienen tope."
         ),
     )
 
@@ -133,6 +179,16 @@ class User(AbstractUser):
     @property
     def is_student_role(self) -> bool:
         return self.role == UserRole.STUDENT
+
+    @property
+    def is_alumni(self) -> bool:
+        """Alumno que se declaró (o fue marcado) exalumno / egresado."""
+        return self.is_student_role and self.student_status == StudentStatus.ALUMNI
+
+    @property
+    def is_validated_alumni(self) -> bool:
+        """Egresado confirmado por un asesor o el admin."""
+        return self.is_alumni and self.alumni_validated_at is not None
 
     def __str__(self) -> str:
         full_name = self.get_full_name().strip()

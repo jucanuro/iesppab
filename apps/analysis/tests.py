@@ -1620,7 +1620,7 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
         delay.assert_not_called()
 
     @mock.patch(
-        "apps.analysis.views.run_document_analysis.delay",
+        "apps.analysis.tasks.run_document_analysis.delay",
         side_effect=ConnectionError("broker caído"),
     )
     def test_enqueue_failure_does_not_leave_document_queued(

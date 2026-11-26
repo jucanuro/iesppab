@@ -17,3 +17,14 @@ class InvalidDocumentOwnerError(DocumentUploadError):
     """Alumno propietario inválido."""
 
     pass
+
+class SubmissionLimitError(DocumentUploadError):
+    """El usuario alcanzó su tope de envíos."""
+
+    pass
+
+
+class AuthorizationError(Exception):
+    """Error controlado al autorizar / rechazar un envío o validar un egresado."""
+
+    pass

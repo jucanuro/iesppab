@@ -219,6 +219,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.institution_status",
+                "apps.documents.context_processors.pending_authorizations",
             ],
         },
     },
@@ -910,3 +911,10 @@ if ANALYSIS_STALE_JOB_MINUTES * 60 <= ANALYSIS_TASK_TIME_LIMIT:
     raise RuntimeError(
         "ANALYSIS_STALE_JOB_MINUTES debe ser mayor que ANALYSIS_TASK_TIME_LIMIT."
     )
+
+
+# Topes de envíos propios por rol (ver SubmissionPolicy en
+# apps/documents/services.py). ADMIN y DIRECTOR no tienen tope; el admin puede
+# sumar envíos a un usuario con User.extra_submissions.
+SUBMISSION_LIMIT_TEACHER = int(os.getenv("SUBMISSION_LIMIT_TEACHER", "5"))
+SUBMISSION_LIMIT_ALUMNI = int(os.getenv("SUBMISSION_LIMIT_ALUMNI", "3"))

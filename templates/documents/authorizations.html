@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block title %}Solicitudes de autorización | IESPP Alfonso Barrantes Lingán{% endblock %}
+
+{% block content %}
+<section class="text-slate-800">
+
+    <section class="mb-5 card overflow-hidden">
+        <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-4">
+            <h2 class="text-[20px] font-semibold text-brand-700">Solicitudes de autorización</h2>
+            <p class="mt-1 text-[12.5px] leading-5 text-slate-600">
+                Los alumnos en formación necesitan que su asesor autorice cada análisis. Al autorizar,
+                el documento entra en cola y se analiza automáticamente.
+                {% if request.user.is_admin_role %}Como administrador ves las solicitudes de toda la institución.{% else %}Ves los envíos en los que te eligieron como asesor.{% endif %}
+            </p>
+        </div>
+        <div class="px-5 py-4">
+            <p class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Pendientes</p>
+            <p class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ pending_documents|length }}</p>
+        </div>
+    </section>
+
+    {% if pending_documents %}
+        <ul class="mb-6 space-y-3">
+            {% for document in pending_documents %}
+                {% with student=document.owner %}
+                <li class="card overflow-hidden">
+                    {% if student.is_alumni and not student.is_validated_alumni %}
+                        <div class="flex items-start gap-2.5 border-b border-amber-200 bg-amber-50 px-5 py-3 text-[12.5px] leading-5 text-amber-900" role="note">
+                            <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+                            <p><strong>Primer envío de un exalumno: valida que es egresado.</strong>
+                                {{ student.get_full_name|default:student.username }} se registró como exalumno para validar su tesis.
+                                Si confirmas que egresó de la institución, pulsa «Validar como egresado y autorizar»: desde entonces
+                                sube y analiza sin autorización (hasta 3 envíos). Si no lo es, autoriza solo este envío o recházalo.</p>
+                        </div>
+                    {% endif %}
+
+                    <div class="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div class="min-w-0">
+                            <p class="truncate text-[15px] font-bold text-slate-900">{{ document.title }}</p>
+                            <p class="mt-1 text-[12.5px] text-slate-600">
+                                {{ student.get_full_name|default:student.username }} · {{ student.email }}
+                                {% if student.is_alumni %}<span class="badge badge-info ml-1">{% if student.is_validated_alumni %}Egresado validado{% else %}Exalumno sin validar{% endif %}</span>{% endif %}
+                            </p>
+                            <p class="mt-1 text-[12px] text-slate-500">
+                                {{ document.get_kind_display }}{% if document.course_name %} · {{ document.course_name }}{% endif %}{% if document.academic_period %} · {{ document.academic_period }}{% endif %}
+                                · enviado el {{ document.created_at|date:"d/m/Y H:i" }}
+                                {% if request.user.is_admin_role and document.advisor %} · asesor: {{ document.advisor.get_full_name|default:document.advisor.username }}{% endif %}
+                            </p>
+                        </div>
+
+                        <div class="flex shrink-0 flex-col gap-2 sm:items-end" x-data="{ rejecting: false }">
+                            <div class="flex flex-wrap gap-2">
+                                {% if student.is_alumni and not student.is_validated_alumni %}
+                                    <form method="post" action="{% url 'documents:authorization-decision' document.id %}" data-submit-spinner>
+                                        {% csrf_token %}
+                                        <input type="hidden" name="decision" value="approve_validate">
+                                        <button type="submit" class="btn btn-primary" data-loading-label="Validando…">Validar como egresado y autorizar</button>
+                                    </form>
+                                {% endif %}
+                                <form method="post" action="{% url 'documents:authorization-decision' document.id %}" data-submit-spinner>
+                                    {% csrf_token %}
+                                    <input type="hidden" name="decision" value="approve">
+                                    <button type="submit" class="btn {% if student.is_alumni and not student.is_validated_alumni %}btn-secondary{% else %}btn-primary{% endif %}" data-loading-label="Autorizando…">{% if student.is_alumni and not student.is_validated_alumni %}Autorizar solo este envío{% else %}Autorizar{% endif %}</button>
+                                </form>
+                                <button type="button" class="btn btn-secondary !text-red-700" @click="rejecting = !rejecting" :aria-expanded="rejecting">Rechazar</button>
+                            </div>
+
+                            <form x-show="rejecting" x-cloak method="post" action="{% url 'documents:authorization-decision' document.id %}" class="flex w-full flex-col gap-2 sm:w-96" data-submit-spinner>
+                                {% csrf_token %}
+                                <input type="hidden" name="decision" value="reject">
+                                <label for="note-{{ document.id }}" class="field-label">Motivo (lo verá el alumno)</label>
+                                <textarea id="note-{{ document.id }}" name="note" rows="2" maxlength="1000" class="field text-[13px]" placeholder="Ej. Falta el capítulo de resultados."></textarea>
+                                <button type="submit" class="btn btn-primary !bg-none !bg-red-600" data-loading-label="Rechazando…">Confirmar rechazo</button>
+                            </form>
+
+                            {% if not student.is_alumni %}
+                                <form method="post" action="{% url 'documents:mark-alumni' student.id %}" data-submit-spinner
+                                      onsubmit="return confirm('¿Marcar a {{ student.get_full_name|default:student.username|escapejs }} como egresado? Desde entonces subirá y analizará sin autorización (máximo 3 envíos).');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-[12px] font-semibold text-[#123f9e] hover:underline" data-loading-label="Marcando…">Marcar como egresado</button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </li>
+                {% endwith %}
+            {% endfor %}
+        </ul>
+    {% else %}
+        <section class="mb-6 card">
+            {% include "components/empty_state.html" with title="No hay solicitudes pendientes" text="Cuando un alumno te elija como asesor al subir un documento, aparecerá aquí para que lo autorices." %}
+        </section>
+    {% endif %}
+
+    {% if recent_decisions %}
+        <section class="card overflow-hidden">
+            <div class="border-b border-slate-100 px-5 py-3">
+                <h3 class="text-[15px] font-semibold text-brand-700">Tus últimas decisiones</h3>
+            </div>
+            <ul class="divide-y divide-slate-100">
+                {% for document in recent_decisions %}
+                    <li class="flex flex-wrap items-center justify-between gap-2 px-5 py-2.5 text-[13px]">
+                        <span class="min-w-0 truncate"><strong class="text-slate-800">{{ document.title }}</strong> · {{ document.owner.get_full_name|default:document.owner.username }}</span>
+                        <span class="flex items-center gap-2 text-[12px] text-slate-500">
+                            {% if document.authorization_status == "APPROVED" %}<span class="badge badge-success">Autorizado</span>{% else %}<span class="badge badge-danger" title="{{ document.authorization_note }}">Rechazado</span>{% endif %}
+                            {{ document.authorized_at|date:"d/m/Y H:i" }}
+                        </span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </section>
+    {% endif %}
+</section>
+{% endblock %}

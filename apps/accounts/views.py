@@ -24,7 +24,7 @@ from django.views.generic import TemplateView
 
 from apps.core.models import Institution
 
-from .models import UserRole
+from .models import StudentStatus, UserRole
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +230,14 @@ class PublicRegistrationView(View):
         last_name = request.POST.get("last_name", "").strip()
         password1 = request.POST.get("password1", "")
         password2 = request.POST.get("password2", "")
+        student_status = request.POST.get("student_status", "")
+
+        if student_status not in StudentStatus.values:
+            messages.error(
+                request,
+                "Indica si eres alumno en formación o exalumno.",
+            )
+            return redirect("accounts:register")
 
         if not email or not first_name or not last_name or not password1 or not password2:
             messages.error(request, "Completa todos los campos para registrarte.")
@@ -288,17 +296,26 @@ class PublicRegistrationView(View):
                 institution=institution,
                 is_active=True,
                 is_enabled=False,
+                student_status=student_status,
             )
             user.set_password(password1)
             user.save()
 
             logger.info("Registro público correcto. user_id=%s", user.id)
 
-            messages.success(
-                request,
-                "Cuenta creada. Un docente debe habilitarte antes de que "
-                "puedas subir documentos.",
-            )
+            if student_status == StudentStatus.ALUMNI:
+                messages.success(
+                    request,
+                    "Cuenta creada como exalumno. Un docente debe habilitarte; "
+                    "luego, en tu primer envío, tu asesor validará que eres "
+                    "egresado.",
+                )
+            else:
+                messages.success(
+                    request,
+                    "Cuenta creada. Un docente debe habilitarte antes de que "
+                    "puedas subir documentos.",
+                )
             return redirect("accounts:login")
 
         except Exception:
@@ -380,6 +397,7 @@ class PendingStudentsView(LoginRequiredMixin, TemplateView):
                 "id": str(student.id),
                 "name": student.get_full_name().strip() or student.username,
                 "email": student.email,
+                "alumni": student.student_status == StudentStatus.ALUMNI,
             }
             for student in pending_students
         ]

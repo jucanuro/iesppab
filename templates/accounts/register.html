@@ -22,6 +22,26 @@
         {% include "accounts/_field.html" with id="password2" name="password2" label="Confirmar contraseña" type="password" autocomplete="new-password" placeholder="••••••••" icon="lock" password=True %}
     </div>
 
+    <fieldset>
+        <legend class="mb-1.5 block text-[13px] font-semibold text-slate-800">¿Cuál es tu condición?</legend>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff]">
+                <input type="radio" name="student_status" value="ENROLLED" required checked class="mt-0.5 h-4 w-4 accent-[#236bfd]">
+                <span>
+                    <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy alumno</span>
+                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Estoy en formación. Mi asesor autoriza cada análisis.</span>
+                </span>
+            </label>
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff]">
+                <input type="radio" name="student_status" value="ALUMNI" required class="mt-0.5 h-4 w-4 accent-[#236bfd]">
+                <span>
+                    <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy exalumno</span>
+                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Egresé y quiero validar mi tesis. Hasta 3 envíos; mi asesor me valida en el primero.</span>
+                </span>
+            </label>
+        </div>
+    </fieldset>
+
     <ul id="pwReqs" class="grid gap-1 rounded-xl bg-[#eef3ff] px-4 py-3 text-[12.5px] text-slate-700 sm:grid-cols-3" aria-live="polite">
         <li data-req="len">○ Mínimo 8 caracteres</li>
         <li data-req="num">○ No solo números</li>

@@ -98,14 +98,29 @@
                 {% endif %}
 
                 <div class="min-w-0">
-                    <label for="advisor_id" class="field-label">Asesor</label>
-                    <select id="advisor_id" name="advisor_id" class="field h-10 text-[13px]">
-                        <option value="">Sin asesor asignado</option>
+                    <label for="advisor_id" class="field-label">Asesor{% if requires_authorization %} <span class="text-red-600">*</span>{% endif %}</label>
+                    <select id="advisor_id" name="advisor_id" {% if requires_authorization %}required aria-describedby="advisorHint"{% endif %} class="field h-10 text-[13px]">
+                        <option value="">{% if requires_authorization %}Elige a tu asesor o docente{% else %}Sin asesor asignado{% endif %}</option>
                         {% for advisor in advisors %}
                             <option value="{{ advisor.id }}">{{ advisor.get_full_name|default:advisor.username }}</option>
                         {% endfor %}
                     </select>
                 </div>
+
+                {% if requires_authorization or submission_quota.limit is not None %}
+                    <div id="advisorHint" class="min-w-0 rounded-xl border border-brand-500/20 bg-[#eef3ff] px-3.5 py-2.5 text-[12.5px] leading-5 text-[#123f9e] sm:col-span-2">
+                        {% if requires_authorization %}
+                            {% if request.user.is_alumni %}
+                                <p><strong>Tu asesor validará que eres egresado</strong> al revisar este envío y autorizará su análisis. Una vez validado, tus siguientes envíos se analizan sin esperar autorización.</p>
+                            {% else %}
+                                <p><strong>Tu asesor debe autorizar el análisis.</strong> El documento queda pendiente y se analiza automáticamente cuando lo apruebe.</p>
+                            {% endif %}
+                        {% endif %}
+                        {% if submission_quota.limit is not None %}
+                            <p class="{% if requires_authorization %}mt-1 {% endif %}font-semibold">Envíos disponibles: {{ submission_quota.remaining }} de {{ submission_quota.limit }}.</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
 
                 <div class="min-w-0">
                     <label for="course_name" class="field-label">Curso</label>

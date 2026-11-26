@@ -234,7 +234,7 @@
                 item.className = "flex w-full flex-col items-start gap-0.5 border-b border-slate-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-brand-50";
                 item.innerHTML = `
                     <span class="truncate text-[13px] font-bold text-slate-800">${student.name}</span>
-                    <span class="truncate text-[11px] text-slate-500">${student.email}</span>
+                    <span class="truncate text-[11px] text-slate-500">${student.email}${student.alumni ? " · Exalumno (se valida en su primer envío)" : ""}</span>
                 `;
 
                 item.addEventListener("click", function () {

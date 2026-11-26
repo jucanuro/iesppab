@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -11,12 +12,24 @@ from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
+from django.views import View
 from django.views.generic import TemplateView
 
 from apps.accounts.models import User, UserRole
-from apps.documents.exceptions import DocumentUploadError
-from apps.documents.models import Document, DocumentKind, DocumentStatus
-from apps.documents.services import DocumentUploadDTO, DocumentUploadService
+from apps.documents.exceptions import AuthorizationError, DocumentUploadError
+from apps.documents.models import (
+    AuthorizationStatus,
+    Document,
+    DocumentKind,
+    DocumentStatus,
+)
+from apps.documents.services import (
+    DocumentUploadDTO,
+    DocumentUploadService,
+    SubmissionAuthorizationService,
+    SubmissionPolicy,
+    can_decide_authorizations,
+)
 
 DOCUMENTS_PER_PAGE = 10
 DOCUMENTS_PER_PAGE_CHOICES = (10, 25, 50, 100)
@@ -58,6 +71,10 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         context["document_kinds"] = DocumentKind.choices
         context["students"] = self._get_available_students(user)
         context["advisors"] = self._get_available_advisors(user)
+        context["requires_authorization"] = (
+            SubmissionPolicy.requires_authorization(user)
+        )
+        context["submission_quota"] = SubmissionPolicy.quota(user)
 
         context["recent_documents"] = page
         context["page_obj"] = page
@@ -104,10 +121,22 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             service = DocumentUploadService(uploaded_by=user)
             document = service.execute(dto)
 
-            messages.success(
-                request,
-                f"El documento '{document.title}' fue enviado correctamente.",
-            )
+            if document.authorization_status == AuthorizationStatus.PENDING:
+                advisor_name = (
+                    document.advisor.get_full_name().strip()
+                    or document.advisor.username
+                )
+                messages.success(
+                    request,
+                    f"El documento '{document.title}' se registró y quedó "
+                    f"pendiente de autorización de {advisor_name}. Se "
+                    "analizará automáticamente cuando lo autorice.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"El documento '{document.title}' fue enviado correctamente.",
+                )
 
             return redirect("documents:upload")
 
@@ -187,7 +216,9 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             if not user.is_superuser:
                 documents = documents.filter(institution=user.institution)
         else:
-            documents = documents.filter(Q(owner=user) | Q(uploaded_by=user))
+            documents = documents.filter(
+                Q(owner=user) | Q(uploaded_by=user) | Q(advisor=user)
+            )
 
         return documents.order_by("-created_at")
 
@@ -241,3 +272,122 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
             return str(error.messages[0])
 
         return "Los datos enviados no son válidos."
+
+
+class _AuthorizationAccessMixin(LoginRequiredMixin):
+    """Solo docentes, directores y administradores deciden envíos."""
+
+    login_url = reverse_lazy("accounts:login")
+
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        if request.user.is_authenticated and not can_decide_authorizations(
+            cast(User, request.user)
+        ):
+            return HttpResponseForbidden(
+                "No tienes permisos para autorizar envíos."
+            )
+
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AuthorizationInboxView(_AuthorizationAccessMixin, TemplateView):
+    """
+    Bandeja de solicitudes de autorización: envíos de alumnos que esperan la
+    decisión del asesor (o del admin), más las últimas decisiones propias.
+    """
+
+    template_name = "documents/authorizations.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        service = SubmissionAuthorizationService(cast(User, self.request.user))
+
+        context["pending_documents"] = list(service.pending_documents())
+        context["recent_decisions"] = list(service.recent_decisions())
+
+        return context
+
+
+class AuthorizationDecisionView(_AuthorizationAccessMixin, View):
+    """
+    POST con ``decision``: ``approve``, ``approve_validate`` (validar como
+    egresado y autorizar) o ``reject`` (con ``note`` opcional).
+    """
+
+    def post(self, request: HttpRequest, pk: Any, *args: Any, **kwargs: Any) -> HttpResponse:
+        user = cast(User, request.user)
+        service = SubmissionAuthorizationService(user)
+        decision = request.POST.get("decision", "")
+
+        try:
+            if decision in ("approve", "approve_validate"):
+                document = service.approve(
+                    pk,
+                    validate_alumni=decision == "approve_validate",
+                )
+                if decision == "approve_validate":
+                    messages.success(
+                        request,
+                        f"Validaste a {document.owner} como egresado y "
+                        f"autorizaste «{document.title}». El análisis ya "
+                        "está en cola; sus próximos envíos no necesitarán "
+                        "autorización.",
+                    )
+                else:
+                    messages.success(
+                        request,
+                        f"Autorizaste «{document.title}». El análisis ya "
+                        "está en cola.",
+                    )
+
+            elif decision == "reject":
+                document = service.reject(pk, note=request.POST.get("note", ""))
+                messages.success(
+                    request,
+                    f"Rechazaste el análisis de «{document.title}».",
+                )
+
+            else:
+                messages.error(request, "Acción no válida.")
+
+        except PermissionDenied as exc:
+            logger.warning(
+                "Permiso denegado al decidir envío. user_id=%s doc_id=%s",
+                user.id,
+                pk,
+                exc_info=True,
+            )
+            return HttpResponseForbidden(str(exc))
+
+        except AuthorizationError as exc:
+            messages.error(request, str(exc))
+
+        return redirect("documents:authorizations")
+
+
+class MarkAlumniView(_AuthorizationAccessMixin, View):
+    """Marca a un alumno como egresado validado (asesor o admin)."""
+
+    def post(self, request: HttpRequest, pk: Any, *args: Any, **kwargs: Any) -> HttpResponse:
+        user = cast(User, request.user)
+
+        try:
+            student = SubmissionAuthorizationService(user).mark_alumni(pk)
+        except PermissionDenied as exc:
+            logger.warning(
+                "Permiso denegado al marcar egresado. user_id=%s student_id=%s",
+                user.id,
+                pk,
+                exc_info=True,
+            )
+            return HttpResponseForbidden(str(exc))
+
+        messages.success(
+            request,
+            f"{student} quedó marcado como egresado: desde ahora sube y "
+            "analiza sin autorización (máximo "
+            f"{settings.SUBMISSION_LIMIT_ALUMNI + student.extra_submissions} "
+            "envíos).",
+        )
+
+        return redirect("documents:authorizations")

@@ -13,7 +13,7 @@ from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from apps.accounts.models import StudentStatus, User, UserRole
+from apps.accounts.models import AdvisorLink, StudentStatus, User, UserRole
 from apps.documents.exceptions import (
     AuthorizationError,
     DocumentUploadError,
@@ -193,6 +193,7 @@ class DocumentUploadDTO:
     owner_id: str | UUID | None
     advisor_id: str | UUID | None
     uploaded_file: UploadedFile
+    link_id: str | UUID | None = None
 
 
 class DocumentUploadService:
@@ -233,10 +234,16 @@ class DocumentUploadService:
                 and SubmissionPolicy.requires_authorization(owner)
             )
 
-            # El alumno relacionado con un asesor por código envía siempre a
-            # ese asesor; solo elige otro si no tiene asesor asignado.
-            if own_submission and owner.is_student_role and owner.advisor_id:
-                advisor = owner.advisor
+            course_name = dto.course_name.strip()
+            academic_period = dto.academic_period.strip()
+
+            # El alumno sube para uno de sus vínculos (docente + curso): el
+            # documento guarda ese docente y ese curso.
+            if own_submission and owner.is_student_role:
+                link = self._resolve_link(owner, dto.link_id)
+                advisor = link.advisor
+                course_name = link.course_name
+                academic_period = academic_period or link.academic_period
             else:
                 advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
 
@@ -260,8 +267,8 @@ class DocumentUploadService:
                 advisor=advisor,
                 title=dto.title.strip(),
                 kind=dto.kind,
-                course_name=dto.course_name.strip(),
-                academic_period=dto.academic_period.strip(),
+                course_name=course_name,
+                academic_period=academic_period,
                 original_file=dto.uploaded_file,
                 original_filename=dto.uploaded_file.name,
                 mime_type=detected_mime,
@@ -303,6 +310,36 @@ class DocumentUploadService:
             raise DocumentUploadError(
                 "Ocurrió un error inesperado al registrar el documento."
             ) from exc
+
+    def _resolve_link(self, owner: User, link_id: str | UUID | None) -> AdvisorLink:
+        links = list(
+            AdvisorLink.objects.select_related("advisor").filter(
+                student=owner,
+                is_active=True,
+                advisor__is_active=True,
+            )
+        )
+
+        if not links:
+            raise DocumentUploadError(
+                "Primero agrega el código de tu docente o asesor: así sabe a "
+                "quién llega tu documento."
+            )
+
+        if link_id:
+            for link in links:
+                if str(link.pk) == str(link_id):
+                    return link
+            raise DocumentUploadError(
+                "El docente y curso elegidos no están entre tus vínculos."
+            )
+
+        if len(links) == 1:
+            return links[0]
+
+        raise DocumentUploadError(
+            "Elige el docente y curso para el que subes el documento."
+        )
 
     def _check_quota(self, owner: User) -> None:
         # Bloquea la fila del usuario para que dos subidas simultáneas no
@@ -660,7 +697,7 @@ class SubmissionAuthorizationService:
         if not (self.actor.is_teacher_role or self.actor.is_director_role):
             return False
 
-        if student.advisor_id == self.actor.pk:
+        if AdvisorLink.objects.filter(student=student, advisor=self.actor).exists():
             return True
 
         return Document.objects.filter(

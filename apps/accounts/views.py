@@ -17,6 +17,7 @@ from django.http import (
     HttpResponseForbidden,
 )
 from django.shortcuts import redirect, render
+from django.db import transaction
 from django.urls import reverse, reverse_lazy
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
@@ -27,6 +28,7 @@ from apps.core.models import Institution
 from .exceptions import InviteCodeError
 from .models import StudentStatus, UserRole
 from .services import (
+    AdvisorLinkService,
     InviteCodeService,
     StudentEnablementService,
     can_advise,
@@ -294,43 +296,48 @@ class PublicRegistrationView(View):
                 return redirect("accounts:register")
 
             try:
-                advisor = resolve_invite_code(invite_code, institution.id)
+                invite = resolve_invite_code(invite_code, institution.id)
             except InviteCodeError as exc:
                 messages.error(request, str(exc))
                 return redirect("accounts:register")
 
             username = self._generate_unique_username(email=email)
 
-            user = User(
-                username=username,
-                email=email,
-                first_name=first_name,
-                last_name=last_name,
-                role=UserRole.STUDENT,
-                institution=institution,
-                is_active=True,
-                is_enabled=False,
-                student_status=student_status,
-                advisor=advisor,
-            )
-            user.set_password(password1)
-            user.save()
+            # Con un código válido el alumno queda vinculado y puede subir
+            # documentos de inmediato; el análisis lo autoriza su docente.
+            with transaction.atomic():
+                user = User(
+                    username=username,
+                    email=email,
+                    first_name=first_name,
+                    last_name=last_name,
+                    role=UserRole.STUDENT,
+                    institution=institution,
+                    is_active=True,
+                    is_enabled=True,
+                    student_status=student_status,
+                )
+                user.set_password(password1)
+                user.save()
+                AdvisorLinkService(user).link_with(invite)
 
             logger.info("Registro público correcto. user_id=%s", user.id)
 
+            advisor = invite.owner
             advisor_name = advisor.get_full_name().strip() or advisor.username
             if student_status == StudentStatus.ALUMNI:
                 messages.success(
                     request,
-                    f"Cuenta creada como exalumno. Tu solicitud llegó a "
-                    f"{advisor_name}: cuando valide que eres egresado y te "
-                    "habilite, podrás subir tu tesis.",
+                    f"Cuenta creada como exalumno y vinculada con {advisor_name} "
+                    f"({invite.course_label}). Ya puedes subir tu tesis; en tu "
+                    "primer envío tu asesor validará que eres egresado.",
                 )
             else:
                 messages.success(
                     request,
-                    f"Cuenta creada. Tu solicitud llegó a {advisor_name}: "
-                    "cuando te habilite, podrás subir documentos.",
+                    f"Cuenta creada y vinculada con {advisor_name} "
+                    f"({invite.course_label}). Ya puedes subir documentos; el "
+                    "análisis lo autoriza tu docente.",
                 )
             return redirect("accounts:login")
 
@@ -370,8 +377,10 @@ class _AdvisorOnlyMixin(LoginRequiredMixin):
 
 class PendingStudentsView(_AdvisorOnlyMixin, TemplateView):
     """
-    Alumnos y exalumnos que pidieron acceso con el código del asesor (el
-    admin ve los de toda la institución), y el código para invitarlos.
+    «Mis alumnos»: los alumnos y exalumnos vinculados por los códigos del
+    asesor, con su curso (el admin ve los de toda la institución), los
+    códigos de invitación por curso y, si los hay, alumnos antiguos que aún
+    esperan habilitación.
     """
 
     template_name = "accounts/pending_students.html"
@@ -379,18 +388,19 @@ class PendingStudentsView(_AdvisorOnlyMixin, TemplateView):
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
         user = self.request.user
+        service = StudentEnablementService(user)
 
-        pending_students = list(StudentEnablementService(user).pending_students())
+        student_links = list(service.student_links())
+        pending_students = list(service.pending_students())
 
+        context["student_links"] = student_links
         context["pending_students"] = pending_students
-        context["pending_alumni_count"] = sum(
-            1 for student in pending_students
-            if student.student_status == StudentStatus.ALUMNI
+        context["alumni_to_validate"] = sum(
+            1 for link in student_links
+            if link.student.is_alumni and not link.student.is_validated_alumni
         )
-        context["pending_enrolled_count"] = (
-            len(pending_students) - context["pending_alumni_count"]
-        )
-        context["invite_code"] = InviteCodeService(user).active_code()
+        context["linked_students_count"] = len({link.student_id for link in student_links})
+        context["invite_codes"] = list(InviteCodeService(user).codes())
         context["register_url"] = self.request.build_absolute_uri(
             reverse("accounts:register")
         )
@@ -439,33 +449,88 @@ class BulkEnableStudentsView(_AdvisorOnlyMixin, View):
 
 
 class InviteCodeView(_AdvisorOnlyMixin, View):
-    """POST ``action=generate`` (genera o regenera) o ``action=deactivate``."""
+    """
+    POST ``action``: ``create`` (con ``course_name`` y ``academic_period``),
+    ``regenerate``, ``activate`` o ``deactivate`` (con ``code_id``).
+    """
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         service = InviteCodeService(request.user)
         action = request.POST.get("action", "")
+        code_id = request.POST.get("code_id") or None
 
         try:
-            if action == "generate":
-                code = service.regenerate()
+            if action == "create":
+                code = service.create(
+                    request.POST.get("course_name", ""),
+                    request.POST.get("academic_period", ""),
+                )
                 messages.success(
                     request,
-                    f"Tu código de invitación es {code.code}. Envíalo a tus "
-                    "alumnos para que se registren con él; el código anterior "
-                    "dejó de funcionar.",
+                    f"Código {code.code} creado para {code.course_label}. "
+                    "Envíalo a los alumnos de ese curso.",
                 )
-            elif action == "deactivate":
-                if service.deactivate():
-                    messages.success(
-                        request,
-                        "Desactivaste tu código: ya nadie puede registrarse "
-                        "con él.",
-                    )
-                else:
-                    messages.info(request, "No tenías un código activo.")
+            elif action == "regenerate" and code_id:
+                code = service.regenerate(code_id)
+                messages.success(
+                    request,
+                    f"Nuevo código para {code.course_label}: {code.code}. El "
+                    "anterior dejó de funcionar.",
+                )
+            elif action in ("activate", "deactivate") and code_id:
+                code = service.set_active(code_id, action == "activate")
+                messages.success(
+                    request,
+                    f"Código {code.code} "
+                    + ("activado." if code.is_active else "desactivado: ya nadie puede usarlo."),
+                )
             else:
                 messages.error(request, "Acción no válida.")
         except InviteCodeError as exc:
             messages.error(request, str(exc))
+        except PermissionDenied as exc:
+            return HttpResponseForbidden(str(exc))
 
         return redirect("accounts:pending-students")
+
+
+class MyAdvisorsView(LoginRequiredMixin, View):
+    """
+    «Mis docentes»: el alumno ve sus vínculos (docente + curso) y agrega otro
+    pegando el código que le envió ese docente.
+    """
+
+    template_name = "accounts/my_advisors.html"
+
+    def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        if request.user.is_authenticated and not request.user.is_student_role:
+            return HttpResponseForbidden("Esta pantalla es para alumnos.")
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        return render(
+            request,
+            self.template_name,
+            {"links": list(AdvisorLinkService(request.user).links())},
+        )
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        try:
+            link = AdvisorLinkService(request.user).add_by_code(
+                request.POST.get("invite_code", ""),
+            )
+        except InviteCodeError as exc:
+            messages.error(request, str(exc))
+            return redirect("accounts:my-advisors")
+
+        advisor = link.advisor.get_full_name().strip() or link.advisor.username
+        messages.success(
+            request,
+            f"Quedaste vinculado con {advisor} en {link.course_label}. Ya "
+            "puedes subir documentos para ese curso.",
+        )
+
+        next_url = request.POST.get("next", "")
+        if next_url == "upload":
+            return redirect("documents:upload")
+        return redirect("accounts:my-advisors")

@@ -14,7 +14,7 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import TemplateView
 
-from apps.accounts.models import User, UserRole
+from apps.accounts.models import AdvisorLink, User, UserRole
 from apps.documents.exceptions import AuthorizationError, DocumentUploadError
 from apps.documents.models import (
     AuthorizationStatus,
@@ -70,8 +70,16 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         context["document_kinds"] = DocumentKind.choices
         context["students"] = self._get_available_students(user)
         context["advisors"] = self._get_available_advisors(user)
-        context["fixed_advisor"] = (
-            user.advisor if user.is_student_role and user.advisor_id else None
+        context["student_links"] = (
+            list(
+                AdvisorLink.objects.select_related("advisor").filter(
+                    student=user,
+                    is_active=True,
+                    advisor__is_active=True,
+                )
+            )
+            if user.is_student_role
+            else []
         )
         context["requires_authorization"] = (
             SubmissionPolicy.requires_authorization(user)
@@ -118,6 +126,7 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
                 owner_id=request.POST.get("owner_id") or None,
                 advisor_id=request.POST.get("advisor_id") or None,
                 uploaded_file=uploaded_file,
+                link_id=request.POST.get("link_id") or None,
             )
 
             service = DocumentUploadService(uploaded_by=user)
@@ -394,4 +403,6 @@ class MarkAlumniView(_AuthorizationAccessMixin, View):
             f"envíos libres sin autorización{limit_text}.",
         )
 
+        if request.POST.get("next") == "my-students":
+            return redirect("accounts:pending-students")
         return redirect("documents:authorizations")

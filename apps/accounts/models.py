@@ -110,19 +110,6 @@ class User(AbstractUser):
         related_name="+",
         verbose_name=_("Egresado validado por"),
     )
-    advisor = models.ForeignKey(
-        "self",
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="advisees",
-        verbose_name=_("Asesor / docente asignado"),
-        help_text=_(
-            "Docente o asesor con el que el alumno se relacionó al registrarse "
-            "con su código. Habilita su cuenta y autoriza sus análisis."
-        ),
-        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR", "ADMIN"]},
-    )
     extra_submissions = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Envíos adicionales"),
@@ -222,9 +209,10 @@ def generate_invite_code() -> str:
 
 class AdvisorInviteCode(models.Model):
     """
-    Código que un docente, asesor, director o admin envía a sus alumnos para
-    que se registren relacionados con él. Cada usuario tiene a lo sumo un
-    código activo; regenerar desactiva el anterior.
+    Código que un docente, asesor, director o admin envía a los alumnos de un
+    curso (p. ej. por el grupo de WhatsApp) para que se relacionen con él en
+    ese curso. Puede tener varios, uno por curso o grupo; regenerar uno lo
+    reemplaza por otro con el mismo curso.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -241,6 +229,16 @@ class AdvisorInviteCode(models.Model):
         default=generate_invite_code,
         verbose_name=_("Código"),
     )
+    course_name = models.CharField(
+        max_length=180,
+        blank=True,
+        verbose_name=_("Curso / grupo"),
+    )
+    academic_period = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name=_("Periodo"),
+    )
     is_active = models.BooleanField(default=True, verbose_name=_("Activo"))
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Creado el"))
 
@@ -248,13 +246,66 @@ class AdvisorInviteCode(models.Model):
         verbose_name = _("Código de invitación")
         verbose_name_plural = _("Códigos de invitación")
         ordering = ["-created_at"]
+
+    @property
+    def course_label(self) -> str:
+        parts = [part for part in (self.course_name, self.academic_period) if part]
+        return " · ".join(parts) or "Sin curso"
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.owner} · {self.course_label}"
+
+
+class AdvisorLink(models.Model):
+    """
+    Vínculo alumno–docente–curso. Un alumno puede tener varios (uno por curso
+    o docente); se crea al registrarse con un código o al agregar otro desde
+    «Mis docentes». El documento que sube el alumno guarda el docente y el
+    curso del vínculo elegido.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    student = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="advisor_links",
+        verbose_name=_("Alumno"),
+    )
+    advisor = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="student_links",
+        verbose_name=_("Docente / asesor"),
+        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR", "ADMIN"]},
+    )
+    invite_code = models.ForeignKey(
+        AdvisorInviteCode,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="links",
+        verbose_name=_("Código usado"),
+    )
+    course_name = models.CharField(max_length=180, blank=True, verbose_name=_("Curso / grupo"))
+    academic_period = models.CharField(max_length=50, blank=True, verbose_name=_("Periodo"))
+    is_active = models.BooleanField(default=True, verbose_name=_("Activo"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Vinculado el"))
+
+    class Meta:
+        verbose_name = _("Vínculo alumno–docente")
+        verbose_name_plural = _("Vínculos alumno–docente")
+        ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["owner"],
-                condition=models.Q(is_active=True),
-                name="un_codigo_activo_por_asesor",
+                fields=["student", "advisor", "course_name", "academic_period"],
+                name="vinculo_unico_por_curso",
             ),
         ]
 
+    @property
+    def course_label(self) -> str:
+        parts = [part for part in (self.course_name, self.academic_period) if part]
+        return " · ".join(parts) or "Sin curso"
+
     def __str__(self) -> str:
-        return f"{self.code} · {self.owner}"
+        return f"{self.student} → {self.advisor} ({self.course_label})"

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Mis docentes | IESPP Alfonso Barrantes Lingán{% endblock %}
+
+{% block content %}
+<section class="mx-auto max-w-4xl text-slate-800">
+    <section class="mb-5 card overflow-hidden">
+        <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-4">
+            <h2 class="text-[20px] font-semibold text-brand-700">Mis docentes y cursos</h2>
+            <p class="mt-1 text-[12.5px] leading-5 text-slate-600">
+                Cada docente o asesor comparte un código por curso. Agrégalo una vez por curso y podrás subir documentos para ese docente: puedes subir el documento; el análisis lo autoriza tu docente.
+            </p>
+        </div>
+
+        <form method="post" class="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-end">
+            {% csrf_token %}
+            <div class="min-w-0 flex-1">
+                <label for="invite_code" class="field-label">Agregar docente / curso</label>
+                <input id="invite_code" name="invite_code" type="text" required maxlength="12" autocomplete="off" placeholder="Pega el código. Ej. K7M2Q9XA" class="field h-10 text-[13px] uppercase tracking-[0.12em]">
+            </div>
+            <button type="submit" class="btn btn-primary h-10 shrink-0">Vincularme</button>
+        </form>
+    </section>
+
+    <section class="card overflow-hidden">
+        <div class="border-b border-slate-100 px-5 py-3">
+            <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">Mis vínculos</h3>
+        </div>
+        {% if links %}
+            <ul class="divide-y divide-slate-100">
+                {% for link in links %}
+                    <li class="flex items-center gap-3 px-5 py-3">
+                        {% include "components/avatar.html" with name=link.advisor.get_full_name|default:link.advisor.username %}
+                        <span class="min-w-0 flex-1">
+                            <span class="block truncate text-[13.5px] font-bold text-slate-800">{{ link.advisor.get_full_name|default:link.advisor.username }}</span>
+                            <span class="block truncate text-[12px] text-slate-500">{{ link.course_label }} · desde el {{ link.created_at|date:"d/m/Y" }}</span>
+                        </span>
+                        <a href="{% url 'documents:upload' %}" class="btn btn-secondary btn-sm shrink-0">Subir documento</a>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            {% include "components/empty_state.html" with title="Aún no estás vinculado con ningún docente" text="Pídele el código a tu docente o asesor y pégalo arriba." %}
+        {% endif %}
+    </section>
+</section>
+{% endblock %}

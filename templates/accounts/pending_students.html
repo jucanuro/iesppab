@@ -1,112 +1,169 @@
 {% extends "base.html" %}
 
-{% block title %}Alumnos pendientes | IESPP Alfonso Barrantes Lingán{% endblock %}
+{% block title %}Mis alumnos | IESPP Alfonso Barrantes Lingán{% endblock %}
 
 {% block content %}
-<section class="text-slate-800" x-data="{ selected: [] }">
+<section class="text-slate-800">
 
-    <div class="mb-5 grid gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+    <div class="mb-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         <!-- CABECERA -->
         <section class="card overflow-hidden">
             <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-4">
-                <h2 class="text-[20px] font-semibold text-brand-700">Alumnos pendientes de habilitación</h2>
+                <h2 class="text-[20px] font-semibold text-brand-700">Mis alumnos</h2>
                 <p class="mt-1 text-[12.5px] leading-5 text-slate-600">
                     {% if request.user.is_admin_role %}
-                        Alumnos y exalumnos de toda la institución que pidieron acceso. Los que se registraron con el código de un asesor también le aparecen a él.
+                        Alumnos y exalumnos de toda la institución vinculados con un docente por código, con su curso.
                     {% else %}
-                        Alumnos y exalumnos que se registraron con tu código y te piden acceso. Al habilitarlos quedan relacionados contigo: podrán subir documentos y tú autorizas sus análisis en «Solicitudes».
+                        Alumnos y exalumnos que se vincularon contigo con tus códigos, uno por curso. Pueden subir documentos de inmediato; tú autorizas sus análisis en «Solicitudes».
                     {% endif %}
                 </p>
             </div>
             <dl class="grid grid-cols-3 divide-x divide-slate-100">
                 <div class="px-5 py-4">
-                    <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Pendientes</dt>
-                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ pending_students|length }}</dd>
-                </div>
-                <div class="px-5 py-4">
                     <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Alumnos</dt>
-                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ pending_enrolled_count }}</dd>
+                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ linked_students_count }}</dd>
                 </div>
                 <div class="px-5 py-4">
-                    <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Exalumnos</dt>
-                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ pending_alumni_count }}</dd>
+                    <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Vínculos</dt>
+                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ student_links|length }}</dd>
+                </div>
+                <div class="px-5 py-4">
+                    <dt class="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">Exalumnos por validar</dt>
+                    <dd class="mt-0.5 text-[20px] font-black leading-none text-brand-700">{{ alumni_to_validate }}</dd>
                 </div>
             </dl>
         </section>
 
-        <!-- CÓDIGO DE INVITACIÓN -->
-        <section class="card overflow-hidden" x-data="{ copied: false }">
+        <!-- CÓDIGOS POR CURSO -->
+        <section class="card overflow-hidden">
             <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-4">
-                <h3 class="text-[16px] font-semibold text-brand-700">Tu código de invitación</h3>
-                <p class="mt-1 text-[12px] leading-5 text-slate-600">Envíalo a tus alumnos o asesorados. Al registrarse con él, su solicitud te llega a ti.</p>
+                <h3 class="text-[16px] font-semibold text-brand-700">Mis códigos por curso</h3>
+                <p class="mt-1 text-[12px] leading-5 text-slate-600">Crea un código por curso o grupo y compártelo con esos alumnos (por ejemplo, en el grupo de WhatsApp). Registro: <span class="font-semibold text-slate-700">{{ register_url }}</span></p>
             </div>
-            <div class="px-5 py-4">
-                {% if invite_code %}
-                    <div class="flex flex-wrap items-center gap-3">
-                        <span class="rounded-xl border border-brand-500/30 bg-[#eef3ff] px-4 py-2 font-mono text-[22px] font-black tracking-[0.25em] text-[#123f9e]" id="inviteCode">{{ invite_code.code }}</span>
-                        <button type="button" class="btn btn-secondary btn-sm"
-                                @click="navigator.clipboard && navigator.clipboard.writeText('{{ invite_code.code }}').then(() => { copied = true; setTimeout(() => copied = false, 2000) })">
-                            <span x-show="!copied">Copiar código</span><span x-show="copied" x-cloak>¡Copiado!</span>
-                        </button>
-                    </div>
-                    <p class="mt-2 text-[11.5px] leading-4 text-slate-500">Registro: <span class="font-semibold text-slate-700">{{ register_url }}</span></p>
-                    <div class="mt-3 flex flex-wrap gap-3">
-                        <form method="post" action="{% url 'accounts:invite-code' %}" onsubmit="return confirm('¿Generar un código nuevo? El actual dejará de funcionar.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="generate">
-                            <button type="submit" class="text-[12px] font-semibold text-[#123f9e] hover:underline">Regenerar código</button>
-                        </form>
-                        <form method="post" action="{% url 'accounts:invite-code' %}" onsubmit="return confirm('¿Desactivar tu código? Nadie podrá registrarse con él.');">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="deactivate">
-                            <button type="submit" class="text-[12px] font-semibold text-red-700 hover:underline">Desactivar</button>
-                        </form>
-                    </div>
-                {% else %}
-                    <p class="text-[12.5px] text-slate-600">Aún no tienes un código activo.</p>
-                    <form method="post" action="{% url 'accounts:invite-code' %}" class="mt-3">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="generate">
-                        <button type="submit" class="btn btn-primary">Generar mi código</button>
-                    </form>
-                {% endif %}
-            </div>
+
+            {% if invite_codes %}
+                <ul class="divide-y divide-slate-100">
+                    {% for code in invite_codes %}
+                        <li class="flex flex-wrap items-center gap-3 px-5 py-2.5 {% if not code.is_active %}opacity-60{% endif %}" x-data="{ copied: false }">
+                            <span class="rounded-lg border border-brand-500/30 bg-[#eef3ff] px-2.5 py-1 font-mono text-[15px] font-black tracking-[0.2em] text-[#123f9e]">{{ code.code }}</span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate text-[13px] font-semibold text-slate-800">{{ code.course_label }}</span>
+                                <span class="block text-[11px] text-slate-500">{% if code.is_active %}Activo{% else %}Desactivado{% endif %} · {{ code.links.count }} alumno(s)</span>
+                            </span>
+                            <span class="flex flex-wrap items-center gap-2.5 text-[12px] font-semibold">
+                                {% if code.is_active %}
+                                    <button type="button" class="text-[#123f9e] hover:underline"
+                                            @click="navigator.clipboard && navigator.clipboard.writeText('{{ code.code }}').then(() => { copied = true; setTimeout(() => copied = false, 2000) })">
+                                        <span x-show="!copied">Copiar</span><span x-show="copied" x-cloak>¡Copiado!</span>
+                                    </button>
+                                {% endif %}
+                                <form method="post" action="{% url 'accounts:invite-code' %}" onsubmit="return confirm('¿Generar un código nuevo para {{ code.course_label|escapejs }}? El actual dejará de funcionar.');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="regenerate">
+                                    <input type="hidden" name="code_id" value="{{ code.id }}">
+                                    <button type="submit" class="text-[#123f9e] hover:underline">Regenerar</button>
+                                </form>
+                                <form method="post" action="{% url 'accounts:invite-code' %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="{% if code.is_active %}deactivate{% else %}activate{% endif %}">
+                                    <input type="hidden" name="code_id" value="{{ code.id }}">
+                                    <button type="submit" class="{% if code.is_active %}text-red-700{% else %}text-emerald-700{% endif %} hover:underline">{% if code.is_active %}Desactivar{% else %}Activar{% endif %}</button>
+                                </form>
+                            </span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <form method="post" action="{% url 'accounts:invite-code' %}" class="flex flex-col gap-2.5 border-t border-slate-100 px-5 py-3.5 sm:flex-row sm:items-end">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create">
+                <div class="min-w-0 flex-1">
+                    <label for="course_name" class="field-label">Curso o grupo</label>
+                    <input id="course_name" name="course_name" type="text" required maxlength="180" placeholder="Ej. Investigación II" class="field h-10 text-[13px]">
+                </div>
+                <div class="sm:w-32">
+                    <label for="academic_period" class="field-label">Periodo</label>
+                    <input id="academic_period" name="academic_period" type="text" maxlength="50" placeholder="2026-II" class="field h-10 text-[13px]">
+                </div>
+                <button type="submit" class="btn btn-primary h-10 shrink-0">Crear código</button>
+            </form>
         </section>
     </div>
 
+    <!-- ALUMNOS VINCULADOS -->
+    <section class="mb-5 card overflow-hidden">
+        <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-3">
+            <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">Alumnos vinculados</h3>
+        </div>
+        {% if student_links %}
+            <ul class="divide-y divide-slate-100">
+                {% for link in student_links %}
+                    {% with student=link.student %}
+                    <li class="flex flex-col gap-3 px-5 py-3 transition hover:bg-brand-50/40 sm:flex-row sm:items-center">
+                        <span class="flex min-w-0 flex-1 items-center gap-3">
+                            {% include "components/avatar.html" with name=student.get_full_name|default:student.username %}
+                            <span class="min-w-0">
+                                <span class="flex flex-wrap items-center gap-2">
+                                    <span class="truncate text-[13.5px] font-bold text-slate-800">{{ student.get_full_name|default:student.username }}</span>
+                                    {% if student.is_alumni %}
+                                        <span class="badge badge-warning">{% if student.is_validated_alumni %}Exalumno validado{% else %}Exalumno{% endif %}</span>
+                                    {% else %}
+                                        <span class="badge badge-info">Alumno</span>
+                                    {% endif %}
+                                    <span class="badge badge-neutral">{{ link.course_label }}</span>
+                                </span>
+                                <span class="mt-0.5 block truncate text-[11.5px] text-slate-500">
+                                    {{ student.email }} · vinculado el {{ link.created_at|date:"d/m/Y" }}
+                                    {% if request.user.is_admin_role %} · docente: {{ link.advisor.get_full_name|default:link.advisor.username }}{% endif %}
+                                </span>
+                            </span>
+                        </span>
+                        {% if student.is_alumni and not student.is_validated_alumni %}
+                            <form method="post" action="{% url 'documents:mark-alumni' student.id %}" class="shrink-0 sm:ml-auto"
+                                  onsubmit="return confirm('¿Confirmas que {{ student.get_full_name|default:student.username|escapejs }} egresó de la institución?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="next" value="my-students">
+                                <button type="submit" class="btn btn-primary btn-sm">Validar como egresado</button>
+                            </form>
+                        {% endif %}
+                    </li>
+                    {% endwith %}
+                {% endfor %}
+            </ul>
+        {% else %}
+            {% include "components/empty_state.html" with title="Aún no tienes alumnos vinculados" text="Crea un código para tu curso y compártelo: cuando un alumno lo use al registrarse o en «Mis docentes», aparecerá aquí." %}
+        {% endif %}
+    </section>
+
+    <!-- PENDIENTES DE HABILITACIÓN (cuentas antiguas) -->
     {% if pending_students %}
-        <section class="card overflow-hidden">
-            <form method="post" action="{% url 'accounts:bulk-enable-students' %}" id="bulkForm">
+        <section class="card overflow-hidden" x-data="{ selected: [] }">
+            <form method="post" action="{% url 'accounts:bulk-enable-students' %}">
                 {% csrf_token %}
                 <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-3">
-                    <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">Solicitudes de acceso</h3>
+                    <div>
+                        <h3 class="text-[14px] font-bold uppercase tracking-[0.14em] text-slate-700">Pendientes de habilitación</h3>
+                        <p class="mt-0.5 text-[12px] text-slate-500">Cuentas registradas antes de los códigos que aún no pueden subir documentos.</p>
+                    </div>
                     <button type="submit" class="btn btn-primary btn-sm" :disabled="selected.length === 0" :class="selected.length === 0 && 'opacity-50'">
                         <span x-text="'Habilitar seleccionados (' + selected.length + ')'">Habilitar seleccionados (0)</span>
                     </button>
                 </div>
-
                 <ul class="divide-y divide-slate-100">
                     {% for student in pending_students %}
-                        <li class="flex flex-col gap-3 px-5 py-3 transition hover:bg-brand-50/40 sm:flex-row sm:items-center">
+                        <li class="flex flex-col gap-3 px-5 py-3 sm:flex-row sm:items-center">
                             <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
                                 <input type="checkbox" name="student_ids" value="{{ student.id }}" x-model="selected" class="h-4 w-4 shrink-0 accent-[#236bfd]">
                                 {% include "components/avatar.html" with name=student.get_full_name|default:student.username %}
                                 <span class="min-w-0">
                                     <span class="flex flex-wrap items-center gap-2">
                                         <span class="truncate text-[13.5px] font-bold text-slate-800">{{ student.get_full_name|default:student.username }}</span>
-                                        {% if student.student_status == "ALUMNI" %}
-                                            <span class="badge badge-warning">Exalumno</span>
-                                        {% else %}
-                                            <span class="badge badge-info">Alumno</span>
-                                        {% endif %}
+                                        {% if student.student_status == "ALUMNI" %}<span class="badge badge-warning">Exalumno</span>{% else %}<span class="badge badge-info">Alumno</span>{% endif %}
                                     </span>
-                                    <span class="mt-0.5 block truncate text-[11.5px] text-slate-500">
-                                        {{ student.email }} · pidió acceso el {{ student.date_joined|date:"d/m/Y H:i" }}
-                                        {% if request.user.is_admin_role %} · {% if student.advisor %}asesor: {{ student.advisor.get_full_name|default:student.advisor.username }}{% else %}sin asesor{% endif %}{% endif %}
-                                    </span>
+                                    <span class="mt-0.5 block truncate text-[11.5px] text-slate-500">{{ student.email }} · registrado el {{ student.date_joined|date:"d/m/Y H:i" }}</span>
                                 </span>
                             </label>
-
                             <div class="flex shrink-0 gap-2 sm:ml-auto">
                                 {% if student.student_status == "ALUMNI" %}
                                     <button type="submit" form="enable-{{ student.id }}" class="btn btn-primary btn-sm" name="validate_alumni" value="1">Validar como egresado y habilitar</button>
@@ -118,17 +175,12 @@
                     {% endfor %}
                 </ul>
             </form>
-
             {% for student in pending_students %}
                 <form method="post" action="{% url 'accounts:bulk-enable-students' %}" id="enable-{{ student.id }}" class="hidden">
                     {% csrf_token %}
                     <input type="hidden" name="student_ids" value="{{ student.id }}">
                 </form>
             {% endfor %}
-        </section>
-    {% else %}
-        <section class="card">
-            {% include "components/empty_state.html" with title="No hay solicitudes de acceso" text="Cuando un alumno o exalumno se registre con tu código, aparecerá aquí para que lo habilites." icon='<path d="M5 13L9.5 17.5L19 7"/>' %}
         </section>
     {% endif %}
 </section>

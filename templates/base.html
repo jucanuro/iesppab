@@ -48,7 +48,15 @@
                             <a href="{% url 'accounts:pending-students' %}"
                                {% if request.resolver_match.url_name == 'pending-students' %}aria-current="page"{% endif %}
                                class="tab-link flex items-center whitespace-nowrap {% if request.resolver_match.url_name == 'pending-students' %}is-active{% endif %}">
-                                Alumnos pendientes
+                                Mis alumnos
+                            </a>
+                        {% endif %}
+
+                        {% if request.user.is_student_role %}
+                            <a href="{% url 'accounts:my-advisors' %}"
+                               {% if request.resolver_match.url_name == 'my-advisors' %}aria-current="page"{% endif %}
+                               class="tab-link flex items-center whitespace-nowrap {% if request.resolver_match.url_name == 'my-advisors' %}is-active{% endif %}">
+                                Mis docentes
                             </a>
                         {% endif %}
 

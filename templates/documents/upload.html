@@ -97,6 +97,13 @@
                     </div>
                 {% endif %}
 
+                {% if fixed_advisor %}
+                    <div class="min-w-0">
+                        <span class="field-label">Asesor</span>
+                        <p class="field flex h-10 items-center bg-slate-50 text-[13px] font-semibold text-[#123f9e]" title="Te relacionaste con este asesor al registrarte con su código.">{{ fixed_advisor.get_full_name|default:fixed_advisor.username }}</p>
+                        <input type="hidden" name="advisor_id" value="{{ fixed_advisor.id }}">
+                    </div>
+                {% else %}
                 <div class="min-w-0">
                     <label for="advisor_id" class="field-label">Asesor{% if requires_authorization %} <span class="text-red-600">*</span>{% endif %}</label>
                     <select id="advisor_id" name="advisor_id" {% if requires_authorization %}required aria-describedby="advisorHint"{% endif %} class="field h-10 text-[13px]">
@@ -106,11 +113,12 @@
                         {% endfor %}
                     </select>
                 </div>
+                {% endif %}
 
                 {% if requires_authorization or submission_quota.limit is not None %}
                     <div id="advisorHint" class="min-w-0 rounded-xl border border-brand-500/20 bg-[#eef3ff] px-3.5 py-2.5 text-[12.5px] leading-5 text-[#123f9e] sm:col-span-2">
                         {% if requires_authorization %}
-                            {% if request.user.is_alumni %}
+                            {% if request.user.is_alumni and not request.user.is_validated_alumni %}
                                 <p><strong>Tu asesor validará que eres egresado</strong> al revisar este envío y autorizará su análisis. Una vez validado, tus siguientes envíos se analizan sin esperar autorización.</p>
                             {% else %}
                                 <p><strong>Tu asesor debe autorizar el análisis.</strong> El documento queda pendiente y se analiza automáticamente cuando lo apruebe.</p>
@@ -219,6 +227,16 @@
                 </button>
                 <div id="estados-ayuda" x-show="help" x-cloak x-transition.opacity.duration.200ms class="absolute right-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white shadow-lift">
 <div class="space-y-2.5 p-4 text-[12.5px] text-slate-600">
+                                <div class="flex items-start gap-2.5">
+                                    <span class="shrink-0">{% include "documents/_status_badge.html" with authorization="PENDING" only %}</span>
+                                    <p>Espera la autorización de tu asesor. Se analiza automáticamente cuando la aprueba.</p>
+                                </div>
+
+                                <div class="flex items-start gap-2.5">
+                                    <span class="shrink-0">{% include "documents/_status_badge.html" with authorization="REJECTED" only %}</span>
+                                    <p>El asesor no autorizó el análisis. Pasa el cursor sobre la etiqueta para ver el motivo.</p>
+                                </div>
+
                                 <div class="flex items-start gap-2.5">
                                     <span class="shrink-0">{% include "documents/_status_badge.html" with status="UPLOADED" only %}</span>
                                     <p>Subido, pendiente de análisis. Pulsa «Analizar originalidad» en la fila.</p>

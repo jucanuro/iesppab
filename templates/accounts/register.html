@@ -3,7 +3,7 @@
 {% block title %}Crear cuenta | {{ institution_name|default:"IESPP" }}{% endblock %}
 {% block card_width %}max-w-[640px]{% endblock %}
 {% block auth_title %}Crear cuenta{% endblock %}
-{% block auth_subtitle %}Regístrate con tu correo institucional.{% endblock %}
+{% block auth_subtitle %}Para alumnos y exalumnos. Los docentes y asesores reciben su cuenta de la administración.{% endblock %}
 
 {% block auth_body %}
 <form method="post" class="mt-6 space-y-4">
@@ -25,22 +25,24 @@
     <fieldset>
         <legend class="mb-1.5 block text-[13px] font-semibold text-slate-800">¿Cuál es tu condición?</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff]">
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
                 <input type="radio" name="student_status" value="ENROLLED" required checked class="mt-0.5 h-4 w-4 accent-[#236bfd]">
                 <span>
                     <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy alumno</span>
-                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Estoy en formación. Mi asesor autoriza cada análisis.</span>
+                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Estoy estudiando. Mi asesor autoriza cada análisis.</span>
                 </span>
             </label>
-            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff]">
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
                 <input type="radio" name="student_status" value="ALUMNI" required class="mt-0.5 h-4 w-4 accent-[#236bfd]">
                 <span>
                     <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy exalumno</span>
-                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Egresé y quiero validar mi tesis. Hasta 3 envíos; mi asesor me valida en el primero.</span>
+                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Ya egresé y quiero validar mi tesis. Mi asesor confirma que soy egresado.</span>
                 </span>
             </label>
         </div>
     </fieldset>
+
+    {% include "accounts/_field.html" with id="invite_code" name="invite_code" label="Código de tu docente o asesor" autocomplete="off" placeholder="Ej. K7M2Q9XA" icon="key" maxlength="12" extra_class=True hint="Pídeselo a tu docente o asesor. Con él tu solicitud le llega directamente y quedas relacionado con él." %}
 
     <ul id="pwReqs" class="grid gap-1 rounded-xl bg-[#eef3ff] px-4 py-3 text-[12.5px] text-slate-700 sm:grid-cols-3" aria-live="polite">
         <li data-req="len">○ Mínimo 8 caracteres</li>

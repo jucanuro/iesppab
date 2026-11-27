@@ -1,4 +1,4 @@
-{# Campo de formulario de autenticación. Parámetros: id, name, label, type, autocomplete, placeholder, icon (user|mail|lock), password, errors, hint, extra #}
+{# Campo de formulario de autenticación. Parámetros: id, name, label, type, autocomplete, placeholder, icon (user|mail|lock|key), password, errors, hint, maxlength, extra_class (mayúsculas espaciadas) #}
 <div>
     <label for="{{ id }}" class="mb-1.5 block text-[13px] font-semibold text-slate-800">{{ label }}</label>
     <div class="relative">
@@ -7,6 +7,9 @@
                 {% if icon == "lock" %}
                     <rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/>
                     <path d="M8 11V7.5a4 4 0 0 1 8 0V11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                {% elif icon == "key" %}
+                    <circle cx="8" cy="15" r="4" stroke="currentColor" stroke-width="1.8"/>
+                    <path d="m10.8 12.2 8.7-8.7M16 6l2.5 2.5M14 8l2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
                 {% elif icon == "mail" %}
                     <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" stroke-width="1.8"/>
                     <path d="m4.5 7.5 7.5 6 7.5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -16,7 +19,7 @@
                 {% endif %}
             </svg>
         </span>
-        <input id="{{ id }}" name="{{ name }}" type="{{ type|default:'text' }}" autocomplete="{{ autocomplete }}"
+        <input id="{{ id }}" name="{{ name }}" type="{{ type|default:'text' }}" autocomplete="{{ autocomplete }}"{% if maxlength %} maxlength="{{ maxlength }}"{% endif %}{% if extra_class %} style="text-transform: uppercase; letter-spacing: .12em"{% endif %}
                required placeholder="{{ placeholder }}" title="{{ placeholder }}"
                {% if hint %}aria-describedby="{{ id }}-hint"{% endif %}
                {% if errors %}aria-invalid="true"{% endif %}

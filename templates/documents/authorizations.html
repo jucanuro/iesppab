@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}Solicitudes de autorización | IESPP Alfonso Barrantes Lingán{% endblock %}
+{% block title %}Solicitudes de análisis | IESPP Alfonso Barrantes Lingán{% endblock %}
 
 {% block content %}
 <section class="text-slate-800">
 
     <section class="mb-5 card overflow-hidden">
         <div class="border-b border-slate-100 bg-gradient-to-b from-white to-brand-50/50 px-5 py-4">
-            <h2 class="text-[20px] font-semibold text-brand-700">Solicitudes de autorización</h2>
+            <h2 class="text-[20px] font-semibold text-brand-700">Solicitudes de análisis</h2>
             <p class="mt-1 text-[12.5px] leading-5 text-slate-600">
                 Los alumnos en formación necesitan que su asesor autorice cada análisis. Al autorizar,
                 el documento entra en cola y se analiza automáticamente.
@@ -31,7 +31,7 @@
                             <p><strong>Primer envío de un exalumno: valida que es egresado.</strong>
                                 {{ student.get_full_name|default:student.username }} se registró como exalumno para validar su tesis.
                                 Si confirmas que egresó de la institución, pulsa «Validar como egresado y autorizar»: desde entonces
-                                sube y analiza sin autorización (hasta 3 envíos). Si no lo es, autoriza solo este envío o recházalo.</p>
+                                usa sus envíos libres sin autorización (según «Permisos por rol»). Si no lo es, autoriza solo este envío o recházalo.</p>
                         </div>
                     {% endif %}
 
@@ -76,7 +76,7 @@
 
                             {% if not student.is_alumni %}
                                 <form method="post" action="{% url 'documents:mark-alumni' student.id %}" data-submit-spinner
-                                      onsubmit="return confirm('¿Marcar a {{ student.get_full_name|default:student.username|escapejs }} como egresado? Desde entonces subirá y analizará sin autorización (máximo 3 envíos).');">
+                                      onsubmit="return confirm('¿Marcar a {{ student.get_full_name|default:student.username|escapejs }} como egresado? Desde entonces usará sus envíos libres de exalumno sin autorización.');">
                                     {% csrf_token %}
                                     <button type="submit" class="text-[12px] font-semibold text-[#123f9e] hover:underline" data-loading-label="Marcando…">Marcar como egresado</button>
                                 </form>

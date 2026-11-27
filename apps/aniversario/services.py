@@ -15,6 +15,7 @@ from django.core.cache import caches
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count
+from django.utils import timezone
 
 from .models import Candidato, Concurso, Voto
 
@@ -44,6 +45,24 @@ class VotoDuplicadoError(VotoError):
 
 class LimiteIpError(VotoError):
     pass
+
+
+class RafagaError(VotoError):
+    pass
+
+
+def es_rafaga(concurso, ip: str, miss_id: int, mister_id: int, ahora=None) -> bool:
+    """Misma pareja miss+mister desde la misma IP repetida muchas veces en pocos
+    minutos: patrón de una persona que borra cookies y vuelve a votar. Quienes
+    comparten IP por CGNAT votan repartido, así que casi nunca lo activan."""
+    maximo = getattr(settings, "ANIVERSARIO_RAFAGA_MAX", 3)
+    minutos = getattr(settings, "ANIVERSARIO_RAFAGA_MINUTOS", 10)
+    if maximo <= 0:
+        return False
+    desde = (ahora or timezone.now()) - timedelta(minutes=minutos)
+    return Voto.objects.filter(
+        concurso=concurso, ip=ip, miss_id=miss_id, mister_id=mister_id, creado__gte=desde
+    ).count() >= maximo
 
 
 class SeleccionInvalidaError(VotoError):
@@ -306,6 +325,11 @@ class VotoService:
                 ):
                     raise LimiteIpError(
                         "Ya se registró el máximo de votos permitido desde esta conexión."
+                    )
+                if ip_limite and es_rafaga(concurso, ip_limite, miss.pk, mister.pk):
+                    raise RafagaError(
+                        "Se registraron muchos votos iguales desde esta conexión en pocos "
+                        "minutos. Intenta más tarde."
                     )
                 voto = Voto(
                     concurso=concurso,

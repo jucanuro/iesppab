@@ -288,6 +288,35 @@ class IpNoPublicaTests(BaseAniversario):
 
 
 @override_settings(**AJUSTES)
+class RafagaTests(BaseAniversario):
+    def setUp(self):
+        super().setUp()
+        self.concurso.max_votos_por_ip = 50
+        self.concurso.save()
+
+    def test_misma_pareja_misma_ip_se_corta_en_la_cuarta(self):
+        for _ in range(3):
+            self.votar(client=self.nuevo_cliente(), ip="181.65.7.7")
+        r = self.votar(client=self.nuevo_cliente(), ip="181.65.7.7")
+        self.assertContains(r, "muchos votos iguales", status_code=r.status_code)
+        self.assertEqual(Voto.objects.count(), 3)
+
+    def test_otra_pareja_u_otra_ip_si_pasa(self):
+        for _ in range(3):
+            self.votar(client=self.nuevo_cliente(), ip="181.65.7.7")
+        self.votar(client=self.nuevo_cliente(), miss=self.miss2, ip="181.65.7.7")
+        self.votar(client=self.nuevo_cliente(), ip="181.65.7.8")
+        self.assertEqual(Voto.objects.count(), 5)
+
+    def test_pasada_la_ventana_vuelve_a_permitir(self):
+        for _ in range(3):
+            self.votar(client=self.nuevo_cliente(), ip="181.65.7.7")
+        Voto.objects.update(creado=timezone.now() - timedelta(minutes=11))
+        self.votar(client=self.nuevo_cliente(), ip="181.65.7.7")
+        self.assertEqual(Voto.objects.count(), 4)
+
+
+@override_settings(**AJUSTES)
 class HostTests(TestCase):
     def test_host_aniversario_no_expone_originalidad(self):
         for ruta in ("/admin/", "/admin/login/", "/documentos/subir/", "/manual/", "/login/"):

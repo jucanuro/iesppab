@@ -1,4 +1,4 @@
-{# Campo de formulario de autenticación. Parámetros: id, name, label, type, autocomplete, placeholder, icon (user|mail|lock|key), password, errors, hint, maxlength, extra_class (mayúsculas espaciadas) #}
+{# Campo de formulario de autenticación. Parámetros: id, name, label, type, autocomplete, placeholder, icon (user|mail|lock|key), password, errors, hint, maxlength, extra_class (mayúsculas espaciadas), compact (alto reducido) #}
 <div>
     <label for="{{ id }}" class="mb-1.5 block text-[13px] font-semibold text-slate-800">{{ label }}</label>
     <div class="relative">
@@ -23,7 +23,7 @@
                required placeholder="{{ placeholder }}" title="{{ placeholder }}"
                {% if hint %}aria-describedby="{{ id }}-hint"{% endif %}
                {% if errors %}aria-invalid="true"{% endif %}
-               class="field h-12 truncate pl-11 {% if password %}pr-12{% else %}pr-3{% endif %} {% if errors %}!border-red-400 focus:!ring-red-200{% endif %}">
+               class="field {% if compact %}h-11{% else %}h-12{% endif %} truncate pl-11 {% if password %}pr-12{% else %}pr-3{% endif %} {% if errors %}!border-red-400 focus:!ring-red-200{% endif %}">
         {% if password %}
             <button type="button" data-toggle-password="{{ id }}" aria-label="Mostrar contraseña" aria-pressed="false"
                     class="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-slate-500 transition hover:text-[#123f9e]">

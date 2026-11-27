@@ -42,9 +42,10 @@
         <div class="absolute -bottom-52 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full border border-white/15"></div>
     </div>
 
-    <main class="relative flex min-h-screen flex-col items-center justify-center px-4 py-8 sm:py-12">
+    <main class="relative flex min-h-screen flex-col items-center justify-center px-4 {% block main_padding %}py-8 sm:py-12{% endblock %}">
         <section class="card-in w-full {% block card_width %}max-w-[520px]{% endblock %} overflow-hidden rounded-xl3 border border-white/40 bg-white/90 shadow-[0_30px_70px_-24px_rgba(2,12,40,0.8),0_0_0_1px_rgba(34,211,238,0.15)] backdrop-blur-xl">
             <div class="accent-bar h-1.5 w-full"></div>
+            {% block auth_inner %}
             <div class="px-5 pb-8 pt-7 sm:px-10">
                 <div class="mb-4 flex justify-center">
                     <img src="{% static 'img/logo-iesppabl.png' %}" alt="Escudo {{ institution_name|default:'IESPP' }}"
@@ -55,27 +56,11 @@
                     <p class="mt-1 text-[13.5px] text-slate-600">{% block auth_subtitle %}{% endblock %}</p>
                 </div>
 
-                {% if messages %}
-                    <div class="mt-5 space-y-2" aria-live="polite">
-                        {% for message in messages %}
-                            <div role="alert" class="flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-[13px] font-medium leading-5
-                                {% if message.tags == 'success' %}border-emerald-200 bg-emerald-50 text-emerald-800
-                                {% elif message.tags == 'error' %}border-red-200 bg-red-50 text-red-800
-                                {% else %}border-sky-200 bg-sky-50 text-sky-800{% endif %}">
-                                <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
-                                    {% if message.tags == 'success' %}<path d="m8 12.3 2.7 2.7L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    {% elif message.tags == 'error' %}<path d="M12 7.5v5.5M12 16.2v.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                                    {% else %}<path d="M12 11v5M12 7.8v.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>{% endif %}
-                                </svg>
-                                <span class="min-w-0 break-words">{{ message }}</span>
-                            </div>
-                        {% endfor %}
-                    </div>
-                {% endif %}
+                {% include "accounts/_messages.html" %}
 
                 {% block auth_body %}{% endblock %}
             </div>
+            {% endblock %}
         </section>
 
         <footer class="mt-6 max-w-[640px] text-center text-[12px] leading-5 text-white/90">

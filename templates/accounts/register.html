@@ -1,61 +1,89 @@
 {% extends "accounts/auth_base.html" %}
+{% load static %}
 
 {% block title %}Crear cuenta | {{ institution_name|default:"IESPP" }}{% endblock %}
-{% block card_width %}max-w-[640px]{% endblock %}
-{% block auth_title %}Crear cuenta{% endblock %}
-{% block auth_subtitle %}Para alumnos y exalumnos. Los docentes y asesores reciben su cuenta de la administración.{% endblock %}
+{% block card_width %}max-w-[640px] lg:max-w-6xl{% endblock %}
+{% block main_padding %}py-6 lg:py-4{% endblock %}
 
-{% block auth_body %}
-<form method="post" class="mt-6 space-y-4">
-    {% csrf_token %}
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {% include "accounts/_field.html" with id="first_name" name="first_name" label="Nombres" autocomplete="given-name" placeholder="Juan" icon="user" %}
-        {% include "accounts/_field.html" with id="last_name" name="last_name" label="Apellidos" autocomplete="family-name" placeholder="Pérez" icon="user" %}
-    </div>
-    {% if email_domain %}
-        {% include "accounts/_field.html" with id="email" name="email" label="Correo institucional" type="email" autocomplete="email" placeholder="usuario@"|add:email_domain icon="mail" hint="Debe pertenecer al dominio @"|add:email_domain %}
-    {% else %}
-        {% include "accounts/_field.html" with id="email" name="email" label="Correo institucional" type="email" autocomplete="email" placeholder="usuario@iesp-alfonsobarranteslingan.edu.pe" icon="mail" %}
-    {% endif %}
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {% include "accounts/_field.html" with id="password1" name="password1" label="Contraseña" type="password" autocomplete="new-password" placeholder="••••••••" icon="lock" password=True %}
-        {% include "accounts/_field.html" with id="password2" name="password2" label="Confirmar contraseña" type="password" autocomplete="new-password" placeholder="••••••••" icon="lock" password=True %}
-    </div>
-
-    <fieldset>
-        <legend class="mb-1.5 block text-[13px] font-semibold text-slate-800">¿Cuál es tu condición?</legend>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
-                <input type="radio" name="student_status" value="ENROLLED" required checked class="mt-0.5 h-4 w-4 accent-[#236bfd]">
-                <span>
-                    <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy alumno</span>
-                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Estoy estudiando. Mi asesor autoriza cada análisis.</span>
-                </span>
-            </label>
-            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
-                <input type="radio" name="student_status" value="ALUMNI" required class="mt-0.5 h-4 w-4 accent-[#236bfd]">
-                <span>
-                    <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy exalumno</span>
-                    <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Ya egresé y quiero validar mi tesis. Mi asesor confirma que soy egresado.</span>
-                </span>
-            </label>
+{% block auth_inner %}
+<div class="grid lg:grid-cols-[17rem_minmax(0,1fr)]">
+    <!-- Lateral: identidad y pasos (arriba en móvil) -->
+    <aside class="flex flex-col items-center gap-3 border-b border-slate-200/70 bg-gradient-to-b from-[#eef3ff] to-white/40 px-6 py-5 text-center lg:items-start lg:border-b-0 lg:border-r lg:py-7 lg:text-left">
+        <img src="{% static 'img/logo-iesppabl.png' %}" alt="Escudo {{ institution_name|default:'IESPP' }}" class="h-20 w-auto select-none drop-shadow-sm lg:h-24">
+        <div>
+            <h1 class="text-[22px] font-bold tracking-tight text-[#0f2f78]">Crear cuenta</h1>
+            <p class="mt-1 text-[13px] leading-5 text-slate-600">Para alumnos y exalumnos. Los docentes y asesores reciben su cuenta de la administración.</p>
         </div>
-    </fieldset>
+        <ol class="mt-1 hidden space-y-2.5 text-[12.5px] leading-5 text-slate-700 lg:block">
+            <li class="flex gap-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#236bfd] text-[11px] font-bold text-white">1</span>Regístrate con tu correo institucional y el código de tu docente o asesor.</li>
+            <li class="flex gap-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#236bfd] text-[11px] font-bold text-white">2</span>Tu asesor te habilita (y, si eres exalumno, valida que egresaste).</li>
+            <li class="flex gap-2.5"><span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#236bfd] text-[11px] font-bold text-white">3</span>Sube tus documentos para el análisis de originalidad.</li>
+        </ol>
+    </aside>
 
-    {% include "accounts/_field.html" with id="invite_code" name="invite_code" label="Código de tu docente o asesor" autocomplete="off" placeholder="Ej. K7M2Q9XA" icon="key" maxlength="12" extra_class=True hint="Pídeselo a tu docente o asesor. Con él tu solicitud le llega directamente y quedas relacionado con él." %}
+    <!-- Formulario -->
+    <div class="px-5 pb-6 pt-4 sm:px-8 lg:py-6">
+        {% include "accounts/_messages.html" %}
 
-    <ul id="pwReqs" class="grid gap-1 rounded-xl bg-[#eef3ff] px-4 py-3 text-[12.5px] text-slate-700 sm:grid-cols-3" aria-live="polite">
-        <li data-req="len">○ Mínimo 8 caracteres</li>
-        <li data-req="num">○ No solo números</li>
-        <li data-req="match">○ Las contraseñas coinciden</li>
-    </ul>
+        <form method="post" class="mt-4 space-y-4 lg:mt-1">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2 lg:grid-cols-3">
+                {% include "accounts/_field.html" with id="first_name" name="first_name" label="Nombres" autocomplete="given-name" placeholder="Juan" icon="user" compact=True %}
+                {% include "accounts/_field.html" with id="last_name" name="last_name" label="Apellidos" autocomplete="family-name" placeholder="Pérez" icon="user" compact=True %}
+                <div class="sm:col-span-2 lg:col-span-1">
+                    {% if email_domain %}
+                        {% include "accounts/_field.html" with id="email" name="email" label="Correo institucional" type="email" autocomplete="email" placeholder="usuario@"|add:email_domain icon="mail" hint="Debe pertenecer al dominio @"|add:email_domain compact=True %}
+                    {% else %}
+                        {% include "accounts/_field.html" with id="email" name="email" label="Correo institucional" type="email" autocomplete="email" placeholder="usuario@iesp-alfonsobarranteslingan.edu.pe" icon="mail" compact=True %}
+                    {% endif %}
+                </div>
 
-    {% include "accounts/_submit.html" with label="Crear cuenta" %}
-    <p class="pt-1 text-center text-[13px] text-slate-600">
-        ¿Ya tienes cuenta?
-        <a href="{% url 'accounts:login' %}" class="font-semibold text-[#123f9e] hover:underline">Inicia sesión</a>
-    </p>
-</form>
+                {% include "accounts/_field.html" with id="password1" name="password1" label="Contraseña" type="password" autocomplete="new-password" placeholder="••••••••" icon="lock" password=True compact=True %}
+                {% include "accounts/_field.html" with id="password2" name="password2" label="Confirmar contraseña" type="password" autocomplete="new-password" placeholder="••••••••" icon="lock" password=True compact=True %}
+                <div class="sm:col-span-2 lg:col-span-1">
+                    {% include "accounts/_field.html" with id="invite_code" name="invite_code" label="Código de tu docente o asesor" autocomplete="off" placeholder="Ej. K7M2Q9XA" icon="key" maxlength="12" extra_class=True hint="Pídeselo a tu docente o asesor. Con él tu solicitud le llega directamente y quedas relacionado con él." compact=True %}
+                </div>
+
+                <fieldset class="sm:col-span-2">
+                    <legend class="mb-1.5 block text-[13px] font-semibold text-slate-800">¿Cuál es tu condición?</legend>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
+                            <input type="radio" name="student_status" value="ENROLLED" required checked class="mt-0.5 h-4 w-4 accent-[#236bfd]">
+                            <span>
+                                <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy alumno</span>
+                                <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Estoy estudiando. Mi asesor autoriza cada análisis.</span>
+                            </span>
+                        </label>
+                        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:border-[#236bfd] has-[:checked]:border-[#236bfd] has-[:checked]:bg-[#eef3ff] has-[:checked]:shadow-[0_8px_20px_-12px_rgba(35,107,253,.6)]">
+                            <input type="radio" name="student_status" value="ALUMNI" required class="mt-0.5 h-4 w-4 accent-[#236bfd]">
+                            <span>
+                                <span class="block text-[13.5px] font-bold text-[#123f9e]">Soy exalumno</span>
+                                <span class="mt-0.5 block text-[12px] leading-4 text-slate-600">Ya egresé y quiero validar mi tesis. Mi asesor confirma que soy egresado.</span>
+                            </span>
+                        </label>
+                    </div>
+                </fieldset>
+
+                <div class="sm:col-span-2 lg:col-span-1">
+                    <span class="mb-1.5 block text-[13px] font-semibold text-slate-800">Tu contraseña</span>
+                    <ul id="pwReqs" class="grid gap-1 rounded-xl bg-[#eef3ff] px-4 py-2.5 text-[12.5px] text-slate-700 sm:grid-cols-3 lg:grid-cols-1" aria-live="polite">
+                        <li data-req="len">○ Mínimo 8 caracteres</li>
+                        <li data-req="num">○ No solo números</li>
+                        <li data-req="match">○ Las contraseñas coinciden</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
+                <p class="order-2 text-center text-[13px] text-slate-600 sm:order-1">
+                    ¿Ya tienes cuenta?
+                    <a href="{% url 'accounts:login' %}" class="font-semibold text-[#123f9e] hover:underline">Inicia sesión</a>
+                </p>
+                <button type="submit" class="btn btn-primary btn-lg order-1 w-full sm:order-2 sm:w-auto sm:min-w-[16rem]">Crear cuenta</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block auth_script %}

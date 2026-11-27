@@ -1,0 +1,19 @@
+{# Mensajes flash de las pantallas de acceso. #}
+{% if messages %}
+    <div class="mt-5 space-y-2" aria-live="polite">
+        {% for message in messages %}
+            <div role="alert" class="flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-[13px] font-medium leading-5
+                {% if message.tags == 'success' %}border-emerald-200 bg-emerald-50 text-emerald-800
+                {% elif message.tags == 'error' %}border-red-200 bg-red-50 text-red-800
+                {% else %}border-sky-200 bg-sky-50 text-sky-800{% endif %}">
+                <svg class="mt-0.5 h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/>
+                    {% if message.tags == 'success' %}<path d="m8 12.3 2.7 2.7L16 9.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    {% elif message.tags == 'error' %}<path d="M12 7.5v5.5M12 16.2v.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    {% else %}<path d="M12 11v5M12 7.8v.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>{% endif %}
+                </svg>
+                <span class="min-w-0 break-words">{{ message }}</span>
+            </div>
+        {% endfor %}
+    </div>
+{% endif %}

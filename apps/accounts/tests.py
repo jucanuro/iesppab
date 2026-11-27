@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from django.test import TestCase
+from django.core.exceptions import PermissionDenied
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 
 from apps.accounts.exceptions import InviteCodeError
 from apps.accounts.models import (
     INVITE_CODE_ALPHABET,
     AdvisorInviteCode,
+    AdvisorLink,
     StudentStatus,
     User,
     UserRole,
 )
 from apps.accounts.services import (
+    AdvisorLinkService,
     InviteCodeService,
     StudentEnablementService,
     resolve_invite_code,
@@ -67,43 +70,90 @@ class InviteCodeTests(AccountsTestBase):
         for ambiguous in "0O1I":
             self.assertNotIn(ambiguous, INVITE_CODE_ALPHABET)
 
-    def test_regenerar_desactiva_el_anterior(self) -> None:
+    def test_regenerar_desactiva_el_anterior_y_conserva_el_curso(self) -> None:
         service = InviteCodeService(self.advisor)
-        first = service.regenerate()
-        second = service.regenerate()
+        first = service.create("Investigación II", "2026-II")
+        second = service.regenerate(first.id)
 
         first.refresh_from_db()
         self.assertFalse(first.is_active)
         self.assertTrue(second.is_active)
         self.assertNotEqual(first.code, second.code)
-        self.assertEqual(service.active_code(), second)
+        self.assertEqual(second.course_name, "Investigación II")
+        self.assertEqual(second.academic_period, "2026-II")
+
+    def test_un_docente_tiene_varios_codigos_activos_uno_por_curso(self) -> None:
+        service = InviteCodeService(self.advisor)
+        service.create("Investigación II", "2026-II")
+        service.create("Práctica Profesional", "2026-II")
+
+        self.assertEqual(service.codes().filter(is_active=True).count(), 2)
+
+    def test_no_repite_codigo_activo_del_mismo_curso(self) -> None:
+        service = InviteCodeService(self.advisor)
+        service.create("Investigación II", "2026-II")
+
+        with self.assertRaises(InviteCodeError):
+            service.create("investigación ii", "2026-II")
+
+    def test_codigo_exige_curso(self) -> None:
+        with self.assertRaises(InviteCodeError):
+            InviteCodeService(self.advisor).create("", "")
+
+    def test_activar_y_desactivar_un_codigo(self) -> None:
+        service = InviteCodeService(self.advisor)
+        code = service.create("Investigación II")
+
+        service.set_active(code.id, False)
+        code.refresh_from_db()
+        self.assertFalse(code.is_active)
+
+        service.set_active(code.id, True)
+        code.refresh_from_db()
+        self.assertTrue(code.is_active)
+
+    def test_no_se_gestiona_el_codigo_de_otro_docente(self) -> None:
+        code = InviteCodeService(self.advisor).create("Investigación II")
+
+        with self.assertRaises(PermissionDenied):
+            InviteCodeService(self.other_teacher).set_active(code.id, False)
 
     def test_alumno_no_genera_codigo(self) -> None:
         student = self.make_user("alumno", UserRole.STUDENT)
         self.client.force_login(student)
 
-        response = self.client.post(reverse("accounts:invite-code"), {"action": "generate"})
+        response = self.client.post(
+            reverse("accounts:invite-code"),
+            {"action": "create", "course_name": "Curso"},
+        )
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(AdvisorInviteCode.objects.exists())
 
-    def test_docente_genera_y_desactiva_desde_la_pantalla(self) -> None:
+    def test_docente_crea_y_desactiva_desde_la_pantalla(self) -> None:
         self.client.force_login(self.advisor)
 
-        self.client.post(reverse("accounts:invite-code"), {"action": "generate"})
+        self.client.post(
+            reverse("accounts:invite-code"),
+            {"action": "create", "course_name": "Investigación II", "academic_period": "2026-II"},
+        )
         code = AdvisorInviteCode.objects.get(owner=self.advisor, is_active=True)
         html = self.client.get(reverse("accounts:pending-students")).content.decode()
         self.assertIn(code.code, html)
+        self.assertIn("Investigación II · 2026-II", html)
 
-        self.client.post(reverse("accounts:invite-code"), {"action": "deactivate"})
+        self.client.post(
+            reverse("accounts:invite-code"),
+            {"action": "deactivate", "code_id": code.id},
+        )
         self.assertFalse(AdvisorInviteCode.objects.filter(is_active=True).exists())
 
     def test_codigo_se_acepta_en_minusculas_y_con_espacios(self) -> None:
         code = InviteCodeService(self.advisor).regenerate().code
 
-        advisor = resolve_invite_code(f" {code[:4].lower()} {code[4:].lower()} ", self.institution.id)
+        invite = resolve_invite_code(f" {code[:4].lower()} {code[4:].lower()} ", self.institution.id)
 
-        self.assertEqual(advisor, self.advisor)
+        self.assertEqual(invite.owner, self.advisor)
 
     def test_codigo_de_otra_institucion_no_sirve(self) -> None:
         other = Institution.objects.create(name="Otro", slug="otro-cuentas")
@@ -115,16 +165,19 @@ class InviteCodeTests(AccountsTestBase):
 
 
 class RegistrationWithCodeTests(AccountsTestBase):
-    def test_registro_con_codigo_valido_relaciona_al_asesor(self) -> None:
-        code = InviteCodeService(self.advisor).regenerate().code
+    def test_registro_con_codigo_valido_vincula_y_puede_subir(self) -> None:
+        code = InviteCodeService(self.advisor).create("Investigación II", "2026-II").code
 
         self.register(code)
 
         user = User.objects.get(email=f"ana@{DOMAIN}")
-        self.assertEqual(user.advisor, self.advisor)
+        link = AdvisorLink.objects.get(student=user)
+        self.assertEqual(link.advisor, self.advisor)
+        self.assertEqual(link.course_name, "Investigación II")
+        self.assertEqual(link.academic_period, "2026-II")
         self.assertEqual(user.role, UserRole.STUDENT)
         self.assertEqual(user.student_status, StudentStatus.ENROLLED)
-        self.assertFalse(user.is_enabled)
+        self.assertTrue(user.is_enabled)
 
     def test_registro_como_exalumno(self) -> None:
         code = InviteCodeService(self.advisor).regenerate().code
@@ -173,71 +226,71 @@ class RegistrationWithCodeTests(AccountsTestBase):
         self.assertIn('name="invite_code"', html)
 
 
-class PendingStudentsTests(AccountsTestBase):
+class MyStudentsTests(AccountsTestBase):
     def setUp(self) -> None:
         super().setUp()
-        self.mine = self.make_user("mio", UserRole.STUDENT, advisor=self.advisor, is_enabled=False)
-        self.mine_alumni = self.make_user(
-            "mioex",
-            UserRole.STUDENT,
-            advisor=self.advisor,
-            is_enabled=False,
-            student_status=StudentStatus.ALUMNI,
-        )
-        self.foreign = self.make_user("ajeno", UserRole.STUDENT, advisor=self.other_teacher, is_enabled=False)
+        self.mine = self.make_user("mio", UserRole.STUDENT)
+        self.mine_alumni = self.make_user("mioex", UserRole.STUDENT, student_status=StudentStatus.ALUMNI)
+        self.foreign = self.make_user("ajeno", UserRole.STUDENT)
+        AdvisorLink.objects.create(student=self.mine, advisor=self.advisor, course_name="Investigación II")
+        AdvisorLink.objects.create(student=self.mine_alumni, advisor=self.advisor, course_name="Tesis")
+        AdvisorLink.objects.create(student=self.foreign, advisor=self.other_teacher, course_name="Práctica")
         self.orphan = self.make_user("huerfano", UserRole.STUDENT, is_enabled=False)
+        self.orphan_mine = self.make_user("viejo", UserRole.STUDENT, is_enabled=False)
+        AdvisorLink.objects.create(student=self.orphan_mine, advisor=self.advisor, course_name="")
 
-    def test_asesor_solo_ve_los_de_su_codigo(self) -> None:
-        pending = set(StudentEnablementService(self.advisor).pending_students())
+    def test_asesor_solo_ve_sus_alumnos_vinculados(self) -> None:
+        students = {link.student for link in StudentEnablementService(self.advisor).student_links()}
 
-        self.assertEqual(pending, {self.mine, self.mine_alumni})
+        self.assertEqual(students, {self.mine, self.mine_alumni, self.orphan_mine})
 
-    def test_admin_ve_todos_incluidos_sin_asesor(self) -> None:
-        pending = set(StudentEnablementService(self.admin).pending_students())
+    def test_admin_ve_toda_la_institucion(self) -> None:
+        students = {link.student for link in StudentEnablementService(self.admin).student_links()}
 
-        self.assertEqual(pending, {self.mine, self.mine_alumni, self.foreign, self.orphan})
+        self.assertEqual(students, {self.mine, self.mine_alumni, self.foreign, self.orphan_mine})
 
-    def test_lista_distingue_alumno_y_exalumno(self) -> None:
+    def test_lista_distingue_alumno_exalumno_y_curso(self) -> None:
         self.client.force_login(self.advisor)
 
         html = self.client.get(reverse("accounts:pending-students")).content.decode()
 
         self.assertIn("Exalumno", html)
-        self.assertIn("Validar como egresado y habilitar", html)
+        self.assertIn("Validar como egresado", html)
+        self.assertIn("Investigación II", html)
         self.assertNotIn(self.foreign.email, html)
 
-    def test_habilitar_alumno(self) -> None:
-        self.client.force_login(self.advisor)
-
-        self.client.post(reverse("accounts:bulk-enable-students"), {"student_ids": [self.mine.id]})
-
-        self.mine.refresh_from_db()
-        self.assertTrue(self.mine.is_enabled)
-
-    def test_validar_exalumno_y_habilitar(self) -> None:
+    def test_validar_egresado_desde_mis_alumnos(self) -> None:
         self.client.force_login(self.advisor)
 
         self.client.post(
-            reverse("accounts:bulk-enable-students"),
-            {"student_ids": [self.mine_alumni.id], "validate_alumni": "1"},
+            reverse("documents:mark-alumni", args=[self.mine_alumni.id]),
+            {"next": "my-students"},
         )
 
         self.mine_alumni.refresh_from_db()
-        self.assertTrue(self.mine_alumni.is_enabled)
         self.assertTrue(self.mine_alumni.is_validated_alumni)
         self.assertEqual(self.mine_alumni.alumni_validated_by, self.advisor)
+
+    def test_docente_ajeno_no_valida_egresado(self) -> None:
+        self.client.force_login(self.other_teacher)
+
+        response = self.client.post(reverse("documents:mark-alumni", args=[self.mine_alumni.id]))
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_pendientes_antiguos_por_asesor_y_admin(self) -> None:
+        self.assertEqual(set(StudentEnablementService(self.advisor).pending_students()), {self.orphan_mine})
+        self.assertEqual(
+            set(StudentEnablementService(self.admin).pending_students()),
+            {self.orphan, self.orphan_mine},
+        )
 
     def test_asesor_no_habilita_alumnos_ajenos(self) -> None:
         self.client.force_login(self.advisor)
 
-        self.client.post(
-            reverse("accounts:bulk-enable-students"),
-            {"student_ids": [self.foreign.id, self.orphan.id]},
-        )
+        self.client.post(reverse("accounts:bulk-enable-students"), {"student_ids": [self.orphan.id]})
 
-        self.foreign.refresh_from_db()
         self.orphan.refresh_from_db()
-        self.assertFalse(self.foreign.is_enabled)
         self.assertFalse(self.orphan.is_enabled)
 
     def test_admin_habilita_alumno_sin_asesor(self) -> None:
@@ -246,15 +299,72 @@ class PendingStudentsTests(AccountsTestBase):
         self.orphan.refresh_from_db()
         self.assertTrue(self.orphan.is_enabled)
 
-    def test_alumno_no_entra_a_pendientes(self) -> None:
+    def test_alumno_no_entra_a_mis_alumnos(self) -> None:
         self.client.force_login(self.mine)
 
         self.assertEqual(self.client.get(reverse("accounts:pending-students")).status_code, 403)
-        response = self.client.post(
-            reverse("accounts:bulk-enable-students"),
-            {"student_ids": [self.mine.id]},
-        )
-        self.assertEqual(response.status_code, 403)
+
+
+class MyAdvisorsTests(AccountsTestBase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.student = self.make_user("alumno", UserRole.STUDENT)
+        self.code_a = InviteCodeService(self.advisor).create("Investigación II", "2026-II")
+        self.code_b = InviteCodeService(self.other_teacher).create("Práctica Profesional", "2026-II")
+
+    def add(self, code: str):
+        self.client.force_login(self.student)
+        return self.client.post(reverse("accounts:my-advisors"), {"invite_code": code})
+
+    def test_alumno_con_varios_docentes(self) -> None:
+        self.add(self.code_a.code)
+        self.add(self.code_b.code)
+
+        advisors = set(AdvisorLink.objects.filter(student=self.student).values_list("advisor", flat=True))
+        self.assertEqual(advisors, {self.advisor.id, self.other_teacher.id})
+
+    def test_mismo_codigo_dos_veces_no_duplica(self) -> None:
+        self.add(self.code_a.code)
+        response = self.add(self.code_a.code)
+
+        self.assertEqual(AdvisorLink.objects.filter(student=self.student).count(), 1)
+        messages = [str(m) for m in response.wsgi_request._messages]
+        self.assertTrue(any("Ya estás vinculado" in m for m in messages), messages)
+
+    def test_codigo_regenerado_del_mismo_curso_no_duplica(self) -> None:
+        self.add(self.code_a.code)
+        new_code = InviteCodeService(self.advisor).regenerate(self.code_a.id)
+
+        with self.assertRaises(InviteCodeError):
+            AdvisorLinkService(self.student).add_by_code(new_code.code)
+
+    def test_codigo_desactivado_muestra_error(self) -> None:
+        InviteCodeService(self.advisor).set_active(self.code_a.id, False)
+
+        response = self.add(self.code_a.code)
+
+        self.assertFalse(AdvisorLink.objects.filter(student=self.student).exists())
+        messages = [str(m) for m in response.wsgi_request._messages]
+        self.assertIn("desactivado", messages[0])
+
+    def test_codigo_invalido_muestra_error(self) -> None:
+        response = self.add("ZZZZZZZZ")
+
+        self.assertFalse(AdvisorLink.objects.filter(student=self.student).exists())
+        messages = [str(m) for m in response.wsgi_request._messages]
+        self.assertIn("no existe", messages[0])
+
+    def test_docente_no_entra_a_mis_docentes(self) -> None:
+        self.client.force_login(self.advisor)
+
+        self.assertEqual(self.client.get(reverse("accounts:my-advisors")).status_code, 403)
+
+    def test_pantalla_lista_sus_vinculos(self) -> None:
+        self.add(self.code_a.code)
+
+        html = self.client.get(reverse("accounts:my-advisors")).content.decode()
+
+        self.assertIn("Investigación II · 2026-II", html)
 
 
 class AdminLoginTests(AccountsTestBase):
@@ -314,3 +424,48 @@ class AdminLoginTests(AccountsTestBase):
 
         self.assertNotIn("_auth_user_id", self.client.session)
         self.assertRedirects(response, reverse("accounts:login"), fetch_redirect_response=False)
+
+
+class AdvisorToLinkMigrationTests(TransactionTestCase):
+    """0006 convierte el asesor único del usuario en un vínculo."""
+
+    migrate_from = [("accounts", "0005_codigo_asesor"), ("core", "0001_initial")]
+    migrate_to = [("accounts", "0006_vinculos_por_curso")]
+
+    def test_asesor_existente_pasa_a_vinculo(self) -> None:
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        executor.migrate(self.migrate_from)
+        old_apps = executor.loader.project_state(self.migrate_from).apps
+
+        Institution = old_apps.get_model("core", "Institution")
+        OldUser = old_apps.get_model("accounts", "User")
+        institution = Institution.objects.create(name="Migración", slug="migracion")
+        teacher = OldUser.objects.create(
+            username="docmig", email="docmig@example.com", role="TEACHER", institution=institution,
+        )
+        student = OldUser.objects.create(
+            username="alumig", email="alumig@example.com", role="STUDENT",
+            institution=institution, advisor=teacher,
+        )
+        OldUser.objects.create(
+            username="sinasesor", email="sinasesor@example.com", role="STUDENT", institution=institution,
+        )
+
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(self.migrate_to)
+        new_apps = executor.loader.project_state(self.migrate_to).apps
+        Link = new_apps.get_model("accounts", "AdvisorLink")
+
+        self.assertEqual(Link.objects.count(), 1)
+        link = Link.objects.get()
+        self.assertEqual(link.student_id, student.id)
+        self.assertEqual(link.advisor_id, teacher.id)
+
+        # Deja la base en el estado más reciente para el resto de pruebas.
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes())

@@ -9,7 +9,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from apps.accounts.models import StudentStatus, User, UserRole
+from apps.accounts.models import AdvisorLink, StudentStatus, User, UserRole
 from apps.core.models import Institution
 from apps.documents.exceptions import (
     AuthorizationError,
@@ -84,6 +84,15 @@ class AuthorizationTestBase(TestCase):
         )
         if owner is None and not user.is_student_role:
             owner = user
+        link_id = None
+        if user.is_student_role and owner is None and advisor is not None:
+            link, _ = AdvisorLink.objects.get_or_create(
+                student=user,
+                advisor=advisor,
+                course_name="Investigación II",
+                academic_period="2026-II",
+            )
+            link_id = link.id
         dto = DocumentUploadDTO(
             title=f"Documento {self._counter}",
             kind="THESIS",
@@ -92,13 +101,14 @@ class AuthorizationTestBase(TestCase):
             owner_id=owner.id if owner else None,
             advisor_id=advisor.id if advisor else None,
             uploaded_file=SimpleUploadedFile("tesis.pdf", payload, content_type="application/pdf"),
+            link_id=link_id,
         )
         return DocumentUploadService(uploaded_by=user).execute(dto)
 
 
 class UploadRulesTests(AuthorizationTestBase):
-    def test_alumno_sin_asesor_no_puede_subir(self) -> None:
-        with self.assertRaisesMessage(DocumentUploadError, "Elige a tu asesor"):
+    def test_alumno_sin_vinculo_no_puede_subir(self) -> None:
+        with self.assertRaisesMessage(DocumentUploadError, "Primero agrega el código"):
             self.upload(self.student)
 
     def test_documento_de_alumno_queda_pendiente_y_no_se_analiza(self) -> None:
@@ -177,7 +187,7 @@ class UploadRulesTests(AuthorizationTestBase):
         SubmissionAuthorizationService(self.admin).mark_alumni(self.alumni.id)
         self.alumni.refresh_from_db()
 
-        document = self.upload(self.alumni)
+        document = self.upload(self.alumni, advisor=self.advisor)
 
         self.assertEqual(document.authorization_status, AuthorizationStatus.NOT_REQUIRED)
 
@@ -361,7 +371,7 @@ class RolePermissionPolicyTests(AuthorizationTestBase):
             requires_authorization=False,
         )
 
-        document = self.upload(self.student)
+        document = self.upload(self.student, advisor=self.advisor)
 
         self.assertEqual(document.authorization_status, AuthorizationStatus.NOT_REQUIRED)
 
@@ -393,21 +403,92 @@ class RolePermissionPolicyTests(AuthorizationTestBase):
         self.assertIsNone(rules["ADMIN"].max_submissions)
 
 
-class FixedAdvisorTests(AuthorizationTestBase):
-    def test_alumno_con_asesor_por_codigo_envia_siempre_a_su_asesor(self) -> None:
-        self.student.advisor = self.advisor
-        self.student.save()
+class StudentLinkUploadTests(AuthorizationTestBase):
+    """El alumno sube para uno de sus vínculos (docente + curso)."""
 
-        document = self.upload(self.student, advisor=self.other_teacher)
+    def _link(self, advisor, course: str) -> AdvisorLink:
+        return AdvisorLink.objects.create(
+            student=self.student,
+            advisor=advisor,
+            course_name=course,
+            academic_period="2026-II",
+        )
+
+    def _upload_with_link(self, link_id=None) -> Document:
+        self._counter += 1
+        payload = (
+            b"%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n"
+            + f"% vinculo {self._counter}\n".encode()
+            + b"trailer << /Root 1 0 R >>\n%%EOF\n"
+        )
+        dto = DocumentUploadDTO(
+            title=f"Documento {self._counter}",
+            kind="THESIS",
+            course_name="",
+            academic_period="",
+            owner_id=None,
+            advisor_id=None,
+            uploaded_file=SimpleUploadedFile("tesis.pdf", payload, content_type="application/pdf"),
+            link_id=link_id,
+        )
+        return DocumentUploadService(uploaded_by=self.student).execute(dto)
+
+    def test_con_un_solo_vinculo_viene_preseleccionado(self) -> None:
+        self._link(self.advisor, "Investigación II")
+
+        document = self._upload_with_link()
 
         self.assertEqual(document.advisor, self.advisor)
-
-    def test_alumno_con_asesor_no_necesita_elegirlo(self) -> None:
-        self.student.advisor = self.advisor
-        self.student.save()
-
-        document = self.upload(self.student)
-
-        self.assertEqual(document.advisor, self.advisor)
+        self.assertEqual(document.course_name, "Investigación II")
+        self.assertEqual(document.academic_period, "2026-II")
         self.assertEqual(document.authorization_status, AuthorizationStatus.PENDING)
+
+    def test_varios_docentes_el_documento_guarda_el_vinculo_elegido(self) -> None:
+        self._link(self.advisor, "Investigación II")
+        other = self._link(self.other_teacher, "Práctica Profesional")
+
+        document = self._upload_with_link(other.id)
+
+        self.assertEqual(document.advisor, self.other_teacher)
+        self.assertEqual(document.course_name, "Práctica Profesional")
+
+    def test_con_varios_vinculos_hay_que_elegir(self) -> None:
+        self._link(self.advisor, "Investigación II")
+        self._link(self.other_teacher, "Práctica Profesional")
+
+        with self.assertRaisesMessage(DocumentUploadError, "Elige el docente y curso"):
+            self._upload_with_link()
+
+    def test_no_se_puede_usar_el_vinculo_de_otro_alumno(self) -> None:
+        foreign = AdvisorLink.objects.create(student=self.alumni, advisor=self.advisor, course_name="X")
+        self._link(self.advisor, "Investigación II")
+
+        with self.assertRaises(DocumentUploadError):
+            self._upload_with_link(foreign.id)
+
+    def test_solicitud_llega_solo_al_docente_del_vinculo(self) -> None:
+        self._link(self.advisor, "Investigación II")
+        other = self._link(self.other_teacher, "Práctica Profesional")
+
+        document = self._upload_with_link(other.id)
+
+        self.assertIn(document, SubmissionAuthorizationService(self.other_teacher).pending_documents())
+        self.assertNotIn(document, SubmissionAuthorizationService(self.advisor).pending_documents())
+        self.assertIn(document, SubmissionAuthorizationService(self.admin).pending_documents())
+
+
+class AlumniSingleValidationTests(AuthorizationTestBase):
+    def test_exalumno_se_valida_una_vez_y_tope_tres(self) -> None:
+        first = self.upload(self.alumni, advisor=self.advisor)
+        with mock.patch(DELAY), self.captureOnCommitCallbacks(execute=True):
+            SubmissionAuthorizationService(self.advisor).approve(first.id, validate_alumni=True)
+        self.alumni.refresh_from_db()
+
+        second = self.upload(self.alumni, advisor=self.other_teacher)
+        third = self.upload(self.alumni, advisor=self.advisor)
+
+        self.assertEqual(second.authorization_status, AuthorizationStatus.NOT_REQUIRED)
+        self.assertEqual(third.authorization_status, AuthorizationStatus.NOT_REQUIRED)
+        with self.assertRaises(SubmissionLimitError):
+            self.upload(self.alumni, advisor=self.advisor)
 

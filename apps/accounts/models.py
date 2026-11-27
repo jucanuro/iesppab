@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 import uuid
 
 from django.contrib.auth.models import AbstractUser
@@ -109,6 +110,19 @@ class User(AbstractUser):
         related_name="+",
         verbose_name=_("Egresado validado por"),
     )
+    advisor = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="advisees",
+        verbose_name=_("Asesor / docente asignado"),
+        help_text=_(
+            "Docente o asesor con el que el alumno se relacionó al registrarse "
+            "con su código. Habilita su cuenta y autoriza sus análisis."
+        ),
+        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR", "ADMIN"]},
+    )
     extra_submissions = models.PositiveIntegerField(
         default=0,
         verbose_name=_("Envíos adicionales"),
@@ -193,3 +207,54 @@ class User(AbstractUser):
     def __str__(self) -> str:
         full_name = self.get_full_name().strip()
         return full_name or self.username
+
+
+# Sin caracteres ambiguos (0/O, 1/I/L) para dictar el código sin errores.
+INVITE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+INVITE_CODE_LENGTH = 8
+
+
+def generate_invite_code() -> str:
+    return "".join(
+        secrets.choice(INVITE_CODE_ALPHABET) for _ in range(INVITE_CODE_LENGTH)
+    )
+
+
+class AdvisorInviteCode(models.Model):
+    """
+    Código que un docente, asesor, director o admin envía a sus alumnos para
+    que se registren relacionados con él. Cada usuario tiene a lo sumo un
+    código activo; regenerar desactiva el anterior.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="invite_codes",
+        verbose_name=_("Docente / asesor"),
+        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR", "ADMIN"]},
+    )
+    code = models.CharField(
+        max_length=INVITE_CODE_LENGTH,
+        unique=True,
+        default=generate_invite_code,
+        verbose_name=_("Código"),
+    )
+    is_active = models.BooleanField(default=True, verbose_name=_("Activo"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Creado el"))
+
+    class Meta:
+        verbose_name = _("Código de invitación")
+        verbose_name_plural = _("Códigos de invitación")
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["owner"],
+                condition=models.Q(is_active=True),
+                name="un_codigo_activo_por_asesor",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.code} · {self.owner}"

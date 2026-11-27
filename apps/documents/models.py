@@ -96,7 +96,7 @@ class Document(TimeStampedModel):
         on_delete=models.SET_NULL,
         related_name="advised_documents",
         verbose_name=_("Asesor"),
-        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR"]},
+        limit_choices_to={"role__in": ["TEACHER", "DIRECTOR", "ADMIN"]},
     )
     title = models.CharField(
         max_length=250,
@@ -257,3 +257,67 @@ class DocumentText(TimeStampedModel):
 
     def __str__(self) -> str:
         return f"Texto extraído - {self.document_id}"
+
+class PermissionProfile(models.TextChoices):
+    STUDENT = "STUDENT", _("Alumno")
+    ALUMNI = "ALUMNI", _("Exalumno")
+    TEACHER = "TEACHER", _("Docente / Asesor")
+    DIRECTOR = "DIRECTOR", _("Director")
+    ADMIN = "ADMIN", _("Administrador")
+
+
+class RolePermission(models.Model):
+    """
+    Permisos de envío por perfil, editables desde /admin. Es la fuente de
+    verdad de los topes y de la autorización (ver SubmissionPolicy). Los
+    superusuarios no tienen tope en ningún caso.
+    """
+
+    profile = models.CharField(
+        max_length=20,
+        choices=PermissionProfile.choices,
+        unique=True,
+        verbose_name=_("Perfil"),
+    )
+    requires_authorization = models.BooleanField(
+        default=False,
+        verbose_name=_("Requiere autorización del asesor"),
+        help_text=_(
+            "Cada envío espera a que el asesor lo autorice, salvo los envíos "
+            "libres indicados abajo."
+        ),
+    )
+    requires_first_validation = models.BooleanField(
+        default=False,
+        verbose_name=_("Validar el primer envío"),
+        help_text=_(
+            "Solo exalumnos: mientras el asesor no valide que es egresado, "
+            "sus envíos requieren autorización."
+        ),
+    )
+    free_submissions = models.PositiveIntegerField(
+        default=0,
+        verbose_name=_("Envíos libres sin autorización"),
+        help_text=_(
+            "Si el perfil requiere autorización, cuántos envíos puede hacer "
+            "sin ella (para exalumnos, una vez validados)."
+        ),
+    )
+    max_submissions = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name=_("Máximo de envíos"),
+        help_text=_(
+            "Vacío = sin límite. A cada usuario se le suman sus «envíos "
+            "adicionales»."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("Actualizado el"))
+
+    class Meta:
+        verbose_name = _("Permiso por rol")
+        verbose_name_plural = _("Permisos por rol")
+        ordering = ["profile"]
+
+    def __str__(self) -> str:
+        return self.get_profile_display()

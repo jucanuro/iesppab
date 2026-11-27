@@ -5,10 +5,14 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path,include
 
+from apps.accounts.admin_forms import InstitutionalAdminAuthenticationForm
+
 
 admin.site.site_header = 'IESPP "Alfonso Barrantes Lingán" · Administración'
 admin.site.site_title = "Administración IESPP ABL"
 admin.site.index_title = "Panel de administración"
+# Usuario o correo institucional (ver apps/accounts/backends.py).
+admin.site.login_form = InstitutionalAdminAuthenticationForm
 
 
 urlpatterns = [

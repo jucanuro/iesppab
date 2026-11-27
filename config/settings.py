@@ -918,3 +918,8 @@ if ANALYSIS_STALE_JOB_MINUTES * 60 <= ANALYSIS_TASK_TIME_LIMIT:
 # estas variables no altera las filas ya creadas.
 SUBMISSION_LIMIT_TEACHER = int(os.getenv("SUBMISSION_LIMIT_TEACHER", "5"))
 SUBMISSION_LIMIT_ALUMNI = int(os.getenv("SUBMISSION_LIMIT_ALUMNI", "3"))
+
+
+# Igual que el backend por defecto, más acceso por correo para cuentas staff o
+# superusuario (login de /admin/ con usuario o correo institucional).
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.UsernameOrStaffEmailBackend"]

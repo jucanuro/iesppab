@@ -255,3 +255,62 @@ class PendingStudentsTests(AccountsTestBase):
             {"student_ids": [self.mine.id]},
         )
         self.assertEqual(response.status_code, 403)
+
+
+class AdminLoginTests(AccountsTestBase):
+    """/admin/login/ acepta usuario o correo; sigue exigiendo is_staff."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.staff = self.make_user("jefe", UserRole.ADMIN, is_staff=True)
+        self.no_staff_admin = self.make_user("adminsinstaff", UserRole.ADMIN)
+
+    def admin_login(self, username: str, password: str = "clave-segura-123"):
+        return self.client.post(
+            reverse("admin:login"),
+            {"username": username, "password": password, "next": "/admin/"},
+        )
+
+    def test_entra_con_usuario(self) -> None:
+        response = self.admin_login("jefe")
+
+        self.assertRedirects(response, "/admin/", fetch_redirect_response=False)
+
+    def test_entra_con_correo_institucional(self) -> None:
+        response = self.admin_login(f"JEFE@{DOMAIN.upper()}")
+
+        self.assertRedirects(response, "/admin/", fetch_redirect_response=False)
+
+    def test_correo_con_clave_incorrecta_no_entra(self) -> None:
+        response = self.admin_login(f"jefe@{DOMAIN}", "otra-clave")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_usuario_con_clave_incorrecta_no_entra(self) -> None:
+        response = self.admin_login("jefe", "otra-clave")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_admin_sin_is_staff_no_entra_al_panel(self) -> None:
+        for username in ("adminsinstaff", f"adminsinstaff@{DOMAIN}"):
+            response = self.admin_login(username)
+
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_correo_no_sirve_como_credencial_para_no_staff(self) -> None:
+        from django.contrib.auth import authenticate
+
+        self.assertIsNone(authenticate(username=f"asesor@{DOMAIN}", password="clave-segura-123"))
+        self.assertIsNotNone(authenticate(username="asesor", password="clave-segura-123"))
+
+    def test_login_institucional_sigue_exigiendo_correo_a_no_privilegiados(self) -> None:
+        response = self.client.post(
+            reverse("accounts:login"),
+            {"username_or_email": "asesor", "password": "clave-segura-123"},
+        )
+
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertRedirects(response, reverse("accounts:login"), fetch_redirect_response=False)

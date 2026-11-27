@@ -8,7 +8,6 @@ from uuid import UUID
 
 import magic
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
 from django.db.models import QuerySet
@@ -27,10 +26,16 @@ from apps.documents.models import (
     Document,
     DocumentKind,
     DocumentStatus,
+    PermissionProfile,
+    RolePermission,
 )
 from apps.documents.validators import ALLOWED_DOCUMENT_MIME_TYPES
 
 logger = logging.getLogger(__name__)
+
+
+# Roles que pueden ser asesor de un alumno (y generar código de invitación).
+ADVISOR_ROLES = [UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN]
 
 
 @dataclass(frozen=True)
@@ -51,56 +56,112 @@ class SubmissionQuota:
         return self.limit is not None and self.used >= self.limit
 
 
+# Valores por defecto si falta la fila del perfil en «Permisos por rol».
+_DEFAULT_PERMISSIONS = {
+    PermissionProfile.STUDENT: (True, False, 0, None),
+    PermissionProfile.ALUMNI: (True, True, 3, 3),
+    PermissionProfile.TEACHER: (False, False, 0, 5),
+    PermissionProfile.DIRECTOR: (False, False, 0, None),
+    PermissionProfile.ADMIN: (False, False, 0, None),
+}
+
+
 class SubmissionPolicy:
     """
-    Reglas de envío por rol (decisión del Gerente TI, 2026-11-26):
+    Reglas de envío por perfil. La fuente de verdad es el modelo
+    RolePermission («Permisos por rol» en /admin); valores iniciales:
 
-    - ADMIN, DIRECTOR y superusuario: sin tope y sin autorización.
-    - TEACHER (docente / asesor): sin autorización, tope de 5 envíos propios.
-    - STUDENT exalumno validado: sin autorización, tope de 3 envíos.
-    - STUDENT exalumno sin validar: tope de 3 envíos y cada envío requiere la
-      autorización del asesor, que en la primera solicitud valida que es
-      egresado.
-    - STUDENT en formación: sin tope, pero cada envío requiere autorización.
+    - Alumno: cada envío requiere autorización del asesor; sin tope.
+    - Exalumno: el primer envío lo valida el asesor; luego 3 envíos libres
+      sin autorización; tope de 3.
+    - Docente / Asesor: sin autorización; tope de 5.
+    - Director y Administrador: sin autorización ni tope.
+    - Superusuario: nunca tiene tope ni requiere autorización.
 
     [Supuesto] Un «envío» es un documento propio subido (owner = el usuario),
-    sin contar los fallidos ni los rechazados por el asesor. Reanalizar un
-    documento no es un envío nuevo. ``User.extra_submissions`` suma envíos al
-    tope del rol.
+    sin contar los fallidos ni los rechazados; reanalizar no es un envío
+    nuevo. ``User.extra_submissions`` suma envíos al tope del perfil.
     """
 
     @staticmethod
-    def base_limit(user: User) -> int | None:
-        if user.is_superuser or user.is_admin_role or user.is_director_role:
-            return None
-
+    def profile_for(user: User) -> str:
+        if user.is_admin_role:
+            return PermissionProfile.ADMIN
+        if user.is_director_role:
+            return PermissionProfile.DIRECTOR
         if user.is_teacher_role:
-            return settings.SUBMISSION_LIMIT_TEACHER
-
+            return PermissionProfile.TEACHER
         if user.is_alumni:
-            return settings.SUBMISSION_LIMIT_ALUMNI
-
-        return None
+            return PermissionProfile.ALUMNI
+        return PermissionProfile.STUDENT
 
     @classmethod
-    def quota(cls, user: User) -> SubmissionQuota:
-        base = cls.base_limit(user)
+    def rule_for(cls, user: User) -> RolePermission:
+        profile = cls.profile_for(user)
+        rule = RolePermission.objects.filter(profile=profile).first()
 
-        if base is None:
-            return SubmissionQuota(limit=None, used=0)
+        if rule is None:
+            autoriza, valida, libres, maximo = _DEFAULT_PERMISSIONS[profile]
+            rule = RolePermission(
+                profile=profile,
+                requires_authorization=autoriza,
+                requires_first_validation=valida,
+                free_submissions=libres,
+                max_submissions=maximo,
+            )
 
-        used = (
+        return rule
+
+    @staticmethod
+    def _counted_submissions(user: User) -> QuerySet[Document]:
+        return (
             Document.objects.filter(owner=user)
             .exclude(status=DocumentStatus.FAILED)
             .exclude(authorization_status=AuthorizationStatus.REJECTED)
+        )
+
+    @classmethod
+    def quota(cls, user: User) -> SubmissionQuota:
+        if user.is_superuser:
+            return SubmissionQuota(limit=None, used=0)
+
+        rule = cls.rule_for(user)
+
+        if rule.max_submissions is None:
+            return SubmissionQuota(limit=None, used=0)
+
+        return SubmissionQuota(
+            limit=rule.max_submissions + user.extra_submissions,
+            used=cls._counted_submissions(user).count(),
+        )
+
+    @classmethod
+    def requires_authorization(cls, user: User) -> bool:
+        if user.is_superuser:
+            return False
+
+        rule = cls.rule_for(user)
+
+        if (
+            rule.requires_first_validation
+            and user.is_alumni
+            and not user.is_validated_alumni
+        ):
+            return True
+
+        if not rule.requires_authorization:
+            return False
+
+        if rule.free_submissions <= 0:
+            return True
+
+        free_used = (
+            cls._counted_submissions(user)
+            .filter(authorization_status=AuthorizationStatus.NOT_REQUIRED)
             .count()
         )
 
-        return SubmissionQuota(limit=base + user.extra_submissions, used=used)
-
-    @staticmethod
-    def requires_authorization(user: User) -> bool:
-        return user.is_student_role and not user.is_validated_alumni
+        return free_used >= rule.free_submissions
 
 
 def ensure_analysis_authorized(document: Document) -> None:
@@ -172,7 +233,12 @@ class DocumentUploadService:
                 and SubmissionPolicy.requires_authorization(owner)
             )
 
-            advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
+            # El alumno relacionado con un asesor por código envía siempre a
+            # ese asesor; solo elige otro si no tiene asesor asignado.
+            if own_submission and owner.is_student_role and owner.advisor_id:
+                advisor = owner.advisor
+            else:
+                advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
 
             if requires_authorization and advisor is None:
                 raise DocumentUploadError(
@@ -254,9 +320,15 @@ class DocumentUploadService:
                 "docentes. Si necesitas más, pídeselos a un administrador."
             )
 
+        if owner.is_alumni:
+            raise SubmissionLimitError(
+                f"Alcanzaste el máximo de {quota.limit} envíos para exalumnos. "
+                "Si necesitas más, pídeselos a tu asesor o a un administrador."
+            )
+
         raise SubmissionLimitError(
-            f"Alcanzaste el máximo de {quota.limit} envíos para exalumnos. "
-            "Si necesitas más, pídeselos a tu asesor o a un administrador."
+            f"Alcanzaste el máximo de {quota.limit} envíos permitidos para tu "
+            "perfil. Si necesitas más, pídeselos a un administrador."
         )
 
     def _validate_payload(self, dto: DocumentUploadDTO) -> None:
@@ -318,7 +390,7 @@ class DocumentUploadService:
 
         advisors = User.objects.filter(
             id=advisor_id,
-            role__in=[UserRole.TEACHER, UserRole.DIRECTOR],
+            role__in=ADVISOR_ROLES,
             is_active=True,
         )
 
@@ -578,7 +650,7 @@ class SubmissionAuthorizationService:
         return (
             document.advisor_id is not None
             and document.advisor_id == self.actor.pk
-            and (self.actor.is_teacher_role or self.actor.is_director_role)
+            and self.actor.role in ADVISOR_ROLES
         )
 
     def _can_manage_student(self, student: User) -> bool:
@@ -587,6 +659,9 @@ class SubmissionAuthorizationService:
 
         if not (self.actor.is_teacher_role or self.actor.is_director_role):
             return False
+
+        if student.advisor_id == self.actor.pk:
+            return True
 
         return Document.objects.filter(
             owner=student,

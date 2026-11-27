@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -71,6 +70,9 @@ class DocumentUploadView(LoginRequiredMixin, TemplateView):
         context["document_kinds"] = DocumentKind.choices
         context["students"] = self._get_available_students(user)
         context["advisors"] = self._get_available_advisors(user)
+        context["fixed_advisor"] = (
+            user.advisor if user.is_student_role and user.advisor_id else None
+        )
         context["requires_authorization"] = (
             SubmissionPolicy.requires_authorization(user)
         )
@@ -382,12 +384,14 @@ class MarkAlumniView(_AuthorizationAccessMixin, View):
             )
             return HttpResponseForbidden(str(exc))
 
+        quota = SubmissionPolicy.quota(student)
+        limit_text = (
+            f" (máximo {quota.limit} envíos)" if quota.limit is not None else ""
+        )
         messages.success(
             request,
-            f"{student} quedó marcado como egresado: desde ahora sube y "
-            "analiza sin autorización (máximo "
-            f"{settings.SUBMISSION_LIMIT_ALUMNI + student.extra_submissions} "
-            "envíos).",
+            f"{student} quedó marcado como egresado: desde ahora usa sus "
+            f"envíos libres sin autorización{limit_text}.",
         )
 
         return redirect("documents:authorizations")

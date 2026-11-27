@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from apps.accounts.models import User
+from apps.accounts.models import AdvisorInviteCode, User
 
 
 @admin.register(User)
@@ -18,6 +18,7 @@ class UserAdmin(DjangoUserAdmin):
         "is_active",
         "is_enabled",
         "student_status",
+        "advisor",
         "is_staff",
     )
     list_filter = (
@@ -56,11 +57,12 @@ class UserAdmin(DjangoUserAdmin):
             "Envíos y autorización",
             {
                 "description": (
-                    "Un exalumno validado sube y analiza sin autorización del "
-                    "asesor. Los envíos adicionales se suman al tope del rol "
-                    "(docente 5, exalumno 3)."
+                    "Los topes y la autorización de cada perfil se configuran "
+                    "en «Permisos por rol». Los envíos adicionales se suman al "
+                    "tope del perfil de este usuario."
                 ),
                 "fields": (
+                    "advisor",
                     "student_status",
                     "alumni_validated_at",
                     "alumni_validated_by",
@@ -87,6 +89,7 @@ class UserAdmin(DjangoUserAdmin):
     )
 
     readonly_fields = ("last_login", "date_joined", "alumni_validated_by")
+    autocomplete_fields = ("advisor",)
     actions = ("mark_as_validated_alumni",)
 
     @admin.action(description="Marcar como egresado validado")
@@ -101,3 +104,23 @@ class UserAdmin(DjangoUserAdmin):
             marked += 1
 
         self.message_user(request, f"{marked} alumno(s) marcados como egresados.")
+
+
+@admin.register(AdvisorInviteCode)
+class AdvisorInviteCodeAdmin(admin.ModelAdmin):
+    list_display = ("code", "owner", "is_active", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("code", "owner__email", "owner__first_name", "owner__last_name")
+    autocomplete_fields = ("owner",)
+    readonly_fields = ("created_at",)
+    actions = ("regenerate_codes",)
+
+    @admin.action(description="Regenerar el código de estos asesores")
+    def regenerate_codes(self, request, queryset):
+        from apps.accounts.services import InviteCodeService
+
+        owners = {invite.owner for invite in queryset.select_related("owner")}
+        for owner in owners:
+            InviteCodeService(owner).regenerate()
+
+        self.message_user(request, f"{len(owners)} código(s) regenerado(s).")

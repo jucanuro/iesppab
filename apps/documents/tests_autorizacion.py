@@ -16,7 +16,13 @@ from apps.documents.exceptions import (
     DocumentUploadError,
     SubmissionLimitError,
 )
-from apps.documents.models import AuthorizationStatus, Document, DocumentStatus
+from apps.documents.models import (
+    AuthorizationStatus,
+    Document,
+    DocumentStatus,
+    PermissionProfile,
+    RolePermission,
+)
 from apps.documents.services import (
     DocumentUploadDTO,
     DocumentUploadService,
@@ -330,46 +336,78 @@ class AuthorizationViewsTests(AuthorizationTestBase):
         self.assertIn("Esperando autorización del asesor", html)
 
 
-class RegistrationStatusTests(TestCase):
-    def setUp(self) -> None:
-        self.institution = Institution.objects.create(
-            name="Instituto",
-            slug="instituto-registro",
-            email_domain="example.edu.pe",
+class RolePermissionPolicyTests(AuthorizationTestBase):
+    """La política se lee de «Permisos por rol» y cambia el comportamiento."""
+
+    def test_admin_cambia_el_tope_del_docente(self) -> None:
+        RolePermission.objects.filter(profile=PermissionProfile.TEACHER).update(
+            max_submissions=1,
         )
 
-    def _register(self, status: str | None):
-        data = {
-            "first_name": "Ana",
-            "last_name": "Rojas",
-            "email": "ana@example.edu.pe",
-            "password1": "ClaveSegura#2026",
-            "password2": "ClaveSegura#2026",
-        }
-        if status is not None:
-            data["student_status"] = status
-        return self.client.post(reverse("accounts:register"), data)
+        self.upload(self.advisor)
+        with self.assertRaises(SubmissionLimitError):
+            self.upload(self.advisor)
 
-    def test_registro_como_exalumno(self) -> None:
-        self._register(StudentStatus.ALUMNI)
+    def test_docente_sin_tope_si_se_vacia_el_maximo(self) -> None:
+        RolePermission.objects.filter(profile=PermissionProfile.TEACHER).update(
+            max_submissions=None,
+        )
 
-        user = User.objects.get(email="ana@example.edu.pe")
-        self.assertEqual(user.student_status, StudentStatus.ALUMNI)
-        self.assertIsNone(user.alumni_validated_at)
+        for _ in range(7):
+            self.upload(self.advisor)
 
-    def test_registro_como_alumno(self) -> None:
-        self._register(StudentStatus.ENROLLED)
+    def test_alumno_sin_autorizacion_si_el_admin_la_quita(self) -> None:
+        RolePermission.objects.filter(profile=PermissionProfile.STUDENT).update(
+            requires_authorization=False,
+        )
 
-        user = User.objects.get(email="ana@example.edu.pe")
-        self.assertEqual(user.student_status, StudentStatus.ENROLLED)
+        document = self.upload(self.student)
 
-    def test_registro_exige_condicion(self) -> None:
-        self._register(None)
+        self.assertEqual(document.authorization_status, AuthorizationStatus.NOT_REQUIRED)
 
-        self.assertFalse(User.objects.filter(email="ana@example.edu.pe").exists())
+    def test_exalumno_validado_agota_sus_libres_y_vuelve_a_pedir_autorizacion(self) -> None:
+        RolePermission.objects.filter(profile=PermissionProfile.ALUMNI).update(
+            free_submissions=1,
+            max_submissions=None,
+        )
+        SubmissionAuthorizationService(self.admin).mark_alumni(self.alumni.id)
+        self.alumni.refresh_from_db()
 
-    def test_formulario_muestra_opciones(self) -> None:
-        html = self.client.get(reverse("accounts:register")).content.decode()
+        free = self.upload(self.alumni, advisor=self.advisor)
+        self.assertEqual(free.authorization_status, AuthorizationStatus.NOT_REQUIRED)
 
-        self.assertIn("Soy alumno", html)
-        self.assertIn("Soy exalumno", html)
+        second = self.upload(self.alumni, advisor=self.advisor)
+        self.assertEqual(second.authorization_status, AuthorizationStatus.PENDING)
+
+    def test_politica_sembrada_por_la_migracion(self) -> None:
+        rules = {rule.profile: rule for rule in RolePermission.objects.all()}
+
+        self.assertEqual(set(rules), set(PermissionProfile.values))
+        self.assertTrue(rules["STUDENT"].requires_authorization)
+        self.assertIsNone(rules["STUDENT"].max_submissions)
+        self.assertTrue(rules["ALUMNI"].requires_first_validation)
+        self.assertEqual(rules["ALUMNI"].free_submissions, 3)
+        self.assertEqual(rules["ALUMNI"].max_submissions, 3)
+        self.assertEqual(rules["TEACHER"].max_submissions, 5)
+        self.assertIsNone(rules["DIRECTOR"].max_submissions)
+        self.assertIsNone(rules["ADMIN"].max_submissions)
+
+
+class FixedAdvisorTests(AuthorizationTestBase):
+    def test_alumno_con_asesor_por_codigo_envia_siempre_a_su_asesor(self) -> None:
+        self.student.advisor = self.advisor
+        self.student.save()
+
+        document = self.upload(self.student, advisor=self.other_teacher)
+
+        self.assertEqual(document.advisor, self.advisor)
+
+    def test_alumno_con_asesor_no_necesita_elegirlo(self) -> None:
+        self.student.advisor = self.advisor
+        self.student.save()
+
+        document = self.upload(self.student)
+
+        self.assertEqual(document.advisor, self.advisor)
+        self.assertEqual(document.authorization_status, AuthorizationStatus.PENDING)
+

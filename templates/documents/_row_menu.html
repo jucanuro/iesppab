@@ -1,6 +1,10 @@
 {% comment %}Menú ⋯ de acciones de una fila de la bandeja. Espera `document`. Iconos Lucide en línea.{% endcomment %}
 {% include "components/action_menu_start.html" with label="Más acciones de "|add:document.title %}
-    {% if document.status == "QUEUED" or document.status == "PROCESSING" %}
+    {% if document.authorization_status == "PENDING" %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="Se analizará automáticamente cuando el asesor lo autorice."><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Esperando autorización del asesor</span>
+    {% elif document.authorization_status == "REJECTED" %}
+        <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="{% if document.authorization_note %}{{ document.authorization_note }}{% else %}El asesor rechazó el análisis.{% endif %}"><svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/></svg>Análisis rechazado por el asesor</span>
+    {% elif document.status == "QUEUED" or document.status == "PROCESSING" %}
         <span class="menu-item is-disabled" role="menuitem" aria-disabled="true" title="Hay un análisis en curso; espera a que termine."><svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Analizando originalidad…</span>
     {% else %}
         <form method="post" action="{% url 'analysis:analyze' document.id %}" data-submit-spinner>

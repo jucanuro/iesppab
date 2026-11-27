@@ -462,6 +462,17 @@ class InboxTemplateTests(DocxDocumentTestMixin, TestCase):
             similarity_percent=Decimal("12.50"),
             ai_probability_percent=Decimal("45.00"),
         )
+        # El formulario de subida se muestra al alumno vinculado con un docente.
+        from apps.accounts.models import AdvisorLink
+
+        teacher = User.objects.create_user(
+            username="docente-bandeja",
+            email="docente-bandeja@example.com",
+            password="clave-segura-123",
+            role=UserRole.TEACHER,
+            institution=self.institution,
+        )
+        AdvisorLink.objects.create(student=self.student, advisor=teacher, course_name="Curso")
 
         self.client.force_login(self.student)
         response = self.client.get(reverse("documents:upload"))
@@ -508,3 +519,14 @@ class UnicodeNormalizationTests(TestCase):
 
     def test_respeta_griego_legitimo(self):
         self.assertEqual(self.normalize("αλφα βήτα"), "αλφα βήτα")
+
+
+class InboxWithoutLinkTests(DocxDocumentTestMixin, TestCase):
+    def test_alumno_sin_vinculo_ve_el_campo_de_codigo_en_vez_del_formulario(self) -> None:
+        from django.urls import reverse
+
+        self.client.force_login(self.student)
+        html = self.client.get(reverse("documents:upload")).content.decode()
+
+        self.assertIn("Primero agrega el código de tu docente o asesor.", html)
+        self.assertNotIn('id="documentUploadForm"', html)

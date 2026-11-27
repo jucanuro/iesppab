@@ -10,17 +10,178 @@ import magic
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.uploadedfile import UploadedFile
 from django.db import transaction
+from django.db.models import QuerySet
+from django.utils import timezone
 
-from apps.accounts.models import User, UserRole
+from apps.accounts.models import AdvisorLink, StudentStatus, User, UserRole
 from apps.documents.exceptions import (
+    AuthorizationError,
     DocumentUploadError,
     InvalidDocumentFileError,
     InvalidDocumentOwnerError,
+    SubmissionLimitError,
 )
-from apps.documents.models import Document, DocumentKind, DocumentStatus
+from apps.documents.models import (
+    AuthorizationStatus,
+    Document,
+    DocumentKind,
+    DocumentStatus,
+    PermissionProfile,
+    RolePermission,
+)
 from apps.documents.validators import ALLOWED_DOCUMENT_MIME_TYPES
 
 logger = logging.getLogger(__name__)
+
+
+# Roles que pueden ser asesor de un alumno (y generar código de invitación).
+ADVISOR_ROLES = [UserRole.TEACHER, UserRole.DIRECTOR, UserRole.ADMIN]
+
+
+@dataclass(frozen=True)
+class SubmissionQuota:
+    """Tope de envíos de un usuario. ``limit`` None = sin tope."""
+
+    limit: int | None
+    used: int
+
+    @property
+    def remaining(self) -> int | None:
+        if self.limit is None:
+            return None
+        return max(0, self.limit - self.used)
+
+    @property
+    def exhausted(self) -> bool:
+        return self.limit is not None and self.used >= self.limit
+
+
+# Valores por defecto si falta la fila del perfil en «Permisos por rol».
+_DEFAULT_PERMISSIONS = {
+    PermissionProfile.STUDENT: (True, False, 0, None),
+    PermissionProfile.ALUMNI: (True, True, 3, 3),
+    PermissionProfile.TEACHER: (False, False, 0, 5),
+    PermissionProfile.DIRECTOR: (False, False, 0, None),
+    PermissionProfile.ADMIN: (False, False, 0, None),
+}
+
+
+class SubmissionPolicy:
+    """
+    Reglas de envío por perfil. La fuente de verdad es el modelo
+    RolePermission («Permisos por rol» en /admin); valores iniciales:
+
+    - Alumno: cada envío requiere autorización del asesor; sin tope.
+    - Exalumno: el primer envío lo valida el asesor; luego 3 envíos libres
+      sin autorización; tope de 3.
+    - Docente / Asesor: sin autorización; tope de 5.
+    - Director y Administrador: sin autorización ni tope.
+    - Superusuario: nunca tiene tope ni requiere autorización.
+
+    [Supuesto] Un «envío» es un documento propio subido (owner = el usuario),
+    sin contar los fallidos ni los rechazados; reanalizar no es un envío
+    nuevo. ``User.extra_submissions`` suma envíos al tope del perfil.
+    """
+
+    @staticmethod
+    def profile_for(user: User) -> str:
+        if user.is_admin_role:
+            return PermissionProfile.ADMIN
+        if user.is_director_role:
+            return PermissionProfile.DIRECTOR
+        if user.is_teacher_role:
+            return PermissionProfile.TEACHER
+        if user.is_alumni:
+            return PermissionProfile.ALUMNI
+        return PermissionProfile.STUDENT
+
+    @classmethod
+    def rule_for(cls, user: User) -> RolePermission:
+        profile = cls.profile_for(user)
+        rule = RolePermission.objects.filter(profile=profile).first()
+
+        if rule is None:
+            autoriza, valida, libres, maximo = _DEFAULT_PERMISSIONS[profile]
+            rule = RolePermission(
+                profile=profile,
+                requires_authorization=autoriza,
+                requires_first_validation=valida,
+                free_submissions=libres,
+                max_submissions=maximo,
+            )
+
+        return rule
+
+    @staticmethod
+    def _counted_submissions(user: User) -> QuerySet[Document]:
+        return (
+            Document.objects.filter(owner=user)
+            .exclude(status=DocumentStatus.FAILED)
+            .exclude(authorization_status=AuthorizationStatus.REJECTED)
+        )
+
+    @classmethod
+    def quota(cls, user: User) -> SubmissionQuota:
+        if user.is_superuser:
+            return SubmissionQuota(limit=None, used=0)
+
+        rule = cls.rule_for(user)
+
+        if rule.max_submissions is None:
+            return SubmissionQuota(limit=None, used=0)
+
+        return SubmissionQuota(
+            limit=rule.max_submissions + user.extra_submissions,
+            used=cls._counted_submissions(user).count(),
+        )
+
+    @classmethod
+    def requires_authorization(cls, user: User) -> bool:
+        if user.is_superuser:
+            return False
+
+        rule = cls.rule_for(user)
+
+        if (
+            rule.requires_first_validation
+            and user.is_alumni
+            and not user.is_validated_alumni
+        ):
+            return True
+
+        if not rule.requires_authorization:
+            return False
+
+        if rule.free_submissions <= 0:
+            return True
+
+        free_used = (
+            cls._counted_submissions(user)
+            .filter(authorization_status=AuthorizationStatus.NOT_REQUIRED)
+            .count()
+        )
+
+        return free_used >= rule.free_submissions
+
+
+def ensure_analysis_authorized(document: Document) -> None:
+    """
+    Impide analizar un documento que espera, o no obtuvo, la autorización de
+    su asesor. Los NOT_REQUIRED y APPROVED se analizan como siempre.
+    """
+
+    if document.authorization_status == AuthorizationStatus.PENDING:
+        raise AuthorizationError(
+            "Este documento espera la autorización de su asesor. Se analizará "
+            "automáticamente cuando la apruebe."
+        )
+
+    if document.authorization_status == AuthorizationStatus.REJECTED:
+        note = document.authorization_note.strip()
+        raise AuthorizationError(
+            "El asesor rechazó el análisis de este documento"
+            + (f": {note}" if note else ".")
+        )
 
 
 @dataclass(frozen=True)
@@ -32,6 +193,7 @@ class DocumentUploadDTO:
     owner_id: str | UUID | None
     advisor_id: str | UUID | None
     uploaded_file: UploadedFile
+    link_id: str | UUID | None = None
 
 
 class DocumentUploadService:
@@ -59,7 +221,37 @@ class DocumentUploadService:
                     "Este alumno aún no ha sido habilitado por un docente."
                 )
 
-            advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
+            # Los topes y la autorización aplican a los envíos propios. Un
+            # docente que sube en nombre de un alumno actúa como asesor.
+            # [Supuesto] ese envío no consume tope ni requiere autorización.
+            own_submission = owner.pk == self.uploaded_by.pk
+
+            if own_submission:
+                self._check_quota(owner)
+
+            requires_authorization = (
+                own_submission
+                and SubmissionPolicy.requires_authorization(owner)
+            )
+
+            course_name = dto.course_name.strip()
+            academic_period = dto.academic_period.strip()
+
+            # El alumno sube para uno de sus vínculos (docente + curso): el
+            # documento guarda ese docente y ese curso.
+            if own_submission and owner.is_student_role:
+                link = self._resolve_link(owner, dto.link_id)
+                advisor = link.advisor
+                course_name = link.course_name
+                academic_period = academic_period or link.academic_period
+            else:
+                advisor = self._resolve_advisor(dto.advisor_id, owner=owner)
+
+            if requires_authorization and advisor is None:
+                raise DocumentUploadError(
+                    "Elige a tu asesor o docente: él debe autorizar el "
+                    "análisis de tu documento."
+                )
 
             self._validate_file(dto.uploaded_file)
 
@@ -75,8 +267,8 @@ class DocumentUploadService:
                 advisor=advisor,
                 title=dto.title.strip(),
                 kind=dto.kind,
-                course_name=dto.course_name.strip(),
-                academic_period=dto.academic_period.strip(),
+                course_name=course_name,
+                academic_period=academic_period,
                 original_file=dto.uploaded_file,
                 original_filename=dto.uploaded_file.name,
                 mime_type=detected_mime,
@@ -84,6 +276,11 @@ class DocumentUploadService:
                 sha256_hash=sha256_hash,
                 language="es",
                 status=DocumentStatus.UPLOADED,
+                authorization_status=(
+                    AuthorizationStatus.PENDING
+                    if requires_authorization
+                    else AuthorizationStatus.NOT_REQUIRED
+                ),
             )
 
             document.full_clean()
@@ -113,6 +310,63 @@ class DocumentUploadService:
             raise DocumentUploadError(
                 "Ocurrió un error inesperado al registrar el documento."
             ) from exc
+
+    def _resolve_link(self, owner: User, link_id: str | UUID | None) -> AdvisorLink:
+        links = list(
+            AdvisorLink.objects.select_related("advisor").filter(
+                student=owner,
+                is_active=True,
+                advisor__is_active=True,
+            )
+        )
+
+        if not links:
+            raise DocumentUploadError(
+                "Primero agrega el código de tu docente o asesor: así sabe a "
+                "quién llega tu documento."
+            )
+
+        if link_id:
+            for link in links:
+                if str(link.pk) == str(link_id):
+                    return link
+            raise DocumentUploadError(
+                "El docente y curso elegidos no están entre tus vínculos."
+            )
+
+        if len(links) == 1:
+            return links[0]
+
+        raise DocumentUploadError(
+            "Elige el docente y curso para el que subes el documento."
+        )
+
+    def _check_quota(self, owner: User) -> None:
+        # Bloquea la fila del usuario para que dos subidas simultáneas no
+        # pasen ambas el último envío disponible.
+        User.objects.select_for_update().filter(pk=owner.pk).first()
+
+        quota = SubmissionPolicy.quota(owner)
+
+        if not quota.exhausted:
+            return
+
+        if owner.is_teacher_role:
+            raise SubmissionLimitError(
+                f"Alcanzaste el máximo de {quota.limit} envíos de prueba para "
+                "docentes. Si necesitas más, pídeselos a un administrador."
+            )
+
+        if owner.is_alumni:
+            raise SubmissionLimitError(
+                f"Alcanzaste el máximo de {quota.limit} envíos para exalumnos. "
+                "Si necesitas más, pídeselos a tu asesor o a un administrador."
+            )
+
+        raise SubmissionLimitError(
+            f"Alcanzaste el máximo de {quota.limit} envíos permitidos para tu "
+            "perfil. Si necesitas más, pídeselos a un administrador."
+        )
 
     def _validate_payload(self, dto: DocumentUploadDTO) -> None:
         if not dto.title.strip():
@@ -173,7 +427,7 @@ class DocumentUploadService:
 
         advisors = User.objects.filter(
             id=advisor_id,
-            role__in=[UserRole.TEACHER, UserRole.DIRECTOR],
+            role__in=ADVISOR_ROLES,
             is_active=True,
         )
 
@@ -238,3 +492,252 @@ class DocumentUploadService:
             uploaded_file.seek(current_position)
 
         return sha256.hexdigest()
+
+
+def can_decide_authorizations(user: User) -> bool:
+    """Docentes, directores y admin ven la bandeja de solicitudes."""
+
+    return bool(
+        user.is_superuser
+        or user.is_admin_role
+        or user.is_director_role
+        or user.is_teacher_role
+    )
+
+
+class SubmissionAuthorizationService:
+    """
+    Autoriza o rechaza los envíos pendientes y valida egresados.
+
+    Decide el asesor elegido en el documento, o un administrador de la misma
+    institución (el superusuario, de cualquiera). Al autorizar se encola el
+    análisis. Se registra quién y cuándo.
+    """
+
+    def __init__(self, actor: User) -> None:
+        self.actor = actor
+
+    # --- Consultas -------------------------------------------------------
+
+    def pending_documents(self) -> QuerySet[Document]:
+        if not can_decide_authorizations(self.actor):
+            raise PermissionDenied(
+                "No tienes permisos para autorizar envíos."
+            )
+
+        documents = Document.objects.select_related(
+            "owner",
+            "owner__alumni_validated_by",
+            "advisor",
+        ).filter(authorization_status=AuthorizationStatus.PENDING)
+
+        if self.actor.is_superuser:
+            return documents.order_by("created_at")
+
+        if self.actor.is_admin_role:
+            return documents.filter(
+                institution_id=self.actor.institution_id,
+            ).order_by("created_at")
+
+        return documents.filter(advisor=self.actor).order_by("created_at")
+
+    def recent_decisions(self, limit: int = 10) -> QuerySet[Document]:
+        return (
+            Document.objects.select_related("owner", "advisor")
+            .filter(
+                authorized_by=self.actor,
+                authorization_status__in=[
+                    AuthorizationStatus.APPROVED,
+                    AuthorizationStatus.REJECTED,
+                ],
+            )
+            .order_by("-authorized_at")[:limit]
+        )
+
+    # --- Decisiones ------------------------------------------------------
+
+    @transaction.atomic
+    def approve(
+        self,
+        document_id: str | UUID,
+        validate_alumni: bool = False,
+    ) -> Document:
+        document = self._get_pending_for_decision(document_id)
+
+        if validate_alumni:
+            if not document.owner.is_alumni:
+                raise AuthorizationError(
+                    "Este alumno no se registró como exalumno."
+                )
+            self._set_validated_alumni(document.owner)
+
+        document.authorization_status = AuthorizationStatus.APPROVED
+        document.authorized_by = self.actor
+        document.authorized_at = timezone.now()
+        document.save(
+            update_fields=[
+                "authorization_status",
+                "authorized_by",
+                "authorized_at",
+                "updated_at",
+            ]
+        )
+
+        logger.info(
+            "Envío autorizado. document_id=%s actor_id=%s valida_egresado=%s",
+            document.id,
+            self.actor.id,
+            validate_alumni,
+        )
+
+        document_pk, actor_pk = document.pk, self.actor.pk
+        transaction.on_commit(lambda: _enqueue_after_approval(document_pk, actor_pk))
+
+        return document
+
+    @transaction.atomic
+    def reject(self, document_id: str | UUID, note: str = "") -> Document:
+        document = self._get_pending_for_decision(document_id)
+
+        document.authorization_status = AuthorizationStatus.REJECTED
+        document.authorized_by = self.actor
+        document.authorized_at = timezone.now()
+        document.authorization_note = note.strip()[:1000]
+        document.save(
+            update_fields=[
+                "authorization_status",
+                "authorized_by",
+                "authorized_at",
+                "authorization_note",
+                "updated_at",
+            ]
+        )
+
+        logger.info(
+            "Envío rechazado. document_id=%s actor_id=%s",
+            document.id,
+            self.actor.id,
+        )
+
+        return document
+
+    @transaction.atomic
+    def mark_alumni(self, student_id: str | UUID) -> User:
+        """
+        Marca a un alumno como egresado validado: desde entonces sube y
+        analiza sin autorización (con el tope de exalumno). Lo hace el admin
+        o un asesor de alguno de los documentos del alumno.
+        """
+
+        student = (
+            User.objects.select_for_update()
+            .filter(pk=student_id, role=UserRole.STUDENT)
+            .first()
+        )
+
+        if student is None or not self._can_manage_student(student):
+            raise PermissionDenied(
+                "No puedes marcar como egresado a este alumno."
+            )
+
+        self._set_validated_alumni(student)
+
+        logger.info(
+            "Alumno marcado como egresado. student_id=%s actor_id=%s",
+            student.id,
+            self.actor.id,
+        )
+
+        return student
+
+    # --- Internos --------------------------------------------------------
+
+    def _get_pending_for_decision(self, document_id: str | UUID) -> Document:
+        document = (
+            Document.objects.select_for_update()
+            .filter(pk=document_id)
+            .first()
+        )
+
+        if document is None or not self._can_decide(document):
+            raise PermissionDenied(
+                "Solo el asesor elegido o un administrador puede decidir "
+                "este envío."
+            )
+
+        if document.authorization_status != AuthorizationStatus.PENDING:
+            raise AuthorizationError("Esta solicitud ya fue resuelta.")
+
+        return document
+
+    def _is_admin_for(self, institution_id: Any) -> bool:
+        if self.actor.is_superuser:
+            return True
+
+        return bool(
+            self.actor.is_admin_role
+            and self.actor.institution_id is not None
+            and self.actor.institution_id == institution_id
+        )
+
+    def _can_decide(self, document: Document) -> bool:
+        if self._is_admin_for(document.institution_id):
+            return True
+
+        return (
+            document.advisor_id is not None
+            and document.advisor_id == self.actor.pk
+            and self.actor.role in ADVISOR_ROLES
+        )
+
+    def _can_manage_student(self, student: User) -> bool:
+        if self._is_admin_for(student.institution_id):
+            return True
+
+        if not (self.actor.is_teacher_role or self.actor.is_director_role):
+            return False
+
+        if AdvisorLink.objects.filter(student=student, advisor=self.actor).exists():
+            return True
+
+        return Document.objects.filter(
+            owner=student,
+            advisor=self.actor,
+        ).exists()
+
+    def _set_validated_alumni(self, student: User) -> None:
+        student.student_status = StudentStatus.ALUMNI
+
+        if student.alumni_validated_at is None:
+            student.alumni_validated_at = timezone.now()
+            student.alumni_validated_by = self.actor
+
+        student.save(
+            update_fields=[
+                "student_status",
+                "alumni_validated_at",
+                "alumni_validated_by",
+            ]
+        )
+
+
+def _enqueue_after_approval(document_id: Any, actor_id: Any) -> None:
+    from apps.analysis.queueing import enqueue_document_analysis
+
+    try:
+        enqueue_document_analysis(document_id, actor_id)
+    except Exception:
+        logger.exception(
+            "No se pudo encolar el análisis tras autorizar. document_id=%s",
+            document_id,
+        )
+
+
+def pending_authorizations_count(user: User) -> int:
+    if not getattr(user, "is_authenticated", False):
+        return 0
+
+    if not can_decide_authorizations(user):
+        return 0
+
+    return SubmissionAuthorizationService(user).pending_documents().count()

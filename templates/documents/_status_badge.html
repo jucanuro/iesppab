@@ -6,12 +6,21 @@ contexto. Cuando el análisis terminó (`COMPLETED`) muestra el nivel de riesgo 
 reporte en vez de un genérico "Completado".
 
 Uso en la leyenda: `{% include "documents/_status_badge.html" with status="UPLOADED" only %}`
-o `... with status="COMPLETED" risk_level="HIGH" only` para pintar una insignia de
-muestra sin un documento real.
+o `... with status="COMPLETED" risk_level="HIGH" only` (o `authorization="PENDING"`)
+para pintar una insignia de muestra sin un documento real.
 {% endcomment %}
 {% firstof status document.status as st %}
 {% firstof risk_level document.report.risk_level as risk %}
-{% if st == "COMPLETED" %}
+{% firstof authorization document.authorization_status as auth %}
+{% if auth == "PENDING" %}
+    <span class="badge badge-warning whitespace-nowrap" title="Pendiente de autorización. {% if document.advisor %}Espera la autorización de {{ document.advisor.get_full_name|default:document.advisor.username }}.{% else %}Espera la autorización del asesor.{% endif %} Se analizará automáticamente cuando la apruebe.">
+        <span class="badge-dot bg-gold-500"></span>Por autorizar
+    </span>
+{% elif auth == "REJECTED" %}
+    <span class="badge badge-danger" title="El asesor rechazó el análisis{% if document.authorization_note %}: {{ document.authorization_note }}{% else %}.{% endif %}">
+        <span class="badge-dot bg-red-500"></span>Rechazado
+    </span>
+{% elif st == "COMPLETED" %}
     {% if risk == "HIGH" %}
         <span class="badge badge-danger"
               title="Análisis terminado con riesgo alto de similitud.{% if document.report %} Similitud {{ document.report.similarity_percent }}% · {% if document.report.ai_not_evaluable %}IA: no evaluable{% else %}IA {{ document.report.ai_estimated_percent|floatformat:1 }}%{% endif %}.{% endif %} Revisión requerida.">

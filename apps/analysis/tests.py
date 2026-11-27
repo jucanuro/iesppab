@@ -1567,7 +1567,7 @@ class AnalyzeViewTestMixin:
 class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
     """El encolado del análisis es atómico: un doble envío encola una sola vez."""
 
-    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    @mock.patch("apps.analysis.tasks.run_document_analysis.delay")
     def test_double_submit_enqueues_once(self, delay: mock.Mock) -> None:
         document = make_test_document(self.institution, self.student)
 
@@ -1583,7 +1583,7 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
         document.refresh_from_db()
         self.assertEqual(document.status, DocumentStatus.QUEUED)
 
-    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    @mock.patch("apps.analysis.tasks.run_document_analysis.delay")
     def test_unchecked_exclusion_options_are_sent_as_false(
         self,
         delay: mock.Mock,
@@ -1602,7 +1602,7 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
             exclude_bibliography=True,
         )
 
-    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    @mock.patch("apps.analysis.tasks.run_document_analysis.delay")
     def test_document_in_progress_is_not_enqueued(self, delay: mock.Mock) -> None:
         for status in (DocumentStatus.QUEUED, DocumentStatus.PROCESSING):
             document = make_test_document(
@@ -1620,7 +1620,7 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
         delay.assert_not_called()
 
     @mock.patch(
-        "apps.analysis.views.run_document_analysis.delay",
+        "apps.analysis.tasks.run_document_analysis.delay",
         side_effect=ConnectionError("broker caído"),
     )
     def test_enqueue_failure_does_not_leave_document_queued(
@@ -1639,7 +1639,7 @@ class AnalyzeEnqueueTests(AnalyzeViewTestMixin, TestCase):
 class FailedDocumentReanalysisTests(AnalyzeViewTestMixin, TestCase):
     """Un documento FAILED se puede volver a analizar."""
 
-    @mock.patch("apps.analysis.views.run_document_analysis.delay")
+    @mock.patch("apps.analysis.tasks.run_document_analysis.delay")
     def test_failed_document_can_be_enqueued_again(self, delay: mock.Mock) -> None:
         document = make_test_document(
             self.institution,

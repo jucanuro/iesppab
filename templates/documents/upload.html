@@ -58,6 +58,23 @@
                 </h2>
                 <button type="button" class="icon-btn" @click="uploadOpen = false" aria-label="Cerrar"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
             </div>
+    {% if request.user.is_student_role and not student_links %}
+    <div class="px-5 py-6 sm:px-6">
+        <div class="rounded-xl border border-brand-500/20 bg-[#eef3ff] px-4 py-4 text-[13px] leading-5 text-[#123f9e]">
+            <p class="font-bold">Primero agrega el código de tu docente o asesor.</p>
+            <p class="mt-1 text-slate-700">Tu docente comparte un código por curso (por ejemplo, en el grupo del curso). Con él tu documento le llega a él; puedes subirlo y el análisis lo autoriza tu docente.</p>
+        </div>
+        <form method="post" action="{% url 'accounts:my-advisors' %}" class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="upload">
+            <div class="min-w-0 flex-1">
+                <label for="invite_code_upload" class="field-label">Código de tu docente o asesor</label>
+                <input id="invite_code_upload" name="invite_code" type="text" required maxlength="12" autocomplete="off" placeholder="Ej. K7M2Q9XA" class="field h-10 text-[13px] uppercase tracking-[0.12em]">
+            </div>
+            <button type="submit" class="btn btn-primary h-10">Vincularme</button>
+        </form>
+    </div>
+    {% else %}
     <form method="post" enctype="multipart/form-data" id="documentUploadForm" class="px-5 py-5 sm:px-6">
         {% csrf_token %}
 
@@ -97,16 +114,53 @@
                     </div>
                 {% endif %}
 
+                {% if request.user.is_student_role %}
+                    <div class="min-w-0 sm:col-span-2">
+                        {% if student_links|length == 1 %}
+                            {% with link=student_links.0 %}
+                                <span class="field-label">Docente y curso</span>
+                                <p class="field flex h-10 items-center gap-1.5 bg-slate-50 text-[13px]"><span class="font-semibold text-[#123f9e]">{{ link.advisor.get_full_name|default:link.advisor.username }}</span><span class="text-slate-500">· {{ link.course_label }}</span></p>
+                                <input type="hidden" name="link_id" value="{{ link.id }}">
+                            {% endwith %}
+                        {% else %}
+                            <label for="link_id" class="field-label">Docente y curso <span class="text-red-600">*</span></label>
+                            <select id="link_id" name="link_id" required class="field h-10 text-[13px]">
+                                <option value="">Elige para qué docente y curso es</option>
+                                {% for link in student_links %}
+                                    <option value="{{ link.id }}">{{ link.advisor.get_full_name|default:link.advisor.username }} · {{ link.course_label }}</option>
+                                {% endfor %}
+                            </select>
+                        {% endif %}
+                        <p class="mt-1 text-[11.5px] text-slate-500">¿Otro docente o curso? <a href="{% url 'accounts:my-advisors' %}" class="font-semibold text-[#236bfd] hover:underline">Agrega su código</a>.</p>
+                    </div>
+                {% else %}
                 <div class="min-w-0">
-                    <label for="advisor_id" class="field-label">Asesor</label>
-                    <select id="advisor_id" name="advisor_id" class="field h-10 text-[13px]">
-                        <option value="">Sin asesor asignado</option>
+                    <label for="advisor_id" class="field-label">Asesor{% if requires_authorization %} <span class="text-red-600">*</span>{% endif %}</label>
+                    <select id="advisor_id" name="advisor_id" {% if requires_authorization %}required aria-describedby="advisorHint"{% endif %} class="field h-10 text-[13px]">
+                        <option value="">{% if requires_authorization %}Elige a tu asesor o docente{% else %}Sin asesor asignado{% endif %}</option>
                         {% for advisor in advisors %}
                             <option value="{{ advisor.id }}">{{ advisor.get_full_name|default:advisor.username }}</option>
                         {% endfor %}
                     </select>
                 </div>
+                {% endif %}
 
+                {% if requires_authorization or submission_quota.limit is not None %}
+                    <div id="advisorHint" class="min-w-0 rounded-xl border border-brand-500/20 bg-[#eef3ff] px-3.5 py-2.5 text-[12.5px] leading-5 text-[#123f9e] sm:col-span-2">
+                        {% if requires_authorization %}
+                            {% if request.user.is_alumni and not request.user.is_validated_alumni %}
+                                <p><strong>Tu asesor validará que eres egresado</strong> al revisar este envío y autorizará su análisis. Una vez validado, tus siguientes envíos se analizan sin esperar autorización.</p>
+                            {% else %}
+                                <p><strong>Puedes subir el documento; el análisis lo autoriza tu docente.</strong> Queda «Por autorizar» y se analiza automáticamente cuando lo apruebe.</p>
+                            {% endif %}
+                        {% endif %}
+                        {% if submission_quota.limit is not None %}
+                            <p class="{% if requires_authorization %}mt-1 {% endif %}font-semibold">Envíos disponibles: {{ submission_quota.remaining }} de {{ submission_quota.limit }}.</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
+
+                {% if not request.user.is_student_role %}
                 <div class="min-w-0">
                     <label for="course_name" class="field-label">Curso</label>
                     <input id="course_name" name="course_name" type="text" placeholder="Ej. Investigación" class="field h-10 text-[13px]">
@@ -116,6 +170,7 @@
                     <label for="academic_period" class="field-label">Periodo</label>
                     <input id="academic_period" name="academic_period" type="text" placeholder="2026-I" class="field h-10 text-[13px]">
                 </div>
+                {% endif %}
             </div>
 
             <div class="flex min-w-0 flex-col">
@@ -152,6 +207,7 @@
             <div class="h-full w-1/3 animate-pulse rounded-full bg-brand-500"></div>
         </div>
     </form>
+    {% endif %}
         </div>
     </div>
 
@@ -204,6 +260,16 @@
                 </button>
                 <div id="estados-ayuda" x-show="help" x-cloak x-transition.opacity.duration.200ms class="absolute right-0 top-full z-50 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white shadow-lift">
 <div class="space-y-2.5 p-4 text-[12.5px] text-slate-600">
+                                <div class="flex items-start gap-2.5">
+                                    <span class="shrink-0">{% include "documents/_status_badge.html" with authorization="PENDING" only %}</span>
+                                    <p>Espera la autorización de tu asesor. Se analiza automáticamente cuando la aprueba.</p>
+                                </div>
+
+                                <div class="flex items-start gap-2.5">
+                                    <span class="shrink-0">{% include "documents/_status_badge.html" with authorization="REJECTED" only %}</span>
+                                    <p>El asesor no autorizó el análisis. Pasa el cursor sobre la etiqueta para ver el motivo.</p>
+                                </div>
+
                                 <div class="flex items-start gap-2.5">
                                     <span class="shrink-0">{% include "documents/_status_badge.html" with status="UPLOADED" only %}</span>
                                     <p>Subido, pendiente de análisis. Pulsa «Analizar originalidad» en la fila.</p>

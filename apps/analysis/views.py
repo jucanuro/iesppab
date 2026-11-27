@@ -9,20 +9,12 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse, HttpResponseForbidden
 from django.shortcuts import redirect
-from django.utils import timezone
 from django.views import View
 
+from apps.analysis.queueing import enqueue_document_analysis
 from apps.analysis.services import DocumentAnalysisError, DocumentAnalysisService
-from apps.analysis.tasks import run_document_analysis
-from apps.documents.models import Document, DocumentStatus
-
-# Estados desde los que se puede (re)encolar un análisis. QUEUED/PROCESSING
-# quedan fuera: el documento ya está en análisis.
-_ANALYZABLE_STATUSES = [
-    DocumentStatus.UPLOADED,
-    DocumentStatus.COMPLETED,
-    DocumentStatus.FAILED,
-]
+from apps.documents.exceptions import AuthorizationError
+from apps.documents.services import ensure_analysis_authorized
 
 logger = logging.getLogger(__name__)
 
@@ -61,19 +53,21 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
                 requested_by=request.user,
             ).check_permission(document_id=pk)
 
-            # Pasa a "en cola" con un UPDATE condicional: solo una petición
-            # puede ganar la transición, así un doble clic (o dos pestañas)
-            # no encola el mismo documento dos veces.
-            queued = Document.objects.filter(
-                pk=document.pk,
-                status__in=_ANALYZABLE_STATUSES,
-            ).update(
-                status=DocumentStatus.QUEUED,
-                error_message="",
-                updated_at=timezone.now(),
+            # Un documento que espera (o no obtuvo) la autorización del
+            # asesor no se analiza: se aprueba desde «Solicitudes».
+            ensure_analysis_authorized(document)
+
+            queued = enqueue_document_analysis(
+                document.pk,
+                request.user.id,
+                exclude_quotes=_read_exclusion_flag(request, "exclude_quotes"),
+                exclude_bibliography=_read_exclusion_flag(
+                    request,
+                    "exclude_bibliography",
+                ),
             )
 
-            if queued != 1:
+            if not queued:
                 messages.info(
                     request,
                     (
@@ -83,34 +77,6 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
                 )
 
                 return redirect("reports:detail", pk=pk)
-
-            try:
-                run_document_analysis.delay(
-                    str(pk),
-                    str(request.user.id),
-                    exclude_quotes=_read_exclusion_flag(
-                        request,
-                        "exclude_quotes",
-                    ),
-                    exclude_bibliography=_read_exclusion_flag(
-                        request,
-                        "exclude_bibliography",
-                    ),
-                )
-            except Exception:
-                # Sin esto el documento quedaría en QUEUED para siempre.
-                Document.objects.filter(
-                    pk=document.pk,
-                    status=DocumentStatus.QUEUED,
-                ).update(
-                    status=DocumentStatus.FAILED,
-                    error_message=(
-                        "No se pudo enviar el documento a análisis. "
-                        "Vuelve a intentarlo en unos minutos."
-                    ),
-                    updated_at=timezone.now(),
-                )
-                raise
 
             messages.success(
                 request,
@@ -131,7 +97,7 @@ class DocumentAnalyzeView(LoginRequiredMixin, View):
             )
             return HttpResponseForbidden(str(exc))
 
-        except DocumentAnalysisError as exc:
+        except (DocumentAnalysisError, AuthorizationError) as exc:
             messages.error(request, str(exc))
             return redirect("documents:upload")
 

@@ -5,6 +5,8 @@ from django.urls import path
 from apps.accounts.views import (
     BulkEnableStudentsView,
     InstitutionalLoginView,
+    InviteCodeView,
+    MyAdvisorsView,
     InstitutionalLogoutView,
     PasswordResetCompleteView,
     PasswordResetConfirmView,
@@ -55,6 +57,16 @@ urlpatterns = [
         "accounts/pendientes/habilitar/",
         BulkEnableStudentsView.as_view(),
         name="bulk-enable-students",
+    ),
+    path(
+        "alumnos/mis-docentes/",
+        MyAdvisorsView.as_view(),
+        name="my-advisors",
+    ),
+    path(
+        "accounts/codigo/",
+        InviteCodeView.as_view(),
+        name="invite-code",
     ),
     *password_reset_urlpatterns,
 ]

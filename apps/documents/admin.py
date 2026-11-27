@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.documents.models import Document, DocumentText
+from apps.documents.models import Document, DocumentText, RolePermission
 
 
 @admin.register(Document)
@@ -13,6 +13,7 @@ class DocumentAdmin(admin.ModelAdmin):
         "institution",
         "kind",
         "status",
+        "authorization_status",
         "language",
         "created_at",
     )
@@ -20,6 +21,7 @@ class DocumentAdmin(admin.ModelAdmin):
         "institution",
         "kind",
         "status",
+        "authorization_status",
         "language",
         "created_at",
     )
@@ -65,3 +67,45 @@ class DocumentTextAdmin(admin.ModelAdmin):
         "updated_at",
     )
     autocomplete_fields = ("document",)
+
+
+@admin.register(RolePermission)
+class RolePermissionAdmin(admin.ModelAdmin):
+    """
+    «Permisos por rol»: una fila por perfil (alumno, exalumno, docente /
+    asesor, director, administrador). Solo se editan; las filas se crean al
+    migrar.
+    """
+
+    list_display = (
+        "profile",
+        "requires_authorization",
+        "requires_first_validation",
+        "free_submissions",
+        "max_submissions_display",
+        "updated_at",
+    )
+    list_editable = (
+        "requires_authorization",
+        "requires_first_validation",
+        "free_submissions",
+    )
+    readonly_fields = ("profile", "updated_at")
+    fields = (
+        "profile",
+        "requires_authorization",
+        "requires_first_validation",
+        "free_submissions",
+        "max_submissions",
+        "updated_at",
+    )
+
+    @admin.display(description="Máximo de envíos")
+    def max_submissions_display(self, obj: RolePermission) -> str:
+        return "Sin límite" if obj.max_submissions is None else str(obj.max_submissions)
+
+    def has_add_permission(self, request) -> bool:
+        return False
+
+    def has_delete_permission(self, request, obj=None) -> bool:
+        return False

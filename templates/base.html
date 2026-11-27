@@ -39,8 +39,8 @@
                 {% if request.user.is_authenticated %}
                     <nav aria-label="Principal" class="-mb-px flex h-full min-w-0 flex-1 items-stretch gap-4 overflow-x-auto sm:gap-6">
                         <a href="{% url 'documents:upload' %}"
-                           {% if request.resolver_match.app_name == 'documents' %}aria-current="page"{% endif %}
-                           class="tab-link flex items-center {% if request.resolver_match.app_name == 'documents' %}is-active{% endif %}">
+                           {% if request.resolver_match.url_name == 'upload' %}aria-current="page"{% endif %}
+                           class="tab-link flex items-center {% if request.resolver_match.url_name == 'upload' %}is-active{% endif %}">
                             Documentos
                         </a>
 
@@ -48,7 +48,24 @@
                             <a href="{% url 'accounts:pending-students' %}"
                                {% if request.resolver_match.url_name == 'pending-students' %}aria-current="page"{% endif %}
                                class="tab-link flex items-center whitespace-nowrap {% if request.resolver_match.url_name == 'pending-students' %}is-active{% endif %}">
-                                Alumnos pendientes
+                                Mis alumnos
+                            </a>
+                        {% endif %}
+
+                        {% if request.user.is_student_role %}
+                            <a href="{% url 'accounts:my-advisors' %}"
+                               {% if request.resolver_match.url_name == 'my-advisors' %}aria-current="page"{% endif %}
+                               class="tab-link flex items-center whitespace-nowrap {% if request.resolver_match.url_name == 'my-advisors' %}is-active{% endif %}">
+                                Mis docentes
+                            </a>
+                        {% endif %}
+
+                        {% if request.user.is_teacher_role or request.user.is_director_role or request.user.is_admin_role or request.user.is_superuser %}
+                            <a href="{% url 'documents:authorizations' %}"
+                               {% if request.resolver_match.url_name == 'authorizations' %}aria-current="page"{% endif %}
+                               class="tab-link flex items-center gap-1.5 whitespace-nowrap {% if request.resolver_match.url_name == 'authorizations' %}is-active{% endif %}">
+                                Solicitudes
+                                {% if pending_authorizations_count %}<span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#236bfd] px-1.5 text-[11px] font-bold leading-none text-white" aria-label="{{ pending_authorizations_count }} pendientes">{{ pending_authorizations_count }}</span>{% endif %}
                             </a>
                         {% endif %}
 

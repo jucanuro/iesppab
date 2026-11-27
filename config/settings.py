@@ -219,6 +219,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.institution_status",
+                "apps.documents.context_processors.pending_authorizations",
             ],
         },
     },
@@ -910,3 +911,15 @@ if ANALYSIS_STALE_JOB_MINUTES * 60 <= ANALYSIS_TASK_TIME_LIMIT:
     raise RuntimeError(
         "ANALYSIS_STALE_JOB_MINUTES debe ser mayor que ANALYSIS_TASK_TIME_LIMIT."
     )
+
+
+# Valores con los que se siembra «Permisos por rol» (RolePermission) al
+# migrar. Después la fuente de verdad es esa tabla, editable en /admin; cambiar
+# estas variables no altera las filas ya creadas.
+SUBMISSION_LIMIT_TEACHER = int(os.getenv("SUBMISSION_LIMIT_TEACHER", "5"))
+SUBMISSION_LIMIT_ALUMNI = int(os.getenv("SUBMISSION_LIMIT_ALUMNI", "3"))
+
+
+# Igual que el backend por defecto, más acceso por correo para cuentas staff o
+# superusuario (login de /admin/ con usuario o correo institucional).
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.UsernameOrStaffEmailBackend"]
